@@ -147,6 +147,8 @@ JSON 顶层统一为 `{code,message,data}`，成功码 `200`。多数业务分�
 | 人工变更项目状态 | `POST /app/core/project/change-status` |
 | 通用内容选择目录 | `GET /app/core/project/catalog` |
 | 分组详情 | `GET /app/core/project/group-detail` |
-| 分组新增/更新关联配置 | `POST /app/core/project/group-save` |
+| 分组创建（仅基础信息） | `POST /app/core/project/group-create` |
+| 受试者候选及本项目归属 | `GET /app/core/project/participants` |
+| 分组更新关联配置 | `POST /app/core/project/group-save` |
 
-项目列表 `/project/index`，分组选择 `/project/groups?project_id=...`，新建 `/project/group?project_id=...`，详情追加 `id`，编辑另追加 `mode=edit`。分组API校验项目归属，更新携带revision避免覆盖过期配置。服务代码在mock-api/projects.mjs，不调用PHP。
+项目列表 `/project/index`，分组选择 `/project/groups?project_id=...`，新建在分组列表使用基础信息弹窗，详情 `/project/group?project_id=...&id=...`，编辑另追加 `mode=edit`。旧的无id路径转回列表新建入口。分组API校验项目归属，更新携带revision避免覆盖过期配置。服务代码在mock-api/projects.mjs，不调用PHP。

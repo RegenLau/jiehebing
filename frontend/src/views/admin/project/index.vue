@@ -284,9 +284,8 @@
       }
     }
     lines.push(
-      `科普：${g.articles?.map((a) => a.snapshot.name || a.snapshot.title).join('、') || '未关联'}`
+      `受试者：${g.participants?.map((p) => `${p.name}（${p.mobile}）`).join('、') || '未添加'}`
     )
-    lines.push(`通知账号编号：${g.contact_ids?.join('、') || '未设置'}`)
     return lines.join('\n')
   }
   const blank = (): ProjectPayload => ({

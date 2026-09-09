@@ -60,8 +60,8 @@ export interface GroupRecord {
   medication: Medication | null
   surveys: Schedule[]
   tasks: Schedule[]
-  articles: Binding[]
-  contact_ids: number[]
+  participant_ids: number[]
+  participants?: { id: number; name: string; mobile: string }[]
   created_at?: string
   updated_at?: string
 }
@@ -69,8 +69,6 @@ export interface Catalog {
   medication_schemes: Source[]
   surveys: Source[]
   task_templates: Source[]
-  articles: Source[]
-  contacts: Source[]
 }
 export interface ProjectRecord extends ProjectPayload {
   id: number
@@ -115,6 +113,36 @@ export const fetchGroupDetail = (project_id: number, id: number) =>
 export const saveGroup = (group: GroupRecord) =>
   request.post<GroupRecord>({
     url: '/app/core/project/group-save',
-    params: { ...group, article_ids: group.articles.map((a) => a.id) },
+    params: {
+      id: group.id,
+      project_id: group.project_id,
+      revision: group.revision,
+      name: group.name,
+      description: group.description,
+      medication: group.medication,
+      surveys: group.surveys,
+      tasks: group.tasks,
+      participant_ids: group.participant_ids
+    },
+    showSuccessMessage: true
+  })
+
+export interface ParticipantOption {
+  id: number
+  name: string
+  mobile: string
+  is_archived: number
+  group_id: number | null
+  group_name: string
+}
+export const fetchParticipants = (project_id: number) =>
+  request.get<ParticipantOption[]>({
+    url: '/app/core/project/participants',
+    params: { project_id }
+  })
+export const createGroup = (params: { project_id: number; name: string; description: string }) =>
+  request.post<GroupRecord>({
+    url: '/app/core/project/group-create',
+    params,
     showSuccessMessage: true
   })

@@ -524,57 +524,63 @@ test('research project basic fields, editable statuses and restart isolation', a
   assert.deepEqual(await restarted.all(P+'project/index'),initial)
 })
 
-test('group associations reuse shared sources, isolate snapshots, validate schedules and preserve patient data', async (t) => {
-  const api = await start(t); await api.login()
-  const patientPlans = await api.all(P+'medication-plan/index')
-  const catalog = await api.ok(P+'project/catalog')
-  const scheme = catalog.medication_schemes.find(s=>s.status===1)
-  const survey = catalog.surveys.find(s=>s.status===1)
-  const article = catalog.articles.find(s=>s.status===1)
-  const contact = catalog.contacts.find(s=>s.status===1)
-  const schedule = id => ({ id, anchor:'enrollment', date:'', offset_days:0, interval_days:7, deadline_days:3, reminders:{start:true,due:true,overdue:true} })
-  const payload = {project_id:1,name:'A组',description:'验证关联',medication:{id:scheme.id,treatment_days:30,pickup_days:14,advance_days:3,quantities:scheme.drugs.map(d=>({drug_id:d.drug_id,quantity:30}))},surveys:[schedule(survey.id)],tasks:[schedule(catalog.task_templates[0].id)],article_ids:[article.id],contact_ids:[contact.id]}
-  const created = await api.ok(P+'project/group-save',{body:payload})
-  assert.equal(created.revision,1)
-  assert.deepEqual(created.medication.snapshot.drugs,scheme.drugs)
-  assert.deepEqual(created.surveys[0].snapshot.questions,survey.questions)
-  const project = await api.ok(P+'project/detail',{query:{id:1}})
-  assert.equal(project.groups[0].id,created.id)
-  assert.ok(project.history[0].changes[0].after.medication)
-  assert.notEqual((await api.json(P+'project/group-save',{body:payload})).code,200)
-  await api.ok(P+'project/group-save',{body:{...payload,project_id:2}})
-  await api.ok(P+'project/group-save',{body:{...payload,name:'B组'}})
-  assert.equal((await api.json(P+'project/group-detail',{query:{project_id:2,id:created.id}})).code,404)
-  assert.equal((await api.json(P+'project/group-save',{body:{...payload,id:created.id,project_id:2,revision:1}})).code,404)
-  assert.notEqual((await api.json(P+'survey/delete',{body:{id:survey.id}})).code,200)
-  for (const invalid of [
-    {contact_ids:[999999]}, {article_ids:[999999]}, {surveys:[schedule(999999)]},
-    {surveys:[schedule(survey.id),schedule(survey.id)]}, {contact_ids:[contact.id,contact.id]},
+
+test('basic group creation is independent from configuration and enforces project names', async t => {
+  const api=await start(t)
+  assert.equal((await api.json(P+'project/group-create',{body:{project_id:1,name:'A'}})).code,401)
+  await api.login()
+  for(const body of [{project_id:1,name:''},{project_id:999,name:'A'},{project_id:1,name:'A',medication:{id:1}}]) assert.notEqual((await api.json(P+'project/group-create',{body})).code,200)
+  const a=await api.ok(P+'project/group-create',{body:{project_id:1,name:'A'}})
+  assert.equal(a.description,'');assert.equal(a.medication,null)
+  assert.deepEqual(a.surveys,[]);assert.deepEqual(a.tasks,[]);assert.deepEqual(a.participant_ids,[])
+  assert.equal(a.articles,undefined);assert.equal(a.contact_ids,undefined)
+  assert.notEqual((await api.json(P+'project/group-create',{body:{project_id:1,name:'a'}})).code,200)
+  await api.ok(P+'project/group-create',{body:{project_id:2,name:'A'}})
+  assert.equal((await api.json(P+'project/group-detail',{query:{project_id:2,id:a.id}})).code,404)
+  const restarted=await start(t);await restarted.login();assert.deepEqual((await restarted.ok(P+'project/detail',{query:{id:1}})).groups,[])
+})
+
+test('saved group configuration validates sources and members without changing patient execution',async t=>{
+  const api=await start(t);await api.login()
+  const plans=await api.all(P+'medication-plan/index')
+  const patients=await api.all(P+'patient/index')
+  const catalog=await api.ok(P+'project/catalog')
+  assert.equal(catalog.articles,undefined);assert.equal(catalog.contacts,undefined)
+  const scheme=catalog.medication_schemes.find(s=>s.status===1),survey=catalog.surveys.find(s=>s.status===1)
+  const create=(project_id,name)=>api.ok(P+'project/group-create',{body:{project_id,name}})
+  const a=await create(1,'A'),b=await create(1,'B'),other=await create(2,'A')
+  const schedule=id=>({id,anchor:'enrollment',date:'',offset_days:0,interval_days:7,deadline_days:3,reminders:{start:true,due:true,overdue:true}})
+  const config={...a,medication:{id:scheme.id,treatment_days:30,pickup_days:14,advance_days:3,quantities:scheme.drugs.map(d=>({drug_id:d.drug_id,quantity:30}))},surveys:[schedule(survey.id)],tasks:[schedule(1)],participant_ids:[1,2]}
+  const saved=await api.ok(P+'project/group-save',{body:config})
+  assert.equal(saved.revision,2);assert.deepEqual(saved.participant_ids,[1,2]);assert.equal(saved.participants[0].name,patients.find(p=>p.id===1).name)
+  assert.deepEqual(saved.medication.snapshot.drugs,scheme.drugs)
+  const people=await api.ok(P+'project/participants',{query:{project_id:1}})
+  assert.equal(people.find(p=>p.id===1).group_id,a.id)
+  assert.notEqual((await api.json(P+'project/group-save',{body:{...b,participant_ids:[1]}})).code,200)
+  await api.ok(P+'project/group-save',{body:{...other,participant_ids:[1]}})
+  for(const invalid of [
+    {participant_ids:[999999]}, {participant_ids:[25]}, {participant_ids:[1,1]}, {participant_ids:[1.2]},
+    {surveys:[schedule(9999)]},{surveys:[schedule(survey.id),schedule(survey.id)]},
     {surveys:[{...schedule(survey.id),interval_days:-1}]},
     {tasks:[{...schedule(1),anchor:'date',date:'2026-02-30',interval_days:0}]},
     {tasks:[{...schedule(1),anchor:'date',date:TODAY}]},
-    {medication:{...payload.medication,advance_days:15}},
-    {medication:{...payload.medication,quantities:[]}},
-    {medication:{...payload.medication,id:catalog.medication_schemes.find(s=>s.status===0).id}}
-  ]) {
-    assert.notEqual((await api.json(P+'project/group-save',{body:{...payload,...invalid,name:'非法配置'}})).code,200)
-  }
-  assert.equal((await api.ok(P+'project/detail',{query:{id:1}})).groups.length,2)
-  await api.ok(P+'health-article/save',{body:{id:article.id,title:'来源已更新',summary:'更新后的介绍',content:'<p>更新</p>',status:1,sort:0}})
+    {medication:{...config.medication,advance_days:15}},{medication:{...config.medication,quantities:[]}},
+    {medication:{...config.medication,id:catalog.medication_schemes.find(s=>s.status===0).id}},
+    {article_ids:[1]},{contact_ids:[1]}
+  ]) assert.notEqual((await api.json(P+'project/group-save',{body:{...saved,...invalid}})).code,200)
+  assert.deepEqual(await api.ok(P+'project/group-detail',{query:{project_id:1,id:a.id}}),saved)
+  assert.equal((await api.json(P+'project/group-save',{body:{...saved,project_id:2}})).code,404)
+  assert.notEqual((await api.json(P+'project/group-save',{body:config})).code,200)
   await api.ok(P+'survey/toggle-status',{body:{id:survey.id,status:0}})
-  const saved = await api.ok(P+'project/group-save',{body:{...payload,id:created.id,revision:1,name:'A组调整'}})
-  assert.equal(saved.revision,2)
-  assert.deepEqual(saved.articles[0].snapshot,created.articles[0].snapshot)
-  assert.notEqual((await api.json(P+'project/group-save',{body:{...payload,name:'不能新用停用问卷'}})).code,200)
-  assert.notEqual((await api.json(P+'project/group-save',{body:{...payload,id:created.id,revision:1}})).code,200)
-  assert.deepEqual(await api.all(P+'medication-plan/index'),patientPlans)
-  const draft = await api.ok(P+'project/group-save',{body:{project_id:1,name:'空配置草稿',description:'',medication:null,surveys:[],tasks:[],article_ids:[],contact_ids:[]}})
-  assert.equal(draft.medication,null)
+  const updated=await api.ok(P+'project/group-save',{body:{...saved,description:'保留原模板内容',participant_ids:[2]}})
+  assert.deepEqual(updated.surveys[0].snapshot,saved.surveys[0].snapshot)
+  assert.notEqual((await api.json(P+'project/group-save',{body:{...b,surveys:[schedule(survey.id)]}})).code,200)
+  await api.ok(P+'project/group-save',{body:{...b,participant_ids:[1]}})
+  const choices=await api.ok(P+'project/participants',{query:{project_id:1}})
+  assert.equal(choices.find(p=>p.id===1).group_id,b.id)
   await api.ok(P+'survey/toggle-status',{body:{id:2,status:1}})
-  await api.ok(P+'project/group-save',{body:{...payload,name:'引用无答卷模板',surveys:[schedule(2)]}})
-  const protectedSurvey = await api.json(P+'survey/delete',{body:{id:2}})
-  assert.notEqual(protectedSurvey.code,200)
-  assert.match(protectedSurvey.message,/研究分组引用/)
-  const restarted = await start(t); await restarted.login()
-  assert.deepEqual((await restarted.ok(P+'project/detail',{query:{id:1}})).groups,[])
+  await api.ok(P+'project/group-save',{body:{...updated,surveys:[schedule(2)]}})
+  assert.match((await api.json(P+'survey/delete',{body:{id:2}})).message,/研究分组引用/)
+  assert.deepEqual(await api.all(P+'medication-plan/index'),plans)
+  assert.deepEqual(await api.all(P+'patient/index'),patients)
 })

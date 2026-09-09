@@ -51,13 +51,29 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
   core('GET', 'project/catalog', () => ({
     medication_schemes: db.medicationSchemes, task_templates: db.taskTemplates,
     surveys: db.surveys.map(s => ({ id: s.id, name: s.name, description: s.description, status: s.status, version: s.updatedAt, questions: s.questions })),
-    articles: db.articles.map(a => ({ id: a.id, name: a.title, description: a.summary, status: a.status, version: a.updated_at })),
-    contacts: db.admins.map(a => ({ id: a.id, name: a.realname || a.username, description: a.phone || '未填写联系电话', status: a.status }))
   }));
+  core('GET', 'project/participants', ({ query: q }) => {
+    const p = project(q.project_id);
+    return db.patients.map(patient => {
+      const assigned = db.projectGroups.find(g => g.project_id === p.id && g.participant_ids?.includes(patient.id));
+      return { id: patient.id, name: patient.name, mobile: patient.mobile, is_archived: patient.is_archived, group_id: assigned?.id ?? null, group_name: assigned?.name ?? '' };
+    });
+  });
+  core('POST', 'project/group-create', ({ body: b, admin }) => {
+    const p = project(b.project_id);
+    assert(Object.keys(b).every(k => ['project_id','name','description'].includes(k)), '创建分组只需基础信息，请创建后再设置方案、任务和人员');
+    const name = text(b.name,'分组名称',60,true), description = text(b.description,'分组说明',1000);
+    assert(!db.projectGroups.some(g => g.project_id === p.id && g.name.toLowerCase() === name.toLowerCase()), '当前项目已有同名分组');
+    const record = { id:nextId(db.projectGroups), project_id:p.id, name, description, revision:1, medication:null, surveys:[],tasks:[],participant_ids:[],participants:[],created_at:timestamp(),updated_at:timestamp() };
+    db.projectGroups.push(record);
+    log(p,admin,'新增分组',name, {group:{}}, {group:copy(record)});
+    return record;
+  });
   core('GET', 'project/group-detail', ({ query: q }) => group(q.project_id, q.id));
   core('POST', 'project/group-save', ({ body: b, admin }) => {
     const p = project(b.project_id);
-    const existing = b.id === undefined ? null : group(p.id, b.id);
+    assert(b.id !== undefined, '请先创建分组基础信息');
+    const existing = group(p.id, b.id);
     if (existing) assert(b.revision === existing.revision, '分组配置已更新，请重新打开后编辑');
     const name = text(b.name,'分组名称',60,true);
     assert(!db.projectGroups.some(g => g.project_id === p.id && g !== existing && g.name.toLowerCase() === name.toLowerCase()), '当前项目已有同名分组');
@@ -101,11 +117,18 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     };
     const surveys = schedules(b.surveys,'surveys',db.surveys);
     const tasks = schedules(b.tasks,'tasks',db.taskTemplates);
-    const articles = array(b.article_ids,'科普文章').map(id=>binding(db.articles,id,'科普文章',existing?.articles?.find(a=>a.id===id)));
-    unique(articles.map(a=>a.id),'科普文章');
-    const contact_ids = array(b.contact_ids,'通知人员').map(id=>{ const a=find(db.admins,id,'通知人员'); assert(a.status===1,'通知人员已停用，请重新选择'); return a.id; });
-    unique(contact_ids,'通知人员');
-    const data = { name, description, medication, surveys, tasks, articles, contact_ids };
+    assert(!b.article_ids?.length && !b.contact_ids?.length, '分组不再配置科普或通知账号');
+    const participant_ids = array(b.participant_ids,'受试者',10000).map(id => {
+      number(id,'患者编号',1,99999999);
+      const patient = find(db.patients,id,'患者');
+      assert(patient.is_archived === 1 || existing.participant_ids?.includes(id), '只能添加已建档受试者');
+      const assigned = db.projectGroups.find(g => g !== existing && g.project_id === p.id && g.participant_ids?.includes(id));
+      assert(!assigned, `患者已属于本项目其他分组，请先在原组移除后再添加`);
+      return id;
+    });
+    unique(participant_ids,'受试者');
+    const participants = participant_ids.map(id => { const p = find(db.patients,id,'患者'); return {id:p.id,name:p.name,mobile:p.mobile}; });
+    const data = { name, description, medication, surveys, tasks, participant_ids, participants };
     const record = existing || { id:nextId(db.projectGroups), project_id:p.id, revision:0, created_at:timestamp() };
     const before = existing ? copy(existing) : {};
     Object.assign(record,data,{revision:record.revision+1,updated_at:timestamp()});

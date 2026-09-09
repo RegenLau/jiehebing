@@ -3,34 +3,43 @@
     <div class="heading"
       ><div
         ><ElButton link type="primary" :disabled="saving" @click="back">返回分组列表</ElButton
-        ><h2>{{ readonly ? form.name + ' · 分组详情' : groupId ? '编辑分组' : '新建研究分组' }}</h2
+        ><h2>{{ readonly ? form.name + ' · 分组详情' : '设置分组' }}</h2
         ><p>{{ projectName }}</p></div
       ><ElButton v-if="readonly && loaded" type="primary" @click="editGroup"
         >编辑分组</ElButton
       ></div
     >
-    <ElCard v-loading="opening" shadow="never">
+    <div v-loading="opening" class="group-body">
       <ElResult v-if="error" icon="warning" title="无法加载分组" :sub-title="error"
         ><template #extra><ElButton @click="loadPage">重试</ElButton></template></ElResult
       >
       <template v-else-if="loaded">
         <ElForm ref="formRef" :model="form" label-position="top" :disabled="readonly || saving">
-          <div class="fields">
-            <ElFormItem
-              label="分组名称"
-              prop="name"
-              :rules="[{ required: true, message: '请填写分组名称', trigger: 'blur' }]"
-              ><ElInput v-model.trim="form.name" maxlength="60" placeholder="例如 A 组"
-            /></ElFormItem>
-            <ElFormItem label="分组说明"
-              ><ElInput
-                v-model.trim="form.description"
-                maxlength="1000"
-                placeholder="说明本组适用范围"
-            /></ElFormItem>
+          <div class="basic-info">
+            <template v-if="readonly">
+              <h3>{{ form.name }}</h3>
+              <p>{{ form.description || '暂无分组说明' }}</p>
+              <span class="muted"
+                >受试者 {{ form.participant_ids.length }} 人 · 配置第 {{ form.revision }} 版</span
+              >
+            </template>
+            <div v-else class="fields">
+              <ElFormItem
+                label="分组名称"
+                prop="name"
+                :rules="[{ required: true, message: '请填写分组名称', trigger: 'blur' }]"
+                ><ElInput v-model.trim="form.name" maxlength="60" placeholder="例如 A 组"
+              /></ElFormItem>
+              <ElFormItem label="分组说明"
+                ><ElInput
+                  v-model.trim="form.description"
+                  maxlength="1000"
+                  placeholder="说明本组适用范围"
+              /></ElFormItem>
+            </div>
           </div>
-          <ElCollapse v-model="sections">
-            <ElCollapseItem title="用药方案与发药条件" name="medication">
+          <ElTabs v-model="activeTab" class="group-tabs">
+            <ElTabPane label="用药方案" name="medication">
               <ElSelect
                 :model-value="form.medication?.id"
                 placeholder="选择通用用药方案"
@@ -99,57 +108,50 @@
                 </div>
                 <p class="muted">以上是本组默认条件，实际发药以患者发药登记为准。</p>
               </template>
-            </ElCollapseItem>
-            <ElCollapseItem title="随访问卷与执行安排" name="surveys"
-              ><Schedules v-model="form.surveys" :sources="catalog.surveys" label="问卷"
-            /></ElCollapseItem>
-            <ElCollapseItem title="检查等任务与执行安排" name="tasks"
+            </ElTabPane>
+            <ElTabPane label="随访任务" name="followup"
+              ><Schedules v-model="form.surveys" :sources="catalog.surveys" label="问卷" /><h4
+                >检查、复诊及其他任务</h4
               ><Schedules v-model="form.tasks" :sources="catalog.task_templates" label="任务模板"
-            /></ElCollapseItem>
-            <ElCollapseItem title="健康科普与通知人员" name="other">
-              <ElFormItem label="关联健康科普"
+            /></ElTabPane>
+            <ElTabPane label="受试者" name="participants">
+              <ElFormItem label="选择受试者"
                 ><ElSelect
-                  v-model="articleIds"
+                  v-model="form.participant_ids"
                   multiple
                   filterable
-                  placeholder="选择已上架文章"
+                  placeholder="按姓名或手机号搜索已建档患者"
                   style="width: 100%"
-                  ><ElOption
-                    v-for="s in catalog.articles"
-                    :key="s.id"
-                    :label="s.name"
-                    :value="s.id"
-                    :disabled="s.status !== 1" /></ElSelect
+                >
+                  <ElOption
+                    v-for="p in participants"
+                    :key="p.id"
+                    :value="p.id"
+                    :label="`${p.name} · ${p.mobile}${p.group_id && p.group_id !== groupId ? '（已在' + p.group_name + '）' : p.is_archived !== 1 ? '（未建档）' : ''}`"
+                    :disabled="
+                      Boolean(p.group_id && p.group_id !== groupId) ||
+                      (p.is_archived !== 1 && !originalMemberIds.includes(p.id))
+                    "
+                  /> </ElSelect
               ></ElFormItem>
-              <p v-for="a in form.articles" :key="a.id"
-                >{{ a.snapshot.name || a.snapshot.title }}：{{
-                  a.snapshot.description || a.snapshot.summary
-                }}</p
-              >
-              <ElFormItem label="通知接收人员"
-                ><ElSelect
-                  v-model="form.contact_ids"
-                  multiple
-                  filterable
-                  placeholder="选择启用账号"
-                  style="width: 100%"
-                  ><ElOption
-                    v-for="s in catalog.contacts"
-                    :key="s.id"
-                    :label="`${s.name} · ${s.description}`"
-                    :value="s.id"
-                    :disabled="s.status !== 1" /></ElSelect
-              ></ElFormItem>
-              <p class="muted">当前配置用于安排通知接收对象，保存不会发送通知。</p>
-            </ElCollapseItem>
-          </ElCollapse>
+              <ElTable
+                :data="participants.filter((p) => form.participant_ids.includes(p.id))"
+                border
+                empty-text="尚未添加受试者"
+                ><ElTableColumn prop="name" label="姓名" /><ElTableColumn
+                  prop="mobile"
+                  label="手机号"
+              /></ElTable>
+              <p class="muted">受试者是本组患者。加入分组后，不会自动修改其用药或生成任务。</p>
+            </ElTabPane>
+          </ElTabs>
         </ElForm>
         <div v-if="!readonly" class="footer"
           ><ElButton :disabled="saving" @click="back">返回分组列表</ElButton
           ><ElButton type="primary" :loading="saving" @click="save">保存分组</ElButton></div
         >
       </template>
-    </ElCard>
+    </div>
   </div>
 </template>
 <script setup lang="ts">
@@ -158,6 +160,8 @@
   import { ElMessage, type FormInstance } from 'element-plus'
   import {
     fetchGroupDetail,
+    fetchParticipants,
+    type ParticipantOption,
     fetchProjectDetail,
     fetchProjectCatalog,
     saveGroup,
@@ -177,16 +181,13 @@
     medication: null,
     surveys: [],
     tasks: [],
-    articles: [],
-    contact_ids: []
+    participant_ids: []
   })
   const form = ref<GroupRecord>(blank())
   const catalog = ref<Catalog>({
     medication_schemes: [],
     surveys: [],
-    task_templates: [],
-    articles: [],
-    contacts: []
+    task_templates: []
   })
   const saving = ref(false),
     opening = ref(false),
@@ -195,19 +196,9 @@
     projectName = ref('')
   const readonly = computed(() => Boolean(groupId.value) && route.query.mode !== 'edit')
   const formRef = ref<FormInstance>()
-  const sections = ref(['medication', 'surveys', 'tasks', 'other'])
-  const articleIds = computed({
-    get: () => form.value.articles.map((a) => a.id),
-    set: (ids: number[]) => {
-      form.value.articles = ids.map(
-        (id) =>
-          form.value.articles.find((a) => a.id === id) || {
-            id,
-            snapshot: JSON.parse(JSON.stringify(catalog.value.articles.find((a) => a.id === id)))
-          }
-      )
-    }
-  })
+  const activeTab = ref('medication')
+  const participants = ref<ParticipantOption[]>([]),
+    originalMemberIds = ref<number[]>([])
   const drugName = (id: number) =>
     form.value.medication?.snapshot.drugs?.find((d) => d.drug_id === id)?.name || ''
   const drugUnit = (id: number) =>
@@ -220,6 +211,10 @@
     error.value = ''
     const pid = projectId.value,
       gid = groupId.value
+    if (route.query.id === undefined && Number.isSafeInteger(pid) && pid > 0) {
+      await router.replace({ path: '/project/groups', query: { project_id: pid, create: '1' } })
+      return
+    }
     if (
       !Number.isSafeInteger(pid) ||
       pid <= 0 ||
@@ -230,14 +225,17 @@
       return
     }
     try {
-      const [sources, project, record] = await Promise.all([
+      const [sources, project, record, people] = await Promise.all([
         fetchProjectCatalog(),
         fetchProjectDetail(pid),
-        gid ? fetchGroupDetail(pid, gid) : Promise.resolve(blank())
+        fetchGroupDetail(pid, gid),
+        fetchParticipants(pid)
       ])
       if (seq !== sequence) return
       catalog.value = sources
-      form.value = record
+      form.value = { ...record, participant_ids: record.participant_ids || [] }
+      participants.value = people
+      originalMemberIds.value = [...form.value.participant_ids]
       projectName.value = project.name
       loaded.value = true
       await nextTick()
@@ -302,6 +300,34 @@
     padding: 20px;
     max-width: 1200px;
     margin: auto;
+  }
+  .basic-info {
+    padding: 24px;
+    border: 1px solid var(--el-border-color-light);
+    border-radius: 8px;
+    background: var(--el-bg-color);
+  }
+  .basic-info h3 {
+    margin: 0 0 12px;
+  }
+  .basic-info p {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .group-tabs {
+    margin-top: 24px;
+  }
+  .group-tabs :deep(.el-tabs__item) {
+    font-size: 16px;
+    height: 52px;
+    padding: 0 28px;
+  }
+  .group-tabs :deep(.el-tabs__content) {
+    padding: 24px;
+    min-height: 320px;
+    border: 1px solid var(--el-border-color-light);
+    border-radius: 8px;
+    background: var(--el-bg-color);
   }
   .heading {
     display: flex;
