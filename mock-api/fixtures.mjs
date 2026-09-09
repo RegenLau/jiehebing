@@ -123,5 +123,10 @@ export function createMenu() {
       { path: 'groups', name: 'ProjectGroups', component: '/admin/project-groups', meta: { title: '研究分组', isHide: true, activePath: '/project/index', keepAlive: false } },
       { path: 'group', name: 'ProjectGroup', component: '/admin/project-group', meta: { title: '分组配置', isHide: true, activePath: '/project/index', keepAlive: false } }
     ] });
+  const medication = result.find(r => r.name === 'MedicationPlan');
+  medication.meta.title = '用药管理';
+  medication.children.unshift({path:'schemes',name:'MedicationSchemes',component:'/admin/medication-schemes',meta:{title:'用药方案',keepAlive:false}});
+  result.splice(4,0,{path:'/followup',name:'Followup',component:'/index/index',meta:{title:'随访任务',icon:'ri:calendar-check-line'},children:[{path:'feedback',name:'FeedbackRecords',component:'/admin/feedback',meta:{title:'每日反馈记录',keepAlive:false}},{path:'index',name:'FollowupTasks',component:'/admin/followup',meta:{title:'任务列表',keepAlive:false}},{path:'templates',name:'TaskTemplates',component:'/admin/task-templates',meta:{title:'任务模板',keepAlive:false}}]});
+  result.splice(5,0,{path:'/reports',name:'Reports',component:'/index/index',meta:{title:'检查报告',icon:'ri:file-list-line'},children:[{path:'index',name:'ReportList',component:'/admin/reports',meta:{title:'报告列表',keepAlive:false}}]});
   return result;
 }

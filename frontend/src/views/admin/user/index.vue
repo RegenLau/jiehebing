@@ -15,7 +15,14 @@
       <ElTable :data="list" v-loading="loading" border>
         <ElTableColumn prop="id" label="ID" width="80" />
         <ElTableColumn prop="username" label="用户名" min-width="180" />
-        <ElTableColumn prop="phone" label="手机号" min-width="140" />
+        <ElTableColumn prop="realname" label="姓名" /><ElTableColumn
+          prop="hospital_name"
+          label="医院"
+        /><ElTableColumn prop="department_name" label="科室" /><ElTableColumn
+          prop="phone"
+          label="手机号"
+          min-width="140"
+        />
         <ElTableColumn prop="email" label="邮箱" min-width="220" />
         <ElTableColumn label="状态" width="100">
           <template #default="{ row }">
@@ -36,7 +43,10 @@
 
     <ElDialog v-model="dialogVisible" :title="isEdit ? '编辑管理员' : '新增管理员'" width="520px">
       <ElForm ref="formRef" :model="formData" :rules="rules" label-width="90px">
-        <ElFormItem label="用户名" prop="username">
+        <ElFormItem label="姓名"><ElInput v-model.trim="formData.realname" /></ElFormItem
+        ><ElFormItem label="医院"><ElInput v-model.trim="formData.hospital_name" /></ElFormItem
+        ><ElFormItem label="科室"><ElInput v-model.trim="formData.department_name" /></ElFormItem
+        ><ElFormItem label="用户名" prop="username">
           <ElInput v-model.trim="formData.username" placeholder="请输入用户名" />
         </ElFormItem>
         <ElFormItem :label="isEdit ? '新密码' : '密码'" prop="password">
@@ -81,6 +91,9 @@
 
   const formData = reactive({
     id: undefined as number | undefined,
+    realname: '',
+    hospital_name: '',
+    department_name: '',
     username: '',
     password: '',
     phone: '',
@@ -106,6 +119,9 @@
 
   const resetForm = () => {
     formData.id = undefined
+    formData.realname = ''
+    formData.hospital_name = ''
+    formData.department_name = ''
     formData.username = ''
     formData.password = ''
     formData.phone = ''
@@ -132,6 +148,9 @@
     const record = row as AdminRecord
     isEdit.value = true
     formData.id = record.id
+    formData.realname = record.realname || ''
+    formData.hospital_name = record.hospital_name || ''
+    formData.department_name = record.department_name || ''
     formData.username = record.username
     formData.password = ''
     formData.phone = record.phone

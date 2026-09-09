@@ -118,15 +118,15 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     const surveys = schedules(b.surveys,'surveys',db.surveys);
     const tasks = schedules(b.tasks,'tasks',db.taskTemplates);
     assert(!b.article_ids?.length && !b.contact_ids?.length, '分组不再配置科普或通知账号');
-    const participant_ids = array(b.participant_ids,'受试者',10000).map(id => {
+    const participant_ids = array(b.participant_ids,'患者',10000).map(id => {
       number(id,'患者编号',1,99999999);
       const patient = find(db.patients,id,'患者');
-      assert(patient.is_archived === 1 || existing.participant_ids?.includes(id), '只能添加已建档受试者');
+      assert(patient.is_archived === 1 || existing.participant_ids?.includes(id), '只能添加已建档患者');
       const assigned = db.projectGroups.find(g => g !== existing && g.project_id === p.id && g.participant_ids?.includes(id));
       assert(!assigned, `患者已属于本项目其他分组，请先在原组移除后再添加`);
       return id;
     });
-    unique(participant_ids,'受试者');
+    unique(participant_ids,'患者');
     const participants = participant_ids.map(id => { const p = find(db.patients,id,'患者'); return {id:p.id,name:p.name,mobile:p.mobile}; });
     const data = { name, description, medication, surveys, tasks, participant_ids, participants };
     const record = existing || { id:nextId(db.projectGroups), project_id:p.id, revision:0, created_at:timestamp() };

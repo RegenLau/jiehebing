@@ -36,6 +36,7 @@
       </div>
     </header>
 
+    <ResearchSummary />
     <div class="metric-grid">
       <article v-for="item in metrics" :key="item.title" class="metric-card">
         <div class="metric-icon" :class="item.tone">
@@ -121,6 +122,8 @@
 </template>
 
 <script setup lang="ts">
+  import ResearchSummary from './research-summary.vue'
+
   import { Icon } from '@iconify/vue'
   import type { EChartsOption } from '@/plugins/echarts'
   import {

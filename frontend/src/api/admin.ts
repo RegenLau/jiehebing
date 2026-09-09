@@ -2,6 +2,9 @@ import request from '@/utils/http'
 
 export interface AdminRecord {
   id: number
+  realname?: string
+  hospital_name?: string
+  department_name?: string
   username: string
   phone: string
   email: string

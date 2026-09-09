@@ -37,7 +37,11 @@
         <ElTableColumn prop="summary" label="摘要" min-width="260" show-overflow-tooltip />
         <ElTableColumn prop="view_count" label="浏览量" width="90" />
         <ElTableColumn prop="sort" label="排序" width="90" />
-        <ElTableColumn prop="published_at" label="发布时间" min-width="170" />
+        <ElTableColumn prop="confirmed_by" label="内容确认人" width="130" /><ElTableColumn
+          prop="confirmed_at"
+          label="确认时间"
+          width="170"
+        /><ElTableColumn prop="published_at" label="发布时间" min-width="170" />
         <ElTableColumn label="状态" width="100">
           <template #default="{ row }">
             <ElTag :type="row.status === 1 ? 'success' : 'info'">

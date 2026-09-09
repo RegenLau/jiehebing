@@ -110,7 +110,7 @@ Mock 初始日期以 `Asia/Shanghai` 当天为基准，提供今日、近期、�
 | 问卷列表 | `GET /app/core/survey/index` | 分页、`keyword`、`status`；问卷字段保持 camelCase |
 | 问卷详情 | `GET /app/core/survey/detail` | `id`；嵌套 `questions`、`options` 和 `inputFields` |
 | 问卷导出 | `GET /app/core/survey/export` | `id`；按患者和题目展开为 XLSX |
-| 问卷兼容操作 | `POST /app/core/survey/delete`、`POST /app/core/survey/toggle-status` | `id`，启停另带 `status`；保留 API，不增加页面按钮 |
+| 问卷兼容操作 | `POST /app/core/survey/delete`、`POST /app/core/survey/toggle-status` | `id`，启停另带 `status`；保留删除 API；新增与编辑见下方研究功能接口，启停已提供页面按钮 |
 | 科普列表、详情 | `GET /app/core/health-article/index`、`GET /app/core/health-article/detail` | 列表分页及关键词/状态筛选；详情传 `id` |
 | 科普保存、启停 | `POST /app/core/health-article/save`、`POST /app/core/health-article/toggle-status` | 保存含标题、摘要、富文本、排序、状态及可选 ID；启停传 `id`、`status` |
 | 常用药品列表、启停 | `GET /app/core/common-medicine/index`、`POST /app/core/common-medicine/toggle-status` | 列表分页、`keyword`、`status`；启停传 `id`、`status` |
@@ -129,7 +129,7 @@ JSON 顶层统一为 `{code,message,data}`，成功码 `200`。多数业务分�
 
 ## 6. 遗留模板与交付限制
 
-前端还保留系统用户、角色、菜单、部门、岗位、配置、日志、安全维护、数据库、定时任务、代码生成以及图表示例等模板文件。当前八个业务菜单的来源是管理端动态菜单，不能简单将 `src/views/` 下每个目录都视作待接入业务。个人中心、上传与图库因被实际入口使用而纳入兼容；其他闲置模板不批量补接口。
+前端还保留系统用户、角色、菜单、部门、岗位、配置、日志、安全维护、数据库、定时任务、代码生成以及图表示例等模板文件。当前业务菜单的来源是管理端动态菜单，不能简单将 `src/views/` 下每个目录都视作待接入业务。个人中心、上传与图库因被实际入口使用而纳入兼容；其他闲置模板不批量补接口。
 
 本地 Mock 的目的是让现有管理端能独立演示和验证业务交互，不是 PHP 服务的完整替身。内存数据不提供持久化、多实例同步、生产身份认证、真实短信/微信/AI 能力或真实医学处理结果。模拟药品、用法和文章用于界面展示，不代表临床处方或经过审定的医疗内容。
 
@@ -148,7 +148,28 @@ JSON 顶层统一为 `{code,message,data}`，成功码 `200`。多数业务分�
 | 通用内容选择目录 | `GET /app/core/project/catalog` |
 | 分组详情 | `GET /app/core/project/group-detail` |
 | 分组创建（仅基础信息） | `POST /app/core/project/group-create` |
-| 受试者候选及本项目归属 | `GET /app/core/project/participants` |
+| 患者候选及本项目归属 | `GET /app/core/project/participants` |
 | 分组更新关联配置 | `POST /app/core/project/group-save` |
 
 项目列表 `/project/index`，分组选择 `/project/groups?project_id=...`，新建在分组列表使用基础信息弹窗，详情 `/project/group?project_id=...&id=...`，编辑另追加 `mode=edit`。旧的无id路径转回列表新建入口。分组API校验项目归属，更新携带revision避免覆盖过期配置。服务代码在mock-api/projects.mjs，不调用PHP。
+
+## 后续研究功能接口（2026-09-09）
+
+以下均为本地 Mock，路径前缀 `/app/core/`；具体范围及未完成项以功能架构第十八节为准。
+
+| 页面 | 接口（省略统一前缀） |
+|---|---|
+| 用药方案 | `medication-scheme/index`、`detail`、`save`、`status` |
+| 任务模板 | `task-template/index`、`detail`、`save`、`status` |
+| 问卷维护 | `survey/save`、`survey/detail`、`survey/toggle-status` |
+| 患者研究管理 | `patient/management`、`save`、`confirmations`、`treatment`、`dispense`、`state` |
+| 预计余药及盘点 | `patient/stock`、`stock-adjust` |
+| 服药结果与联系 | `medication-plan/record`、`contact` |
+| 个人随访任务 | `followup/index`、`detail`、`create`、`update` |
+| 检查报告 | `report/index`、`detail`、`create`、`supplement`、`review` |
+| 不良反应评估 | `adverse-reaction/assessment`、`assess`、`contact` |
+| 每日反馈记录 | `feedback/index`、`record`；保存症状及文字，不保存原始音频 |
+| 研究汇总 | `dashboard/research` |
+| 新增记录导出 | `research/export?kind=patients|tasks|reports|feedback` |
+
+列表、详情、汇总和导出使用GET，其余写入使用POST。数据、上传与会话均在内存中，服务重启后重置。每日反馈的客户端语音转写不在本仓库实现。

@@ -26,17 +26,24 @@
         </ElSelect>
         <ElButton type="primary" @click="handleSearch">查询</ElButton>
         <ElButton @click="loadList" :loading="loading">刷新</ElButton>
-        <ElButton type="primary" @click="handleExport" :loading="exportLoading">导出 Excel</ElButton>
+        <ElButton type="primary" @click="handleExport" :loading="exportLoading"
+          >导出 Excel</ElButton
+        >
       </div>
     </div>
 
-    <ElCard shadow="never">
+    <Assessment ref="assessment" @saved="loadList" /><ElCard shadow="never">
       <ElTable :data="list" v-loading="loading" border>
         <ElTableColumn prop="id" label="ID" width="80" />
         <ElTableColumn prop="patient_name" label="患者姓名" min-width="120" />
         <ElTableColumn prop="patient_mobile" label="手机号" min-width="140" />
         <ElTableColumn prop="occurred_at" label="发生时间" min-width="160" />
-        <ElTableColumn prop="symptom_summary" label="主要症状" min-width="220" show-overflow-tooltip />
+        <ElTableColumn
+          prop="symptom_summary"
+          label="主要症状"
+          min-width="220"
+          show-overflow-tooltip
+        />
         <ElTableColumn label="严重程度" width="100">
           <template #default="{ row }">
             <ElTag :type="severityTagType(row.severity)">
@@ -44,10 +51,16 @@
             </ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn prop="created_at" label="上报时间" min-width="180" />
-        <ElTableColumn label="操作" width="120" fixed="right">
+        <ElTableColumn label="处理状态" width="100"
+          ><template #default="{ row }">{{
+            row.processing_status || '待处理'
+          }}</template></ElTableColumn
+        ><ElTableColumn prop="created_at" label="上报时间" min-width="180" />
+        <ElTableColumn label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <ElButton link type="primary" @click="openDetail(row as AdverseReactionRecord)">查看</ElButton>
+            <ElButton link type="primary" @click="openDetail(row as AdverseReactionRecord)"
+              >查看</ElButton
+            ><ElButton link type="primary" @click="assessment?.open(row.id)">评估/跟进</ElButton>
           </template>
         </ElTableColumn>
       </ElTable>
@@ -90,6 +103,19 @@
 </template>
 
 <script setup lang="ts">
+  import { useRoute } from 'vue-router'
+  const route = useRoute()
+  watch(
+    () => route.fullPath,
+    () => {
+      pagination.current = 1
+      void loadList()
+    }
+  )
+
+  import Assessment from './modules/assessment.vue'
+  const assessment = ref<InstanceType<typeof Assessment>>()
+
   import {
     exportAdverseReactionList,
     fetchAdverseReactionList,
@@ -124,6 +150,7 @@
     loading.value = true
     try {
       const res = await fetchAdverseReactionList({
+        pending: route.query.pending === '1' ? '1' : undefined,
         current: pagination.current,
         size: pagination.size,
         patient_name: searchForm.patient_name || undefined,

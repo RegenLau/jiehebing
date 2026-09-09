@@ -8,7 +8,13 @@
         >
       </div>
       <div class="actions">
-        <ElButton @click="goBack">返回患者列表</ElButton>
+        <ElButton @click="router.push({ path: '/followup/index', query: { user_id: userId } })"
+          >随访任务</ElButton
+        ><ElButton @click="router.push({ path: '/reports/index', query: { user_id: userId } })"
+          >检查报告</ElButton
+        ><ElButton @click="router.push({ path: '/followup/feedback', query: { user_id: userId } })"
+          >每日反馈</ElButton
+        ><ElButton @click="goBack">返回患者列表</ElButton>
         <ElButton @click="loadAll" :loading="pageLoading">刷新</ElButton>
       </div>
     </div>

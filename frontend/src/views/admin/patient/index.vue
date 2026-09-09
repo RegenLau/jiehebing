@@ -4,14 +4,29 @@
       <div>
         <h2>患者管理</h2>
       </div>
-      <div class="actions">
+      <div class="actions"
+        ><ElInput
+          v-model="keyword"
+          placeholder="姓名、手机号、患者编号"
+          clearable
+          @keyup.enter="search"
+        /><ElButton @click="search">查询</ElButton
+        ><ElButton type="primary" @click="management?.open()">新增患者</ElButton>
         <ElButton @click="loadList" :loading="loading">刷新</ElButton>
       </div>
     </div>
 
-    <ElCard shadow="never">
+    <Management ref="management" @saved="loadList" /><ElCard shadow="never">
       <ElTable :data="list" v-loading="loading" border>
-        <ElTableColumn prop="id" label="ID" width="80" />
+        <ElTableColumn prop="id" label="ID" width="80" /><ElTableColumn
+          prop="patient_code"
+          label="患者编号"
+          width="120"
+        /><ElTableColumn prop="group_name" label="研究分组" width="120" /><ElTableColumn
+          prop="study_state"
+          label="研究状态"
+          width="100"
+        />
         <ElTableColumn prop="name" label="患者姓名" min-width="140" />
         <ElTableColumn prop="mobile" label="手机号" min-width="150" />
         <ElTableColumn prop="gender_text" label="性别" width="90" />
@@ -28,9 +43,10 @@
         </ElTableColumn>
         <ElTableColumn prop="enroll_date" label="建档日期" min-width="120" />
         <ElTableColumn prop="created_at" label="创建时间" min-width="180" />
-        <ElTableColumn label="操作" width="120" fixed="right">
+        <ElTableColumn label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <ElButton link type="primary" @click="goPatientDetail(row)">详情</ElButton>
+            <ElButton link type="primary" @click="goPatientDetail(row)">详情</ElButton
+            ><ElButton link type="primary" @click="management?.open(row.id)">研究管理</ElButton>
           </template>
         </ElTableColumn>
       </ElTable>
@@ -52,12 +68,30 @@
 </template>
 
 <script setup lang="ts">
+  import ResearchExport from '@/components/business/research-export/index.vue'
+
+  import Management from './modules/management.vue'
+  const management = ref<InstanceType<typeof Management>>()
+  const keyword = ref('')
+  function search() {
+    pagination.current = 1
+    void loadList()
+  }
+
   import { fetchPatientList, type PatientRecord } from '@/api/patient'
-  import { useRouter } from 'vue-router'
+  import { useRoute, useRouter } from 'vue-router'
 
   defineOptions({ name: 'AdminPatient' })
 
   const router = useRouter()
+  const route = useRoute()
+  watch(
+    () => route.query.study_state,
+    () => {
+      pagination.current = 1
+      void loadList()
+    }
+  )
   const loading = ref(false)
   const list = ref<PatientRecord[]>([])
   const pagination = reactive({
@@ -70,6 +104,9 @@
     loading.value = true
     try {
       const res = await fetchPatientList({
+        keyword: keyword.value,
+        study_state:
+          typeof route.query.study_state === 'string' ? route.query.study_state : undefined,
         current: pagination.current,
         size: pagination.size
       })

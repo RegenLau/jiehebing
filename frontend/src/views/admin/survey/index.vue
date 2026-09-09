@@ -2,7 +2,7 @@
   <div class="survey-page">
     <div class="toolbar">
       <div>
-        <h2>问卷管理</h2>
+        <h2>问卷管理</h2><ElButton type="primary" @click="editor?.open()">新增问卷</ElButton>
       </div>
       <div class="actions">
         <ElInput
@@ -28,14 +28,15 @@
       </div>
     </div>
 
+    <Editor ref="editor" @saved="loadList" />
     <ElCard shadow="never">
       <ElTable :data="list" v-loading="loading" border>
         <ElTableColumn prop="id" label="ID" width="80" />
         <ElTableColumn prop="name" label="问卷名称" min-width="180" />
         <ElTableColumn prop="code" label="模板编码" min-width="180" />
-        <ElTableColumn prop="fillableDay" label="建档后第几天可填" width="150" />
+
         <ElTableColumn prop="questionCount" label="题目数" width="90" />
-        <ElTableColumn prop="answerCount" label="作答数" width="90" />
+        <ElTableColumn prop="answerCount" label="题答案条数" width="90" />
         <ElTableColumn label="状态" width="100">
           <template #default="{ row }">
             <ElTag :type="row.status === 1 ? 'success' : 'info'">
@@ -46,7 +47,11 @@
         <ElTableColumn prop="createdAt" label="创建时间" min-width="180" />
         <ElTableColumn label="操作" min-width="260" fixed="right">
           <template #default="{ row }">
-            <ElButton link type="primary" @click="openDetail(row as SurveyRecord)">详情</ElButton>
+            <ElButton link type="primary" @click="openDetail(row as SurveyRecord)">详情</ElButton
+            ><ElButton link type="primary" @click="editor?.open(row.id)">编辑</ElButton
+            ><ElButton link type="warning" @click="toggleStatus(row as SurveyRecord)">{{
+              row.status === 1 ? '停用' : '启用'
+            }}</ElButton>
             <ElButton
               link
               type="primary"
@@ -122,6 +127,23 @@
 </template>
 
 <script setup lang="ts">
+  import Editor from './modules/editor.vue'
+  import { toggleSurveyStatus } from '@/api/survey'
+  import { ElMessageBox } from 'element-plus'
+  const editor = ref<InstanceType<typeof Editor>>()
+  async function toggleStatus(row: SurveyRecord) {
+    try {
+      await ElMessageBox.confirm(
+        '变更问卷状态不会修改已有答卷和分组安排。',
+        '确认' + (row.status === 1 ? '停用' : '启用')
+      )
+      await toggleSurveyStatus(row.id, row.status === 1 ? 0 : 1)
+      await loadList()
+    } catch {
+      /* 取消或请求错误 */
+    }
+  }
+
   import {
     exportSurveyAnswers,
     fetchSurveyDetail,

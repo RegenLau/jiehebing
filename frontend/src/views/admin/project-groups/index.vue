@@ -36,7 +36,7 @@
           >
           <ElTableColumn label="配置情况" min-width="240"
             ><template #default="{ row }"
-              >随访任务 {{ row.surveys.length + row.tasks.length }} · 受试者
+              >随访任务 {{ row.surveys.length + row.tasks.length }} · 患者
               {{ row.participant_ids?.length || 0 }}</template
             ></ElTableColumn
           >
@@ -78,7 +78,7 @@
             placeholder="选填"
         /></ElFormItem>
       </ElForm>
-      <p class="tip">创建后再设置用药方案、随访任务和受试者。</p>
+      <p class="tip">创建后再设置用药方案、随访任务和患者。</p>
       <template #footer
         ><ElButton :disabled="creating" @click="createVisible = false">取消</ElButton
         ><ElButton type="primary" :loading="creating" @click="submitCreate"

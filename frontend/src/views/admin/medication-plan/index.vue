@@ -35,7 +35,10 @@
           @change="handleSearch"
         >
           <ElOption label="已打卡" :value="1" />
-          <ElOption label="未打卡" :value="0" />
+          <ElOption label="未打卡" :value="0" /><ElOption label="明确未服" :value="2" /><ElOption
+            label="已取消/暂停"
+            :value="3"
+          />
         </ElSelect>
         <ElButton type="primary" @click="handleSearch">查询</ElButton>
         <ElButton @click="loadList" :loading="loading">刷新</ElButton>
@@ -61,7 +64,17 @@
             </ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn prop="checked_at" label="打卡时间" min-width="180" />
+        <ElTableColumn label="跟进" width="190"
+          ><template #default="{ row }"
+            ><ElButton link type="primary" @click="recordResult(row.id, 1)">已服</ElButton
+            ><ElButton link type="warning" @click="recordResult(row.id, 2)">未服</ElButton
+            ><ElButton link @click="recordResult(row.id, 0)">联系</ElButton></template
+          ></ElTableColumn
+        ><ElTableColumn prop="record_reason" label="患者反馈说明" /><ElTableColumn
+          prop="checked_at"
+          label="打卡时间"
+          min-width="180"
+        />
       </ElTable>
 
       <div class="pagination">
@@ -81,6 +94,26 @@
 </template>
 
 <script setup lang="ts">
+  import request from '@/utils/http'
+  import { ElMessageBox } from 'element-plus'
+  async function recordResult(id: number, status: number) {
+    try {
+      const { value } = await ElMessageBox.prompt(
+        '请填写患者反馈来源、未服原因或联系结果。',
+        '登记服药跟进',
+        { inputValidator: (v) => Boolean(v?.trim()) || '请填写说明' }
+      )
+      await request.post({
+        url: '/app/core/medication-plan/' + (status ? 'record' : 'contact'),
+        params: { id, status, reason: value },
+        showSuccessMessage: true
+      })
+      await loadList()
+    } catch {
+      /* 取消或错误 */
+    }
+  }
+
   import { fetchMedicationPlanList, type MedicationPlanRecord } from '@/api/medication-plan'
   import { useRoute } from 'vue-router'
 
@@ -94,7 +127,7 @@
     plan_date: '',
     user_id: undefined as number | undefined,
     scope: 'today' as 'today' | 'all',
-    status: undefined as 0 | 1 | undefined,
+    status: undefined as 0 | 1 | 2 | 3 | undefined,
     overdue: false,
     as_of: undefined as string | undefined,
     overdue_range: undefined as '7d' | '30d' | undefined

@@ -23,6 +23,7 @@ export interface AdverseReactionListParams {
   patient_name?: string
   user_id?: number
   severity?: number
+  pending?: string
 }
 
 export interface AdverseReactionListResponse {
@@ -39,7 +40,9 @@ export function fetchAdverseReactionList(params: AdverseReactionListParams) {
   })
 }
 
-export function exportAdverseReactionList(params: Omit<AdverseReactionListParams, 'current' | 'size'>) {
+export function exportAdverseReactionList(
+  params: Omit<AdverseReactionListParams, 'current' | 'size'>
+) {
   return request.request<Blob>({
     url: '/app/core/adverse-reaction/export',
     method: 'GET',

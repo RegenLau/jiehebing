@@ -20,7 +20,7 @@
               <h3>{{ form.name }}</h3>
               <p>{{ form.description || '暂无分组说明' }}</p>
               <span class="muted"
-                >受试者 {{ form.participant_ids.length }} 人 · 配置第 {{ form.revision }} 版</span
+                >患者 {{ form.participant_ids.length }} 人 · 配置第 {{ form.revision }} 版</span
               >
             </template>
             <div v-else class="fields">
@@ -114,8 +114,8 @@
                 >检查、复诊及其他任务</h4
               ><Schedules v-model="form.tasks" :sources="catalog.task_templates" label="任务模板"
             /></ElTabPane>
-            <ElTabPane label="受试者" name="participants">
-              <ElFormItem label="选择受试者"
+            <ElTabPane label="患者" name="participants">
+              <ElFormItem label="选择患者"
                 ><ElSelect
                   v-model="form.participant_ids"
                   multiple
@@ -137,12 +137,12 @@
               <ElTable
                 :data="participants.filter((p) => form.participant_ids.includes(p.id))"
                 border
-                empty-text="尚未添加受试者"
+                empty-text="尚未添加患者"
                 ><ElTableColumn prop="name" label="姓名" /><ElTableColumn
                   prop="mobile"
                   label="手机号"
               /></ElTable>
-              <p class="muted">受试者是本组患者。加入分组后，不会自动修改其用药或生成任务。</p>
+              <p class="muted">患者加入分组后，不会自动修改其用药或生成任务。</p>
             </ElTabPane>
           </ElTabs>
         </ElForm>
@@ -267,10 +267,13 @@
     form.value.medication = {
       id,
       snapshot: JSON.parse(JSON.stringify(source)),
-      treatment_days: 30,
-      pickup_days: 30,
-      advance_days: 3,
-      quantities: (source.drugs || []).map((d) => ({ drug_id: d.drug_id, quantity: 30 }))
+      treatment_days: source.treatment_days ?? 30,
+      pickup_days: source.pickup_days ?? 30,
+      advance_days: source.advance_days ?? 3,
+      quantities: (source.drugs || []).map((d) => ({
+        drug_id: d.drug_id,
+        quantity: d.quantity ?? 30
+      }))
     }
   }
   async function save() {

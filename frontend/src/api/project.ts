@@ -12,6 +12,7 @@ export interface ProjectPayload {
   research_type: ResearchType
 }
 export interface Drug {
+  quantity?: number
   drug_id: number
   name: string
   specification: string
@@ -22,6 +23,9 @@ export interface Drug {
   precautions: string
 }
 export interface Source {
+  treatment_days?: number
+  pickup_days?: number
+  advance_days?: number
   id: number
   name?: string
   title?: string

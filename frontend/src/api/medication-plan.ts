@@ -31,7 +31,7 @@ export interface MedicationPlanListParams {
   plan_date?: string
   user_id?: number
   scope?: 'today' | 'all'
-  status?: 0 | 1
+  status?: 0 | 1 | 2 | 3
   overdue?: boolean
   overdue_range?: '7d' | '30d'
   as_of?: string

@@ -1,3 +1,12 @@
+import { registerResearchExport } from './research-export.mjs';
+import { registerFeedback } from './feedback.mjs';
+import { registerMedicationRecords } from './medication-records.mjs';
+import { registerAdverseManagement } from './adverse-management.mjs';
+import { registerReports } from './reports.mjs';
+import { registerFollowup } from './followup.mjs';
+import { registerPatientManagement } from './patient-management.mjs';
+import { registerTaskTemplates } from './task-templates.mjs';
+import { registerMedicationSchemes } from './medication-schemes.mjs';
 import { registerProjects } from './projects.mjs';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
@@ -51,6 +60,8 @@ export function createMockServer({ now = () => new Date() } = {}) {
   const today = () => shanghaiDate(clock());
   const timestamp = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(clock());
   const db = createFixtures(clock());
+  for (const survey of db.surveys) survey.version = 1;
+  for (const answer of db.answers) answer.template_snapshot = structuredClone(db.surveys.find(s => s.id === answer.template_id));
   const sessions = new Map();
   const captchas = new Map();
   const nextId = rows => Math.max(0, ...rows.map(r => r.id)) + 1;
@@ -59,9 +70,10 @@ export function createMockServer({ now = () => new Date() } = {}) {
   const answerCount = id => db.answers.filter(a => a.template_id === id).reduce((sum, a) => sum + a.values.length, 0);
   const answerDetail = (userId, templateId) => {
     find(db.patients, userId, '患者');
-    const s = find(db.surveys, templateId, '问卷');
+    let s = find(db.surveys, templateId, '问卷');
     const a = db.answers.find(a => a.user_id === integer(userId) && a.template_id === s.id);
     assert(a, '该患者暂未作答此问卷');
+    s = a.template_snapshot || s;
     return { template: { id: s.id, code: s.code, name: s.name, description: s.description, fillable_day: s.fillableDay }, submitted_at: a.submitted_at,
       questions: s.questions.map(q => {
         const value = a.values.find(v => v.question_id === q.id);
@@ -72,14 +84,17 @@ export function createMockServer({ now = () => new Date() } = {}) {
           answer_summary: q.type === 'TEXT' ? value?.text_value || '-' : selected.map(o => o.label).join('、') || '-' };
       }) };
   };
-  const adverseRows = q => db.adverse.filter(r => (!q.patient_name || r.patient_name.includes(q.patient_name)) && (!integer(q.user_id) || r.user_id === integer(q.user_id)) && (![1, 2, 3].includes(integer(q.severity)) || r.severity === integer(q.severity))).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id - a.id);
+  const adverseRows = q => db.adverse.filter(r => (q.pending!=='1'||(r.processing_status||'待处理')!=='已处理') && (!q.processing_status || (r.processing_status||'待处理')===q.processing_status) && (!q.patient_name || r.patient_name.includes(q.patient_name)) && (!integer(q.user_id) || r.user_id === integer(q.user_id)) && (![1, 2, 3].includes(integer(q.severity)) || r.severity === integer(q.severity))).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id - a.id);
   const routes = new Map();
   const route = (method, path, handler) => routes.set(`${method} ${path}`, handler);
   const core = (method, path, handler) => route(method, `/app/core/${path}`, handler);
   core('GET', 'system/user', ({ admin }) => userInfo(admin));
   core('GET', 'system/menu', () => createMenu());
   core('GET', 'system/dictAll', () => ({ gender: [{ label: '男', value: '1' }, { label: '女', value: '2' }] }));
+  registerTaskTemplates({ core, db, assert, find, page, clean, timestamp, nextId });
+  registerMedicationSchemes({ core, db, assert, find, page, clean, timestamp, nextId });
   registerProjects({ core, db, assert, find, page, clean, isDate, timestamp, nextId });
+  registerResearchExport({core,db,assert,clean,today,spreadsheet});
   core('GET', 'admin/index', () => descId(db.admins).map(safeAdmin));
   const saveAdmin = ({ body: b }, update) => {
     const existing = update ? find(db.admins, b.id, '管理员') : undefined;
@@ -91,7 +106,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
     assert([0, 1].includes(status), '状态值不合法');
     const changedPassword = Boolean(clean(b.password)) && b.password !== existing?.password;
     const row = existing || { id: nextId(db.admins), created_at: timestamp(), gender: '1' };
-    Object.assign(row, { username, phone: clean(b.phone), email: clean(b.email), avatar: clean(b.avatar) || row.avatar || '/api/mock-files/admin-avatar', status, updated_at: timestamp() });
+    Object.assign(row, { realname: clean(b.realname ?? row.realname), hospital_name: clean(b.hospital_name ?? row.hospital_name), department_name:clean(b.department_name ?? row.department_name), username, phone: clean(b.phone), email: clean(b.email), avatar: clean(b.avatar) || row.avatar || '/api/mock-files/admin-avatar', status, updated_at: timestamp() });
     if (clean(b.password)) row.password = String(b.password);
     if (!existing) db.admins.push(row);
     if (existing && (status === 0 || changedPassword)) invalidateSessions(row.id);
@@ -99,7 +114,12 @@ export function createMockServer({ now = () => new Date() } = {}) {
   };
   core('POST', 'admin/save', ctx => saveAdmin(ctx, false));
   core('POST', 'admin/update', ctx => saveAdmin(ctx, true));
-  core('GET', 'patient/index', ({ query }) => page(descId(db.patients), query));
+  registerFollowup({core,db,assert,find,page,clean,isDate,timestamp,nextId,today,shiftDate});
+  registerAdverseManagement({core,db,assert,find,clean,timestamp});
+  registerFeedback({core,db,assert,find,page,clean,isDate,timestamp,nextId,today,shiftDate});
+  registerReports({core,db,assert,find,page,clean,isDate,timestamp,nextId});
+  registerMedicationRecords({core,db,assert,find,clean,isDate,timestamp,nextId,today});
+  registerPatientManagement({core,db,assert,find,page,clean,isDate,timestamp,nextId,today,shiftDate});
   core('GET', 'patient/detail', ({ query }) => find(db.patients, query.user_id, '患者'));
   core('GET', 'patient/medicine-list', ({ query }) => { find(db.patients, query.user_id, '患者'); return page(descId(db.medicines.filter(m => m.user_id === integer(query.user_id))), query); });
   core('GET', 'patient/survey-status', ({ query }) => {
@@ -121,11 +141,12 @@ export function createMockServer({ now = () => new Date() } = {}) {
     const rows = db.plans.filter(r => (!q.patient_name || r.patient_name.includes(q.patient_name)) && (!integer(q.user_id) || r.user_id === integer(q.user_id))
       && (scope !== 'today' || r.plan_date === today()) && (!q.plan_date || r.plan_date === q.plan_date)
       && (!overdue || r.plan_date < asOf) && (!overdue || !overdueRange || r.plan_date >= start));
-    const filtered = ['0', '1'].includes(q.status) ? statusFilter(rows, q) : rows;
+    const filtered = ['0', '1', '2', '3'].includes(q.status) ? statusFilter(rows, q) : rows;
     return { ...page(filtered.sort((a, b) => b.plan_date.localeCompare(a.plan_date) || a.plan_time.localeCompare(b.plan_time) || b.id - a.id), q), scope };
   });
   core('GET', 'adverse-reaction/index', ({ query }) => page(adverseRows(query), query));
   core('GET', 'adverse-reaction/export', ({ query, res }) => spreadsheet(res, 'adverse_reaction_mock.xlsx', ['ID', '患者姓名', '手机号', '发生时间', '主要症状', '症状描述', '严重程度', '处理建议', '状态', '上报时间'], adverseRows(query).map(r => [r.id, r.patient_name, r.patient_mobile, r.occurred_at, r.symptom_summary, r.symptom_description, r.severity_text, r.advice_text, r.status_text, r.created_at])));
+  core('GET','dashboard/research',()=>({patients:db.patients.length,treating:db.patients.filter(p=>p.study_state==='治疗中').length,completed:db.patients.filter(p=>p.study_state==='已完成').length,withdrawn:db.patients.filter(p=>p.study_state==='提前退出').length,reports_pending:db.reports.filter(r=>r.status==='待核对').length,events_pending:db.adverse.filter(a=>(a.processing_status||'待处理')!=='已处理').length,tasks_overdue:db.followupTasks.filter(t=>t.due_date<today()&&!['已完成','已取消'].includes(t.status)).length,tasks_completed:db.followupTasks.filter(t=>t.status==='已完成').length,tasks_total:db.followupTasks.length}));
   core('GET', 'dashboard/overview', ({ query: q }) => {
     const range = ['today', '7d', '30d'].includes(q.range) ? q.range : 'today';
     const date = /^\d{4}-\d{2}-\d{2}$/.test(q.date || '') && !Number.isNaN(Date.parse(q.date)) ? q.date : today();
@@ -146,13 +167,13 @@ export function createMockServer({ now = () => new Date() } = {}) {
   core('POST', 'common-medicine/toggle-status', toggle(db.commonMedicines, '常用药品'));
   core('GET', 'health-article/index', ({ query: q }) => page(statusFilter(db.articles.filter(a => !q.keyword || a.title.includes(q.keyword) || a.summary.includes(q.keyword)), q).sort((a, b) => b.sort - a.sort || b.id - a.id).map(({ content, ...a }) => a), q));
   core('GET', 'health-article/detail', ({ query }) => find(db.articles, query.id, '文章'));
-  core('POST', 'health-article/toggle-status', toggle(db.articles, '文章'));
-  core('POST', 'health-article/save', ({ body: b }) => {
+  core('POST', 'health-article/toggle-status', ctx => {const result=toggle(db.articles,'文章')(ctx);if(result.status===1){const a=find(db.articles,result.id,'文章');a.confirmed_by=ctx.admin.realname||ctx.admin.username;a.confirmed_at=timestamp();}return result;});
+  core('POST', 'health-article/save', ({ body: b, admin }) => {
     const a = integer(b.id) ? find(db.articles, b.id, '文章') : { id: nextId(db.articles), view_count: 0, created_at: timestamp() };
     assert(clean(b.title), '文章标题不能为空'); assert(clean(b.summary), '文章摘要不能为空'); assert(clean(b.content), '文章内容不能为空');
     const status = integer(b.status, 1); const sort = integer(b.sort);
     assert([0, 1].includes(status), '状态值不合法'); assert(sort >= 0, '排序值不能小于0');
-    Object.assign(a, { title: clean(b.title), summary: clean(b.summary), content: clean(b.content), cover: clean(b.cover), sort, status, published_at: clean(b.published_at ?? b.publishedAt) || timestamp(), updated_at: timestamp() });
+    Object.assign(a, { title: clean(b.title), summary: clean(b.summary), content: clean(b.content), cover: clean(b.cover), sort, status, confirmed_by: admin.realname || admin.username, confirmed_at: timestamp(), published_at: clean(b.published_at ?? b.publishedAt) || timestamp(), updated_at: timestamp() });
     if (!integer(b.id)) db.articles.push(a);
     return a;
   });
@@ -160,8 +181,10 @@ export function createMockServer({ now = () => new Date() } = {}) {
   core('GET', 'survey/detail', ({ query }) => find(db.surveys, query.id, '问卷模板'));
   core('POST', 'survey/toggle-status', toggle(db.surveys, '问卷模板'));
   core('POST', 'survey/delete', ({ body: b }) => { const s = find(db.surveys, b.id, '问卷模板'); assert(!db.projectGroups.some(g => g.surveys.some(r => r.id === s.id)), '问卷已被研究分组引用，无法删除，请改为停用'); assert(!answerCount(s.id), '该问卷已有作答记录，无法删除，请改为停用'); db.surveys.splice(db.surveys.indexOf(s), 1); return { id: s.id }; });
-  core('POST', 'survey/save', ({ body: b }) => {
+  core('POST', 'survey/save', ({ body: b, admin }) => {
     const old = integer(b.id) ? find(db.surveys, b.id, '问卷模板') : null;
+    if (old && b.version !== undefined) assert(b.version === (old.version || 1), '问卷已更新，请刷新后编辑');
+    const before = old ? structuredClone({name:old.name,description:old.description,questions:old.questions,version:old.version||1}) : null;
     const code = clean(b.code); const name = clean(b.name); const description = clean(b.description);
     assert(code && code.length <= 64, '模板编码必填且不超过64字符'); assert(name && name.length <= 128, '模板名称必填且不超过128字符'); assert(description.length <= 256, '问卷说明不超过256字符');
     assert(!db.surveys.some(s => s !== old && s.code === code), '模板编码已存在');
@@ -196,12 +219,14 @@ export function createMockServer({ now = () => new Date() } = {}) {
     assert(new Set(questions.map(q => q.id)).size === questions.length, '题目ID重复');
     if (old && answerCount(old.id)) assert(old.questions.every(q => questions.some(n => n.id === q.id)), '该问卷已有作答记录，无法删除题目，请停用后新建');
     const s = old || { id: nextId(db.surveys), createdAt: timestamp() };
-    Object.assign(s, { code, name, description, fillableDay, status, questions, updatedAt: timestamp() });
+    Object.assign(s, { code, name, description, fillableDay, status, questions, version:(old?.version||0)+1, updatedAt: timestamp() });
+    s.history ||= []; s.history.unshift({time:timestamp(),operator:admin.realname||admin.username,before,after:structuredClone({name,description,questions,version:s.version})});
     if (!old) db.surveys.push(s);
     return { id: s.id };
   });
   core('GET', 'survey/export', ({ query, res }) => {
-    const s = find(db.surveys, query.id, '问卷模板');
+    const current = find(db.surveys, query.id, '问卷模板');
+    const s = db.answers.find(a=>a.template_id===current.id)?.template_snapshot || current;
     const rows = db.answers.filter(a => a.template_id === s.id).map(a => {
       const p = find(db.patients, a.user_id, '患者'); const detail = answerDetail(p.id, s.id);
       return [p.id, p.name, p.mobile, a.submitted_at, ...detail.questions.map(q => q.type === 'TEXT' ? q.text_value : q.selected_options.map(o => o.label + (o.input_fields.length ? `（${o.input_fields.map(f => `${f.field_label}：${f.value}`).join('；')}）` : '')).join('、'))];

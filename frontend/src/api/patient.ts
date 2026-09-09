@@ -19,6 +19,8 @@ export interface PatientRecord {
 }
 
 export interface PatientListParams {
+  keyword?: string
+  study_state?: string
   current: number
   size: number
 }

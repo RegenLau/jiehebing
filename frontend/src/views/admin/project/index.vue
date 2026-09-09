@@ -284,7 +284,7 @@
       }
     }
     lines.push(
-      `受试者：${g.participants?.map((p) => `${p.name}（${p.mobile}）`).join('、') || '未添加'}`
+      `患者：${g.participants?.map((p) => `${p.name}（${p.mobile}）`).join('、') || '未添加'}`
     )
     return lines.join('\n')
   }

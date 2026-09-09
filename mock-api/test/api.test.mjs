@@ -584,3 +584,125 @@ test('saved group configuration validates sources and members without changing p
   assert.deepEqual(await api.all(P+'medication-plan/index'),plans)
   assert.deepEqual(await api.all(P+'patient/index'),patients)
 })
+
+test('medication schemes maintain versions, validate drugs, and preserve group snapshots', async t => {
+  const api=await start(t);await api.login();
+  const data=await api.ok(P+'medication-scheme/detail',{query:{id:1}});
+  const body={...data,id:undefined,name:'通用方案新增测试',treatment_days:60,pickup_days:20,advance_days:5,drugs:data.drugs.map(d=>({...d,quantity:40}))};
+  const row=await api.ok(P+'medication-scheme/save',{body});
+  assert.equal(row.treatment_days,60);assert.equal(row.history.length,1);
+  assert.notEqual((await api.json(P+'medication-scheme/save',{body})).code,200);
+  for(const change of [{drugs:[]},{advance_days:21},{drugs:[body.drugs[0],body.drugs[0]]},{drugs:[{...body.drugs[0],times:'25:00'}]},{drugs:[{...body.drugs[0],dose:'0'}]}])assert.notEqual((await api.json(P+'medication-scheme/save',{body:{...body,name:'无效方案',...change}})).code,200);
+  const group=await api.ok(P+'project/group-create',{body:{project_id:1,name:'方案隔离组'}});
+  const configured=await api.ok(P+'project/group-save',{body:{...group,medication:{id:row.id,treatment_days:60,pickup_days:20,advance_days:5,quantities:row.drugs.map(d=>({drug_id:d.drug_id,quantity:40}))}}});
+  const changed=await api.ok(P+'medication-scheme/save',{body:{...row,name:'新版本方案',reason:'更新名称'}});
+  assert.equal(changed.history.length,2);assert.notEqual(changed.version,row.version);
+  assert.notEqual((await api.json(P+'medication-scheme/save',{body:{...row,reason:'旧版本'}})).code,200);
+  const after=await api.ok(P+'project/group-detail',{query:{project_id:1,id:group.id}});
+  assert.deepEqual(after.medication,configured.medication);
+  const disabled=await api.ok(P+'medication-scheme/status',{body:{id:row.id,version:changed.version,status:0,reason:'不再新关联'}});
+  assert.equal(disabled.status,0);
+  const catalog=await api.ok(P+'project/catalog');assert.equal(catalog.medication_schemes.find(s=>s.id===row.id).status,0);
+});
+
+test('task templates support maintenance, filters, revision checks and isolated references', async t=>{
+ const api=await start(t);await api.login();
+ const body={name:'复查模板测试',type:'检查',description:'模拟检查',requirements:'上传原图'};
+ const row=await api.ok(P+'task-template/save',{body});assert.equal(row.history.length,1);
+ assert.notEqual((await api.json(P+'task-template/save',{body})).code,200);
+ assert.notEqual((await api.json(P+'task-template/save',{body:{...body,name:'错误类型',type:'无效'}})).code,200);
+ const g=await api.ok(P+'project/group-create',{body:{project_id:1,name:'模板测试组'}});
+ const configured=await api.ok(P+'project/group-save',{body:{...g,tasks:[{id:row.id,anchor:'enrollment',date:'',offset_days:1,interval_days:7,deadline_days:2,reminders:{start:true,due:true,overdue:false}}]}});
+ const changed=await api.ok(P+'task-template/save',{body:{...row,requirements:'补充检查日期',reason:'完善提交要求'}});assert.notEqual(changed.version,row.version);
+ assert.notEqual((await api.json(P+'task-template/save',{body:{...row,reason:'旧版本'}})).code,200);
+ const after=await api.ok(P+'project/group-detail',{query:{project_id:1,id:g.id}});assert.deepEqual(after.tasks,configured.tasks);
+ const disabled=await api.ok(P+'task-template/status',{body:{id:row.id,version:changed.version,status:0,reason:'停止新关联'}});assert.equal(disabled.status,0);
+ const filtered=await api.ok(P+'task-template/index',{query:{type:'检查',status:0,keyword:'复查模板测试'}});assert.equal(filtered.total,1);
+});
+
+test('editing survey wording preserves historical answer text and exported headers',async t=>{
+ const api=await start(t);await api.login();
+ const original=await api.ok(P+'patient/survey-answer-detail',{query:{user_id:5,template_id:1}});
+ const form=await api.ok(P+'survey/detail',{query:{id:1}});
+ const edited=structuredClone(form);edited.name='新版问卷';edited.questions[0].title='新版题干';edited.questions[0].options[0].label='新版选项';
+ await api.ok(P+'survey/save',{body:edited});
+ const after=await api.ok(P+'patient/survey-answer-detail',{query:{user_id:5,template_id:1}});assert.deepEqual(after,original);
+ const current=await api.ok(P+'survey/detail',{query:{id:1}});assert.equal(current.questions[0].title,'新版题干');assert.equal(current.history.length,1);
+ assert.notEqual((await api.json(P+'survey/save',{body:edited})).code,200);
+});
+
+test('patient registration, treatment and dispensing preserve independent records',async t=>{
+ const api=await start(t);await api.login();
+ const g=await api.ok(P+'project/group-create',{body:{project_id:1,name:'患者入组测试'}});const catalog=await api.ok(P+'project/catalog');const source=catalog.medication_schemes[0];
+ await api.ok(P+'project/group-save',{body:{...g,medication:{id:source.id,treatment_days:30,pickup_days:30,advance_days:3,quantities:source.drugs.map(d=>({drug_id:d.drug_id,quantity:30}))}}});
+ const body={name:'测试患者',mobile:'13900000999',gender:1,age:40,hospital_name:'模拟医院',department_name:'门诊',project_id:1,group_id:g.id,owner_id:1,enroll_date:TODAY,consent_date:TODAY,offline_confirmed:true,consent_confirmed:true};
+ const p=await api.ok(P+'patient/save',{body});assert.equal(p.study_state,'待启用');
+ assert.notEqual((await api.json(P+'patient/save',{body})).code,200);
+ assert.notEqual((await api.json(P+'patient/state',{body:{user_id:p.id,state:'治疗中',effective_date:TODAY,reason:'未确认方案'}})).code,200);
+ const treatment=await api.ok(P+'patient/treatment',{body:{user_id:p.id,start_date:TODAY,treatment_days:30,reason:'医生确认',drugs:source.drugs}});assert.equal(treatment.source_group_id,g.id);
+ await api.ok(P+'patient/state',{body:{user_id:p.id,state:'治疗中',effective_date:TODAY,reason:'确认启用'}});
+ const disp=await api.ok(P+'patient/dispense',{body:{user_id:p.id,issued_date:TODAY,reason:'实际发药',items:treatment.drugs.map(d=>({drug_id:d.drug_id,quantity:30}))}});assert.equal(disp.items.length,source.drugs.length);
+ const before=await api.ok(P+'patient/management',{query:{user_id:p.id}});
+ assert.notEqual((await api.json(P+'patient/dispense',{body:{user_id:p.id,issued_date:TODAY,reason:'错误药品',items:[{drug_id:99999,quantity:1}]}})).code,200);
+ const after=await api.ok(P+'patient/management',{query:{user_id:p.id}});assert.deepEqual(after,before);assert.equal(after.dispensings.length,1);
+ const group=await api.ok(P+'project/group-detail',{query:{project_id:1,id:g.id}});assert.ok(group.participant_ids.includes(p.id));
+ const filtered=await api.ok(P+'patient/index',{query:{keyword:body.mobile}});assert.equal(filtered.total,1);
+});
+
+test('generated execution follows group dates and retains safety tasks when medication pauses',async t=>{
+ const api=await start(t);await api.login();const g=await api.ok(P+'project/group-create',{body:{project_id:1,name:'任务生成测试'}});const source=(await api.ok(P+'project/catalog')).medication_schemes[0];
+ await api.ok(P+'project/group-save',{body:{...g,medication:{id:source.id,treatment_days:10,pickup_days:10,advance_days:2,quantities:source.drugs.map(d=>({drug_id:d.drug_id,quantity:10}))},tasks:[{id:1,anchor:'enrollment',offset_days:1,interval_days:7,deadline_days:2,date:'',reminders:{start:true,due:true,overdue:true}}]}});
+ const p=await api.ok(P+'patient/save',{body:{name:'任务模拟患者',mobile:'13900000888',gender:2,age:35,hospital_name:'测试医院',department_name:'门诊',project_id:1,group_id:g.id,owner_id:1,enroll_date:TODAY,consent_date:TODAY,offline_confirmed:true,consent_confirmed:true}});
+ const body={user_id:p.id,start_date:TODAY,treatment_days:10,reason:'方案确认',drugs:source.drugs};await api.ok(P+'patient/treatment',{body});
+ const plans=await api.all(P+'medication-plan/index',{scope:'all',user_id:p.id});assert.equal(plans.length,20);
+ const tasks=await api.ok(P+'followup/index',{query:{user_id:p.id}});assert.equal(tasks.total,2);assert.equal(tasks.list[1].date,'2026-09-09');assert.equal(tasks.list[1].due_date,'2026-09-10');
+ await api.ok(P+'patient/treatment',{body});assert.equal((await api.ok(P+'followup/index',{query:{user_id:p.id}})).total,2);
+ await api.ok(P+'patient/state',{body:{user_id:p.id,state:'暂停用药',effective_date:TODAY,reason:'医生暂停'}});
+ assert.equal((await api.ok(P+'followup/index',{query:{user_id:p.id}})).list.filter(r=>r.status==='待完成').length,2);
+ await api.ok(P+'followup/update',{body:{id:tasks.list[0].id,action:'contact',reason:'已联系患者'}});assert.equal((await api.ok(P+'followup/detail',{query:{id:tasks.list[0].id}})).status,'待完成');
+ assert.notEqual((await api.json(P+'followup/update',{body:{id:tasks.list[0].id,action:'complete',reason:'不能绕过报告'}})).code,200);
+});
+
+test('report supplementation preserves originals and completes only its matching task',async t=>{
+ const api=await start(t);await api.login();const task=await api.ok(P+'followup/create',{body:{user_id:1,name:'检查任务',type:'检查',date:TODAY,due_date:TODAY,description:'提交报告'}});
+ const file=new FormData();file.append('file',new Blob([Buffer.from('89504e470d0a1a0a','hex')],{type:'image/png'}),'report.png');const uploaded=await api.ok(P+'file/upload-file',{body:file});
+ const report=await api.ok(P+'report/create',{body:{user_id:1,task_id:task.id,type:'血常规',exam_date:TODAY,files:[uploaded.url]}});
+ assert.equal((await api.ok(P+'followup/detail',{query:{id:task.id}})).status,'已提交');
+ assert.notEqual((await api.json(P+'report/create',{body:{user_id:2,task_id:task.id,type:'检查',exam_date:TODAY,files:[uploaded.url]}})).code,200);
+ await api.ok(P+'report/review',{body:{id:report.id,status:'需补充',reason:'图片不清晰',metrics:[]}});
+ assert.equal((await api.ok(P+'followup/detail',{query:{id:task.id}})).status,'需补充');
+ await api.ok(P+'report/supplement',{body:{id:report.id,note:'补传清晰图片',files:[uploaded.url]}});
+ await api.ok(P+'report/review',{body:{id:report.id,status:'已核对',reason:'已核对原图',metrics:[{name:'模拟指标',value:'10',unit:'演示单位',reference:'示例'}]}});
+ const after=await api.ok(P+'report/detail',{query:{id:report.id}});assert.equal(after.versions.length,2);assert.equal(after.history.length,2);assert.equal((await api.ok(P+'followup/detail',{query:{id:task.id}})).status,'已完成');
+ assert.notEqual((await api.json(P+'report/review',{body:{id:report.id,status:'已核对',reason:'重复审核',metrics:[]}})).code,200);
+});
+
+test('adverse assessment separates severity from seriousness and records manual contacts',async t=>{
+ const api=await start(t);await api.login();const original=await api.ok(P+'adverse-reaction/assessment',{query:{id:1}});
+ const body={id:1,revision:0,processing_status:'处理中',owner_id:1,category:'AE',event_name:'模拟事件',assessed_severity:1,serious:true,special_interest:true,relatedness:'待研究者核实',measures:'人工联系并核查',outcome:'',ended_at:'',reason:'记录评估'};
+ const result=await api.ok(P+'adverse-reaction/assess',{body});assert.equal(result.assessment.serious,true);assert.equal(result.assessment.special_interest,true);assert.equal(result.severity,original.severity);
+ assert.notEqual((await api.json(P+'adverse-reaction/assess',{body})).code,200);
+ assert.notEqual((await api.json(P+'adverse-reaction/assess',{body:{...body,revision:1,processing_status:'已处理'}})).code,200);
+ await api.ok(P+'adverse-reaction/contact',{body:{id:1,channel:'电话',result:'无人接听',next_action:'稍后再次联系'}});const after=await api.ok(P+'adverse-reaction/assessment',{query:{id:1}});assert.equal(after.contacts[0].result,'无人接听');assert.equal(after.processing_status,'处理中');
+});
+
+test('feedback preserves per-day raw records and rejects conflicting symptom selections',async t=>{
+ const api=await start(t);await api.login();const body={user_id:20,date:TODAY,no_discomfort:false,symptoms:[{name:'咳嗽',change:'消失'}],note:'后台转录患者反馈',audio_url:''};const row=await api.ok(P+'feedback/record',{body});assert.equal(row.source,'后台代录');assert.equal(row.symptoms[0].change,'消失');assert.notEqual((await api.json(P+'feedback/record',{body})).code,200);assert.notEqual((await api.json(P+'feedback/record',{body:{...body,user_id:21,no_discomfort:true}})).code,200);const filtered=await api.ok(P+'feedback/index',{query:{user_id:20,date:TODAY}});assert.equal(filtered.total,1);
+});
+
+test('manual medication result is explicit and dashboard research metrics derive from rows',async t=>{
+ const api=await start(t);await api.login();const plans=await api.ok(P+'medication-plan/index',{query:{scope:'today',status:0}});const plan=plans.list[0];
+ await api.ok(P+'medication-plan/record',{body:{id:plan.id,status:2,reason:'电话核实患者明确未服'}});const filtered=await api.ok(P+'medication-plan/index',{query:{scope:'today',status:2}});assert.ok(filtered.list.some(r=>r.id===plan.id));
+ const before=await api.ok(P+'dashboard/research');const task=await api.ok(P+'followup/create',{body:{user_id:1,name:'过期复诊',type:'复诊',date:'2026-09-01',due_date:'2026-09-02',description:'核实复诊'}});const middle=await api.ok(P+'dashboard/research');assert.equal(middle.tasks_overdue,before.tasks_overdue+1);await api.ok(P+'followup/update',{body:{id:task.id,action:'complete',reason:'人工核实已复诊'}});const after=await api.ok(P+'dashboard/research');assert.equal(after.tasks_overdue,before.tasks_overdue);assert.equal(after.tasks_completed,before.tasks_completed+1);
+});
+
+test('new research exports are real XLSX and cover the filtered complete dataset',async t=>{
+ const api=await start(t);await api.login();for(let n=0;n<12;n++)await api.ok(P+'followup/create',{body:{user_id:1,name:`导出验证任务${n}`,type:'复诊',date:TODAY,due_date:TODAY,description:'模拟要求'}});
+ const response=await api.raw(P+'research/export',{query:{kind:'tasks',keyword:'导出验证',size:1}});assert.match(response.headers.get('content-type'),/spreadsheetml/);const rows=workbookRows(Buffer.from(await response.arrayBuffer()));assert.equal(rows.length,13);assert.ok(rows.flat().some(v=>v.includes('导出验证任务')));assert.notEqual((await api.json(P+'research/export',{query:{kind:'invalid'}})).code,200);
+});
+
+test('daily feedback stores speech-converted text without audio fields or export columns',async t=>{
+ const api=await start(t);await api.login();const note='语音转文字：今天咳嗽比昨天减轻，吃饭正常。';const body={user_id:24,date:TODAY,no_discomfort:false,symptoms:[{name:'咳嗽',change:'减轻'}],note};const saved=await api.ok(P+'feedback/record',{body});assert.equal(saved.note,note);assert.equal('audio_url' in saved,false);
+ const rows=workbookRows(Buffer.from(await(await api.raw(P+'research/export',{query:{kind:'feedback',user_id:24}})).arrayBuffer()));assert.ok(rows.flat().includes(note));assert.ok(!rows[0].some(v=>v.includes('语音地址')));
+ assert.notEqual((await api.json(P+'feedback/record',{body:{...body,user_id:23,audio_url:'/api/mock-files/test'}})).code,200);
+});
