@@ -1,0 +1,1 @@
+import{aW as t}from"./index-C8FRLPub.js";function r(){return t.get({url:"/core/system/statistics"})}function e(){return t.get({url:"/core/system/loginChart"})}function s(){return t.get({url:"/core/system/loginBarChart"})}export{r as a,e as b,s as f};

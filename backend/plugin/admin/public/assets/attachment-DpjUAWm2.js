@@ -1,0 +1,1 @@
+import{aW as t}from"./index-C8FRLPub.js";const a={list:a=>t.get({url:"/core/attachment/index",params:a}),update:a=>t.put({url:"/core/attachment/update",data:a}),delete:a=>t.del({url:"/core/attachment/destroy",data:a}),move:a=>t.post({url:"/core/attachment/move",data:a})};export{a};

@@ -1,0 +1,1 @@
+import{aW as r}from"./index-C8FRLPub.js";const e={monitor:e=>r.get({url:"/core/server/monitor",params:e}),cache:e=>r.get({url:"/core/server/cache",params:e}),clear:e=>r.post({url:"/core/server/clear",params:e})};export{e as a};

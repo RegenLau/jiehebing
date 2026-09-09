@@ -1,0 +1,1 @@
+import{aW as e}from"./index-C8FRLPub.js";const t={list:t=>e.get({url:"/core/dept/index",params:t}),read:t=>e.get({url:"/core/dept/read?id="+t}),save:t=>e.post({url:"/core/dept/save",data:t}),update:t=>e.put({url:"/core/dept/update",data:t}),delete:t=>e.del({url:"/core/dept/destroy",data:t}),accessDept:()=>e.get({url:"/core/dept/accessDept"})};export{t as d};

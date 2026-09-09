@@ -1,0 +1,61 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  BACKEND_IMAGE_NAME: tb-follow-api
+  FRONTEND_IMAGE_NAME: tb-follow-web
+  REGISTRY_URL: registry.cn-beijing.aliyuncs.com/huiyitong
+
+build_backend_dev_docker:
+  stage: build
+  before_script:
+    - cd backend
+    - cp .env.dev .env
+  script:
+    - docker build -t $BACKEND_IMAGE_NAME:develop -f Dockerfile .
+    - docker login registry.cn-beijing.aliyuncs.com -u lingjiansi -p Huiyitong123
+    - docker tag $BACKEND_IMAGE_NAME:develop $REGISTRY_URL/$BACKEND_IMAGE_NAME:develop
+    - docker push $REGISTRY_URL/$BACKEND_IMAGE_NAME:develop
+  only:
+    - develop
+    - tags
+  tags:
+    - builder-root
+
+build_backend_prod_docker:
+  stage: build
+  before_script:
+    - cd backend
+    - cp .env.pro .env
+  script:
+    - docker build -t $BACKEND_IMAGE_NAME:latest -f Dockerfile .
+    - docker login registry.cn-beijing.aliyuncs.com -u lingjiansi -p Huiyitong123
+    - docker tag $BACKEND_IMAGE_NAME:latest $REGISTRY_URL/$BACKEND_IMAGE_NAME:latest
+    - docker push $REGISTRY_URL/$BACKEND_IMAGE_NAME:latest
+  only:
+    - main
+    - tags
+  tags:
+    - builder-root
+
+
+deploy_docker:
+  stage: deploy
+  script:
+    - echo SUCCESS
+  only:
+    - main
+    - tags
+  tags:
+    - builder-root
+
+deploy_dev_docker:
+  stage: deploy
+  script:
+    - echo SUCCESS
+  only:
+    - develop
+    - tags
+  tags:
+    - builder-root

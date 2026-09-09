@@ -1,0 +1,1 @@
+import{aW as e}from"./index-C8FRLPub.js";const a={list:a=>e.get({url:"/core/category/index",params:a}),read:a=>e.get({url:"/core/category/read?id="+a}),save:a=>e.post({url:"/core/category/save",data:a}),update:a=>e.put({url:"/core/category/update",data:a}),delete:a=>e.del({url:"/core/category/destroy",data:a})};export{a as c};

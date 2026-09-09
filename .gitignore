@@ -1,0 +1,22 @@
+node_modules/
+dist/
+dist-ssr/
+.DS_Store
+*.log
+*.local
+.cursorrules
+.idea
+
+frontend/dist/
+frontend/dist-ssr/
+frontend/node_modules/
+frontend/src/types/import/auto-imports.d.ts
+frontend/src/types/import/components.d.ts
+frontend/.auto-import.json
+
+mock-api/node_modules/
+.history/
+
+# Local browser verification artifacts
+.playwright-cli/
+output/playwright/
