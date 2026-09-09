@@ -8,6 +8,12 @@ export function shiftDate(date, offset) {
   return d.toISOString().slice(0, 10);
 }
 
+export function ageOnDate(birthDate, date) {
+  const [birthYear, birthMonth, birthDay] = birthDate.split('-').map(Number);
+  const [year, month, day] = date.split('-').map(Number);
+  return year - birthYear - (month < birthMonth || month === birthMonth && day < birthDay ? 1 : 0);
+}
+
 export function createFixtures(now) {
   const today = shanghaiDate(now);
   const time = `${today} 09:00:00`;
@@ -18,14 +24,34 @@ export function createFixtures(now) {
     protocol_version: 'V1.0', effective_date: shiftDate(today, -100), purpose: '用于演示研究项目信息维护，不对应真实临床研究。', notes: '',
     research_type: ['open', 'single_blind', 'double_blind'][i], status, created_at: time, updated_at: time, history: [{ action: '初始化', operator: '模拟系统', time, note: '演示项目数据' }]
   }));
-  const patients = Array.from({ length: 28 }, (_, i) => ({
-    id: i + 1, name: `模拟患者${String(i + 1).padStart(2, '0')}`, mobile: `138****${String(i + 1).padStart(4, '0')}`,
-    gender: i % 2 + 1, gender_text: i % 2 ? '女' : '男', age: 24 + i,
-    hospital_name: `模拟医院${i % 3 + 1}`, department_name: '结核病门诊', visit_type: i % 3 ? 1 : 2,
-    visit_type_text: i % 3 ? '门诊' : '住院', is_archived: i < 24 ? 1 : 0,
-    enroll_date: i < 24 ? shiftDate(today, i < 12 ? -(40 + i) : i < 16 ? -(i - 11) : -(i + 3)) : '', status: 1,
-    created_at: `${shiftDate(today, i < 12 ? -(40 + i) : i < 16 ? -(i - 11) : -(i + 3))} 06:00:00`, updated_at: time
-  }));
+  const patientProfiles = [
+    ['模拟患者·林安然', '13910001001', 2, '1988-03-12'], ['模拟患者·周明远', '13910001002', 1, '1979-11-26'],
+    ['模拟患者·陈嘉禾', '13910001003', 1, '1992-07-08'], ['模拟患者·赵清妍', '13910001004', 2, '1985-01-19'],
+    ['模拟患者·孙景行', '13910001005', 1, '1971-09-03'], ['模拟患者·吴念慈', '13910001006', 2, '1996-05-22'],
+    ['模拟患者·郑云帆', '13910001007', 1, '1982-12-14'], ['模拟患者·王舒宁', '13910001008', 2, '1990-04-30'],
+    ['模拟患者·冯知远', '13910001009', 1, '1968-08-17'], ['模拟患者·褚静宜', '13910001010', 2, '1976-02-09'],
+    ['模拟患者·卫向晨', '13910001011', 1, '1998-10-05'], ['模拟患者·蒋若溪', '13910001012', 2, '1987-06-28'],
+    ['模拟患者·沈致远', '13910001013', 1, '1974-03-16'], ['模拟患者·韩书瑶', '13910001014', 2, '1994-09-21'],
+    ['模拟患者·杨修文', '13910001015', 1, '1980-01-07'], ['模拟患者·朱清和', '13910001016', 2, '1965-11-11'],
+    ['模拟患者·秦望舒', '13910001017', 2, '1999-07-24'], ['模拟患者·许承安', '13910001018', 1, '1983-05-13'],
+    ['模拟患者·何雨晴', '13910001019', 2, '1978-12-02'], ['模拟患者·吕知行', '13910001020', 1, '1991-08-09'],
+    ['模拟患者·施婉宁', '13910001021', 2, '1986-04-18'], ['模拟患者·张怀瑾', '13910001022', 1, '1970-10-27'],
+    ['模拟患者·孔思齐', '13910001023', 1, '1995-02-15'], ['模拟患者·曹静姝', '13910001024', 2, '1981-06-06'],
+    ['模拟患者·严嘉树', '13910001025', 1, '1989-09-12'], ['模拟患者·华安琪', '13910001026', 2, '1973-01-25'],
+    ['模拟患者·金予安', '13910001027', 1, '1997-11-08'], ['模拟患者·魏清越', '13910001028', 2, '1984-05-31']
+  ];
+  const patients = patientProfiles.map(([name, mobile, gender, birth_date], i) => {
+    const offset = i < 12 ? -(40 + i) : i < 16 ? -(i - 11) : -(i + 3);
+    const enroll_date = shiftDate(today, offset);
+    return {
+      id: i + 1, patient_code: `TB-MOCK-${String(i + 1).padStart(3, '0')}`, name, mobile, gender,
+      gender_text: gender === 1 ? '男' : '女', birth_date, age: ageOnDate(birth_date, today),
+      is_archived: 1, login_enabled: true, created_via: 'admin', study_state: '待启用',
+      enroll_date, offline_confirmed: true, consent_confirmed: true,
+      identity_confirmed: false, medicine_confirmed: false, status: 1,
+      created_at: `${enroll_date} 06:00:00`, updated_at: time
+    };
+  });
   const drugNames = ['异烟肼片', '利福平胶囊', '吡嗪酰胺片', '盐酸乙胺丁醇片'];
   const commonMedicines = Array.from({ length: 16 }, (_, i) => ({
     id: i + 1, common_name: drugNames[i % 4], company: `模拟药业${i % 4 + 1}`, specification: '演示规格',
@@ -34,7 +60,7 @@ export function createFixtures(now) {
     thumb: '/api/mock-files/medicine-cover', sort_order: i, status: i % 5 ? 1 : 0,
     status_text: i % 5 ? '启用' : '停用', created_at: `${shiftDate(today, -60)} 06:00:00`, updated_at: time
   }));
-  const medicines = patients.filter(p => p.is_archived).flatMap((p, i) => [0, 1].map((n) => {
+  const medicines = patients.filter(p => p.id <= 24).flatMap((p, i) => [0, 1].map((n) => {
     const m = commonMedicines[(i + n) % 16];
     return { ...m, id: i * 2 + n + 1, user_id: p.id, name: m.common_name, remark: '模拟用药记录', trade_name: '模拟药品',
       medicine_count: '30', batch_no: `MOCK-${p.id}-01`, sort: n, source: n ? 'manual' : 'ocr', source_text: n ? '手动添加' : '识别导入', created_at: `${p.enroll_date} 07:00:00` };

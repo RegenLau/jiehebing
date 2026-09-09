@@ -5,58 +5,71 @@
     width="min(1000px,95vw)"
     :close-on-click-modal="false"
     :before-close="close"
-    ><ElTabs v-model="tab"
-      ><ElTabPane label="基础与入组" name="base"
-        ><ElForm label-position="top" :disabled="saving"
-          ><div class="grid"
-            ><ElFormItem label="姓名"><ElInput v-model="form.name" /></ElFormItem
-            ><ElFormItem label="手机号"><ElInput v-model="form.mobile" /></ElFormItem
-            ><ElFormItem label="性别"
-              ><ElSelect v-model="form.gender"
-                ><ElOption label="男" :value="1" /><ElOption
-                  label="女"
-                  :value="2" /></ElSelect></ElFormItem
-            ><ElFormItem label="年龄"
-              ><ElInputNumber v-model="form.age" :min="0" :max="120" /></ElFormItem
-            ><ElFormItem label="医院/中心"><ElInput v-model="form.hospital_name" /></ElFormItem
-            ><ElFormItem label="科室"><ElInput v-model="form.department_name" /></ElFormItem
-            ><ElFormItem label="研究项目"
-              ><ElSelect
-                v-model="form.project_id"
-                :disabled="Boolean(originalProject)"
-                @change="loadGroups"
-                ><ElOption
-                  v-for="p in projects"
-                  :key="p.id"
-                  :label="p.name"
-                  :value="p.id" /></ElSelect></ElFormItem
-            ><ElFormItem label="研究分组"
-              ><ElSelect v-model="form.group_id" :disabled="Boolean(originalProject)"
-                ><ElOption
-                  v-for="g in groups"
-                  :key="g.id"
-                  :label="g.name"
-                  :value="g.id!" /></ElSelect></ElFormItem
-            ><ElFormItem label="负责人员"
-              ><ElSelect v-model="form.owner_id"
-                ><ElOption
-                  v-for="a in owners"
-                  :key="a.id"
-                  :label="a.realname || a.username"
-                  :value="a.id"
-                  :disabled="a.status !== 1" /></ElSelect></ElFormItem
-            ><ElFormItem label="入组基准日"
-              ><ElDatePicker v-model="form.enroll_date" value-format="YYYY-MM-DD" /></ElFormItem
-            ><ElFormItem label="知情同意日期"
-              ><ElDatePicker
-                v-model="form.consent_date"
-                value-format="YYYY-MM-DD" /></ElFormItem></div
-          ><div class="toolbar"
-            ><ElCheckbox v-model="form.offline_confirmed">已在线下确认入组</ElCheckbox
-            ><ElCheckbox v-model="form.consent_confirmed">已登记知情同意</ElCheckbox></div
-          ><ElFormItem label="修改说明"><ElInput v-model="form.reason" /></ElFormItem></ElForm
-        ><ElButton type="primary" :loading="saving" @click="saveBase">保存档案</ElButton></ElTabPane
-      >
+  >
+    <ElAlert
+      v-if="!form.id"
+      title="患者建档后，方可使用该手机号登录患者端小程序"
+      type="info"
+      :closable="false"
+      show-icon
+      class="create-tip" />
+    <ElForm label-position="top" :disabled="saving">
+      <div class="grid">
+        <ElFormItem label="姓名"><ElInput v-model="form.name" /></ElFormItem>
+        <ElFormItem label="手机号"><ElInput v-model="form.mobile" /></ElFormItem>
+        <ElFormItem label="性别">
+          <ElSelect v-model="form.gender">
+            <ElOption label="男" :value="1" />
+            <ElOption label="女" :value="2" />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem label="出生日期">
+          <ElDatePicker
+            v-model="form.birth_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="请选择出生年月日"
+            :disabled-date="disableFutureDate"
+          />
+        </ElFormItem>
+        <ElFormItem label="研究项目">
+          <ElSelect
+            v-model="form.project_id"
+            :disabled="Boolean(originalProject)"
+            @change="loadGroups"
+          >
+            <ElOption v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem label="研究分组">
+          <ElSelect v-model="form.group_id" :disabled="Boolean(originalProject)">
+            <ElOption v-for="g in groups" :key="g.id" :label="g.name" :value="g.id!" />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem label="负责人员">
+          <ElSelect v-model="form.owner_id">
+            <ElOption
+              v-for="a in owners"
+              :key="a.id"
+              :label="a.realname || a.username"
+              :value="a.id"
+              :disabled="a.status !== 1"
+            />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem label="入组基准日">
+          <ElDatePicker v-model="form.enroll_date" type="date" value-format="YYYY-MM-DD" />
+        </ElFormItem>
+      </div>
+      <div class="toolbar">
+        <ElCheckbox v-model="form.offline_confirmed">已在线下确认入组</ElCheckbox>
+        <ElCheckbox v-model="form.consent_confirmed">已登记知情同意</ElCheckbox>
+      </div>
+      <ElFormItem v-if="form.id" label="修改说明"><ElInput v-model="form.reason" /></ElFormItem>
+    </ElForm>
+    <ElButton type="primary" :loading="saving" @click="saveBase">保存档案</ElButton>
+
+    <ElTabs v-if="form.id" v-model="tab" class="management-tabs">
       <ElTabPane v-if="form.id" label="个体用药" name="treatment"
         ><p>从分组配置带出后，由医生确认患者实际方案。</p
         ><ElButton :disabled="saving" @click="fromGroup">带出分组方案</ElButton
@@ -186,14 +199,11 @@
     name: string
     mobile: string
     gender: number
-    age: number
-    hospital_name: string
-    department_name: string
+    birth_date: string
     project_id?: number
     group_id?: number
     owner_id?: number
     enroll_date: string
-    consent_date: string
     offline_confirmed: boolean
     consent_confirmed: boolean
     identity_confirmed: boolean
@@ -252,11 +262,8 @@
     name: '',
     mobile: '',
     gender: 1,
-    age: 30,
-    hospital_name: '',
-    department_name: '',
+    birth_date: '',
     enroll_date: '',
-    consent_date: '',
     offline_confirmed: false,
     consent_confirmed: false,
     identity_confirmed: false,
@@ -266,7 +273,7 @@
   const emit = defineEmits<{ saved: [] }>(),
     visible = ref(false),
     saving = ref(false),
-    tab = ref('base'),
+    tab = ref('treatment'),
     form = ref(blank()),
     originalProject = ref<number>(),
     projects = ref<ProjectRecord[]>([]),
@@ -310,7 +317,7 @@
     form.value = blank()
     stock.value = []
     stockForm.value = { drug_id: undefined, date: '', quantity: 0, reason: '' }
-    tab.value = 'base'
+    tab.value = 'treatment'
     originalProject.value = undefined
     treatment.value = { start_date: '', treatment_days: 30, reason: '', drugs: [] }
     stateReason.value = ''
@@ -396,6 +403,7 @@
   function close(done: () => void) {
     if (!saving.value) done()
   }
+  const disableFutureDate = (date: Date) => date.getTime() > Date.now()
   defineExpose({ open })
 </script>
 <style scoped>
@@ -409,6 +417,13 @@
     align-items: center;
     gap: 16px;
     margin: 16px 0;
+  }
+  .create-tip,
+  .management-tabs {
+    margin-top: 16px;
+  }
+  :deep(.el-date-editor.el-input) {
+    width: 100%;
   }
   .drug {
     border: 1px solid var(--el-border-color);

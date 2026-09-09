@@ -6,10 +6,8 @@ export interface ProjectPayload {
   code: string
   name: string
   purpose: string
-  notes: string
   start_date: string
   end_date: string
-  research_type: ResearchType
 }
 export interface Drug {
   quantity?: number
@@ -77,7 +75,10 @@ export interface Catalog {
 export interface ProjectRecord extends ProjectPayload {
   id: number
   status: ProjectStatus
+  research_type?: ResearchType
+  notes?: string
   group_count?: number
+  patient_count?: number
   groups?: GroupRecord[]
   created_at: string
   updated_at: string

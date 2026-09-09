@@ -24,10 +24,9 @@
         <div><span>患者姓名：</span>{{ patient.name || '-' }}</div>
         <div><span>手机号：</span>{{ patient.mobile || '-' }}</div>
         <div><span>性别：</span>{{ patient.gender_text || '-' }}</div>
-        <div><span>年龄：</span>{{ patient.age || 0 }}</div>
-        <div><span>就诊医院：</span>{{ patient.hospital_name || '-' }}</div>
-        <div><span>就诊科室：</span>{{ patient.department_name || '-' }}</div>
-        <div><span>就诊类型：</span>{{ patient.visit_type_text || '-' }}</div>
+        <div><span>出生日期：</span>{{ patient.birth_date || '-' }}</div>
+        <div><span>年龄：</span>{{ patient.age ?? '-' }}</div>
+        <div><span>患者端登录：</span>{{ patient.login_enabled ? '可登录' : '不可登录' }}</div>
         <div><span>建档日期：</span>{{ patient.enroll_date || '-' }}</div>
       </div>
     </ElCard>
@@ -355,12 +354,11 @@
     mobile: '',
     gender: 0,
     gender_text: '',
+    birth_date: '',
     age: 0,
-    hospital_name: '',
-    department_name: '',
-    visit_type: 0,
-    visit_type_text: '',
     is_archived: 0,
+    login_enabled: false,
+    created_via: '',
     enroll_date: '',
     status: 0,
     created_at: '',

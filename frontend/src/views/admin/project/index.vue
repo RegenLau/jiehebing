@@ -35,15 +35,13 @@
           min-width="220"
           show-overflow-tooltip
         />
-        <ElTableColumn label="研究类型" width="110"
-          ><template #default="{ row }">{{ typeLabel(row.research_type) }}</template></ElTableColumn
-        >
         <ElTableColumn label="研究周期" min-width="210"
           ><template #default="{ row }"
             >{{ row.start_date }} 至 {{ row.end_date }}</template
           ></ElTableColumn
         >
         <ElTableColumn prop="group_count" label="分组数" width="80" />
+        <ElTableColumn prop="patient_count" label="患者数" width="80" />
         <ElTableColumn label="状态" width="100"
           ><template #default="{ row }"
             ><ElTag :type="row.status === 1 ? 'success' : 'info'">{{
@@ -51,9 +49,8 @@
             }}</ElTag></template
           ></ElTableColumn
         >
-        <ElTableColumn label="操作" width="230" fixed="right"
+        <ElTableColumn label="操作" width="190" fixed="right"
           ><template #default="{ row }"
-            ><ElButton link type="primary" @click="showDetail(row.id)">详情</ElButton
             ><ElButton
               link
               type="primary"
@@ -93,14 +90,6 @@
           ><ElFormItem label="项目名称" prop="name"
             ><ElInput v-model.trim="form.name" maxlength="100"
           /></ElFormItem>
-          <ElFormItem label="研究类型" prop="research_type"
-            ><ElSelect v-model="form.research_type"
-              ><ElOption
-                v-for="s in types"
-                :key="s.value"
-                :label="s.label"
-                :value="s.value" /></ElSelect
-          ></ElFormItem>
           <ElFormItem label="开始日期" prop="start_date"
             ><ElDatePicker v-model="form.start_date" value-format="YYYY-MM-DD" /></ElFormItem
           ><ElFormItem label="结束日期" prop="end_date"
@@ -112,64 +101,10 @@
             type="textarea"
             :rows="3"
             maxlength="1000"
-            show-word-limit /></ElFormItem
-        ><ElFormItem label="备注"
-          ><ElInput v-model.trim="form.notes" type="textarea" maxlength="1000" show-word-limit
-        /></ElFormItem> </ElForm
+            show-word-limit /></ElFormItem></ElForm
       ><template #footer
         ><ElButton :disabled="saving" @click="formVisible = false">取消</ElButton
         ><ElButton type="primary" :loading="saving" @click="submit">保存</ElButton></template
-      >
-    </ElDialog>
-    <ElDialog
-      v-model="detailVisible"
-      title="研究项目详情"
-      width="min(1140px,96vw)"
-      :close-on-click-modal="false"
-    >
-      <div v-loading="detailLoading" style="min-height: 240px"
-        ><template v-if="detail"
-          ><h3>{{ detail.name }}</h3
-          ><ElTabs v-model="tab">
-            <ElTabPane label="基本信息" name="base"
-              ><ElDescriptions :column="2" border
-                ><ElDescriptionsItem v-for="(label, key) in labels" :key="key" :label="label">{{
-                  key === 'research_type' ? typeLabel(detail.research_type) : detail[key] || '—'
-                }}</ElDescriptionsItem
-                ><ElDescriptionsItem label="状态">{{
-                  statusLabel(detail.status)
-                }}</ElDescriptionsItem></ElDescriptions
-              ></ElTabPane
-            >
-            <ElTabPane label="变更记录" name="history"
-              ><ElTable :data="detail.history" border
-                ><ElTableColumn prop="time" label="时间" width="170" /><ElTableColumn
-                  prop="operator"
-                  label="操作人"
-                  width="110"
-                /><ElTableColumn prop="action" label="操作" width="100" /><ElTableColumn
-                  prop="note"
-                  label="说明"
-                  min-width="160"
-                /><ElTableColumn label="修改内容" min-width="250"
-                  ><template #default="{ row }"
-                    ><div v-for="(c, i) in row.changes" :key="i"
-                      ><template v-if="c.field !== 'group'"
-                        >{{ changeLabel(c.field) }}：{{ changeValue(c.field, c.before) }} →
-                        {{ changeValue(c.field, c.after) }}</template
-                      ><ElCollapse v-else
-                        ><ElCollapseItem title="查看分组配置修改前后内容"
-                          ><strong>修改前</strong><pre>{{ groupSummary(c.before) }}</pre
-                          ><strong>修改后</strong><pre>{{ groupSummary(c.after) }}</pre>
-                        </ElCollapseItem></ElCollapse
-                      ></div
-                    ></template
-                  ></ElTableColumn
-                ></ElTable
-              ></ElTabPane
-            >
-          </ElTabs></template
-        ></div
       >
     </ElDialog>
     <ElDialog
@@ -213,11 +148,9 @@
     fetchProjectDetail,
     saveProject,
     changeProjectStatus,
-    type GroupRecord,
     type ProjectPayload,
     type ProjectRecord,
-    type ProjectStatus,
-    type ResearchType
+    type ProjectStatus
   } from '@/api/project'
   import { useRouter } from 'vue-router'
   const router = useRouter()
@@ -227,95 +160,28 @@
     { value: 1, label: '进行中' },
     { value: 2, label: '已结束' }
   ]
-  const types = [
-    { value: 'open', label: '开放研究' },
-    { value: 'single_blind', label: '单盲研究' },
-    { value: 'double_blind', label: '双盲研究' }
-  ]
   const statusLabel = (v: number) => statuses.find((s) => s.value === v)?.label || '未知'
-  const typeLabel = (v: string) => types.find((s) => s.value === v)?.label || '未填写'
-  const labels = {
-    code: '项目编号',
-    name: '项目名称',
-    research_type: '研究类型',
-    start_date: '开始日期',
-    end_date: '结束日期',
-    purpose: '研究目的',
-    notes: '备注'
-  }
-  const changeLabel = (key: string) =>
-    key === 'status' ? '状态' : labels[key as keyof typeof labels] || key
-  const changeValue = (key: string, value: unknown) =>
-    key === 'status'
-      ? statusLabel(Number(value))
-      : key === 'research_type'
-        ? typeLabel(String(value))
-        : String(value || '（空）')
-  function groupSummary(value: unknown) {
-    const g = value as GroupRecord
-    if (!g || !g.name) return '尚未创建'
-    const m = g.medication
-    const lines = [
-      `分组：${g.name}`,
-      `说明：${g.description || '无'}`,
-      `用药方案：${m?.snapshot.name || '未关联'}`
-    ]
-    if (m) {
-      lines.push(
-        `治疗 ${m.treatment_days} 天；取药周期 ${m.pickup_days} 天；提前 ${m.advance_days} 天提醒`
-      )
-      for (const d of m.snapshot.drugs || [])
-        lines.push(
-          `${d.name}：${d.dose}${d.unit}/次，${d.frequency}，${d.times}；首次发药 ${m.quantities.find((q) => q.drug_id === d.drug_id)?.quantity || 0}${d.unit}`
-        )
-    }
-    for (const [label, rows] of [
-      ['问卷', g.surveys],
-      ['任务', g.tasks]
-    ] as const) {
-      for (const r of rows || []) {
-        const anchor =
-          r.anchor === 'date'
-            ? r.date
-            : `${r.anchor === 'enrollment' ? '入组' : '开始用药'}后 ${r.offset_days} 天`
-        lines.push(
-          `${label}：${r.snapshot.name}；${anchor}；${r.interval_days ? `每 ${r.interval_days} 天` : '单次'}；期限 ${r.deadline_days} 天；提醒：${[r.reminders.start && '开始', r.reminders.due && '到期', r.reminders.overdue && '逾期'].filter(Boolean).join('、') || '无'}`
-        )
-      }
-    }
-    lines.push(
-      `患者：${g.participants?.map((p) => `${p.name}（${p.mobile}）`).join('、') || '未添加'}`
-    )
-    return lines.join('\n')
-  }
   const blank = (): ProjectPayload => ({
     code: '',
     name: '',
-    research_type: 'open',
     start_date: '',
     end_date: '',
-    purpose: '',
-    notes: ''
+    purpose: ''
   })
   const list = ref<ProjectRecord[]>([]),
-    loading = ref(false),
-    detailLoading = ref(false)
+    loading = ref(false)
   const pager = reactive({ current: 1, size: 10, total: 0 }),
     search = reactive({ keyword: '', status: undefined as ProjectStatus | undefined })
   const form = ref(blank()),
     formRef = ref<FormInstance>(),
     formVisible = ref(false),
     saving = ref(false)
-  const detail = ref<ProjectRecord>(),
-    detailVisible = ref(false),
-    tab = ref('base')
   const statusVisible = ref(false),
     statusSaving = ref(false),
     statusProject = ref<ProjectRecord>(),
     targetStatus = ref<ProjectStatus>(),
     reason = ref('')
   let request = 0,
-    detailRequest = 0,
     editRequest = 0
   const rules: FormRules = {
     code: [
@@ -323,7 +189,6 @@
       { pattern: /^[A-Za-z0-9][A-Za-z0-9_-]*$/, message: '编号仅支持字母、数字、短横线和下划线' }
     ],
     name: [{ required: true, message: '请填写项目名称' }],
-    research_type: [{ required: true, message: '请选择研究类型' }],
     start_date: [{ required: true, message: '请选择开始日期' }],
     end_date: [{ required: true, message: '请选择结束日期' }]
   }
@@ -368,11 +233,9 @@
         id: r.id,
         code: r.code,
         name: r.name,
-        research_type: r.research_type as ResearchType,
         start_date: r.start_date,
         end_date: r.end_date,
-        purpose: r.purpose,
-        notes: r.notes
+        purpose: r.purpose
       }
       formVisible.value = true
       await nextTick()
@@ -396,24 +259,6 @@
       /* 保留表单 */
     } finally {
       saving.value = false
-    }
-  }
-  async function showDetail(id: number) {
-    tab.value = 'base'
-    detail.value = undefined
-    detailVisible.value = true
-    await getDetail(id)
-  }
-  async function getDetail(id: number) {
-    const seq = ++detailRequest
-    detailLoading.value = true
-    try {
-      const r = await fetchProjectDetail(id)
-      if (seq === detailRequest) detail.value = r
-    } catch {
-      /* 请求层提示 */
-    } finally {
-      if (seq === detailRequest) detailLoading.value = false
     }
   }
   async function openStatus(id: number) {
@@ -489,15 +334,5 @@
   .fields :deep(.el-date-editor),
   .fields :deep(.el-select) {
     width: 100%;
-  }
-  pre {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    max-height: 320px;
-    overflow: auto;
-  }
-  .project-page :deep(.el-descriptions__content) {
-    overflow-wrap: anywhere;
-    white-space: pre-wrap;
   }
 </style>

@@ -15,14 +15,8 @@
         <ElEmpty v-if="!project.groups?.length" description="当前项目还没有分组"
           ><ElButton type="primary" @click="openGroup()">创建第一个分组</ElButton></ElEmpty
         >
-        <ElTable v-else :data="project.groups" border @row-click="(row) => openGroup(row.id)">
-          <ElTableColumn label="分组名称" min-width="160"
-            ><template #default="{ row }"
-              ><ElButton link type="primary" @click.stop="openGroup(row.id)">{{
-                row.name
-              }}</ElButton></template
-            ></ElTableColumn
-          >
+        <ElTable v-else :data="project.groups" border>
+          <ElTableColumn prop="name" label="分组名称" min-width="160" />
           <ElTableColumn
             prop="description"
             label="分组说明"
@@ -43,9 +37,10 @@
           <ElTableColumn label="配置版本" width="100"
             ><template #default="{ row }">第 {{ row.revision }} 版</template></ElTableColumn
           >
-          <ElTableColumn label="操作" width="110"
+          <ElTableColumn label="操作" width="180"
             ><template #default="{ row }"
-              ><ElButton link type="primary" @click.stop="openGroup(row.id)"
+              ><ElButton link type="primary" @click="editGroup(row.id)">编辑</ElButton
+              ><ElButton link type="primary" @click="openGroup(row.id)"
                 >进入分组</ElButton
               ></template
             ></ElTableColumn
@@ -112,12 +107,10 @@
     if (creating.value || !(await createRef.value?.validate().catch(() => false))) return
     creating.value = true
     try {
-      const record = await createGroup({ project_id: createProjectId, ...createForm })
+      await createGroup({ project_id: createProjectId, ...createForm })
       createVisible.value = false
-      await router.push({
-        path: '/project/group',
-        query: { project_id: createProjectId, id: record.id, mode: 'edit' }
-      })
+      await router.replace({ path: '/project/groups', query: { project_id: createProjectId } })
+      await load()
     } catch {
       /* 保留内容供修正 */
     } finally {
@@ -162,6 +155,12 @@
       query: { project_id: projectId.value, ...(id ? { id } : {}) }
     })
   }
+  function editGroup(id: number) {
+    void router.push({
+      path: '/project/group',
+      query: { project_id: projectId.value, id, mode: 'edit' }
+    })
+  }
   watch(() => route.fullPath, load, { immediate: true })
 </script>
 <style scoped>
@@ -185,8 +184,5 @@
   }
   .heading p {
     color: var(--el-text-color-secondary);
-  }
-  .groups-page :deep(.el-table__row) {
-    cursor: pointer;
   }
 </style>

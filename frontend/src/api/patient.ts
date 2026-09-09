@@ -6,12 +6,11 @@ export interface PatientRecord {
   mobile: string
   gender: number
   gender_text: string
+  birth_date: string
   age: number
-  hospital_name: string
-  department_name: string
-  visit_type: number
-  visit_type_text: string
   is_archived: number
+  login_enabled: boolean
+  created_via: string
   enroll_date: string
   status: number
   created_at: string

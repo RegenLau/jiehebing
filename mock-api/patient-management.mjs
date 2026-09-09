@@ -4,6 +4,7 @@ export function registerPatientManagement({core,db,assert,find,page,clean,isDate
   const states=['待启用','治疗中','暂停用药','已完成','提前退出','失访'];
   const text=(v,label,max=100,required=true)=>{const s=clean(v);assert(s.length<=max&&(!required||s),`请填写有效的${label}`);return s;};
   const date=(v,label)=>{assert(isDate(v),`请填写有效的${label}`);return v;};
+  const ageFromBirthDate=(birthDate)=>{const [by,bm,bd]=birthDate.split('-').map(Number),[y,m,d]=today().split('-').map(Number);return y-by-(m<bm||m===bm&&d<bd?1:0);};
   const positive=(v,label,max=100000)=>{assert(typeof v==='number'&&Number.isFinite(v)&&v>0&&v<=max,`请填写有效的${label}`);return v;};
   const log=(patient,admin,action,reason,before,after)=>{db.patientHistory.unshift({id:nextId(db.patientHistory),user_id:patient.id,time:timestamp(),operator:admin.realname||admin.username,action,reason,before:structuredClone(before),after:structuredClone(after)});};
   core('GET','patient/index',({query:q})=>page([...db.patients].reverse().filter(p=>(!q.keyword||`${p.name} ${p.mobile} ${p.patient_code||''}`.includes(clean(q.keyword)))&&(!q.study_state||(p.study_state||'待启用')===q.study_state)),q));
@@ -11,14 +12,15 @@ export function registerPatientManagement({core,db,assert,find,page,clean,isDate
   core('POST','patient/save',({body:b,admin})=>{
     const old=b.id===undefined?null:find(db.patients,b.id,'患者');if(old&&b.revision!==undefined)assert(b.revision===(old.revision||1),'档案已更新，请刷新后编辑');
     const name=text(b.name,'姓名',60),mobile=text(b.mobile,'手机号',20);assert(/^1\d{10}$/.test(mobile)||old?.mobile===mobile,'请填写11位手机号');assert(!db.patients.some(p=>p!==old&&p.mobile===mobile),'该手机号已有患者档案');
-    assert([1,2].includes(b.gender),'请选择性别');assert(Number.isInteger(b.age)&&b.age>=0&&b.age<=120,'年龄不合法');
-    const hospital_name=text(b.hospital_name,'医院/中心'),department_name=text(b.department_name,'科室'),reason=text(b.reason,'修改原因',300,Boolean(old));
+    assert([1,2].includes(b.gender),'请选择性别');const birth_date=date(b.birth_date,'出生日期'),age=ageFromBirthDate(birth_date);assert(age>=0&&age<=120,'出生日期不合法');
+    const reason=text(b.reason,'修改原因',300,Boolean(old));
     assert(old || b.project_id && b.group_id, '新增患者需登记研究项目和分组');
     let study={};let target=null;
-    if(b.project_id||b.group_id){const p=find(db.projects,b.project_id,'项目');target=find(db.projectGroups,b.group_id,'分组');assert(target.project_id===p.id,'分组不属于当前项目');assert(!old?.project_id||old.project_id===p.id&&old.group_id===target.id,'已登记入组归属不可直接覆盖，请在研究流程中处理');assert(b.offline_confirmed===true&&b.consent_confirmed===true,'请登记线下入组及知情同意确认');const owner=find(db.admins,b.owner_id,'负责人员');assert(owner.status===1,'负责账号已停用');study={project_id:p.id,project_name:p.name,group_id:target.id,group_name:target.name,owner_id:owner.id,owner_name:owner.realname||owner.username,enroll_date:date(b.enroll_date,'入组基准日'),offline_confirmed:true,consent_confirmed:true,consent_date:date(b.consent_date,'知情同意日期')};assert(study.consent_date<=study.enroll_date,'知情同意日期不能晚于入组日期');}
+    if(b.project_id||b.group_id){const p=find(db.projects,b.project_id,'项目');target=find(db.projectGroups,b.group_id,'分组');assert(target.project_id===p.id,'分组不属于当前项目');assert(!old?.project_id||old.project_id===p.id&&old.group_id===target.id,'已登记入组归属不可直接覆盖，请在研究流程中处理');assert(b.offline_confirmed===true&&b.consent_confirmed===true,'请登记线下入组及知情同意确认');const owner=find(db.admins,b.owner_id,'负责人员');assert(owner.status===1,'负责账号已停用');study={project_id:p.id,project_name:p.name,group_id:target.id,group_name:target.name,owner_id:owner.id,owner_name:owner.realname||owner.username,enroll_date:date(b.enroll_date,'入组基准日'),offline_confirmed:true,consent_confirmed:true};}
     if(target&&old)assert(!db.projectGroups.some(g=>g.project_id===target.project_id&&g.id!==target.id&&g.participant_ids.includes(old.id)),'患者已在本项目其他分组');
     const row=old||{id:nextId(db.patients),created_at:timestamp(),status:1,study_state:'待启用',identity_confirmed:false,medicine_confirmed:false},before=old?structuredClone(old):{};
-    Object.assign(row,{name,mobile,gender:b.gender,gender_text:b.gender===1?'男':'女',age:b.age,hospital_name,department_name,visit_type:1,visit_type_text:'门诊',is_archived:1,patient_code:old?.patient_code||`TB-${String(row.id).padStart(5,'0')}`,enroll_date:old?.enroll_date||'',...study,revision:(old?.revision||0)+1,updated_at:timestamp()});
+    for(const field of ['hospital_name','department_name','visit_type','visit_type_text','consent_date'])delete row[field];
+    Object.assign(row,{name,mobile,gender:b.gender,gender_text:b.gender===1?'男':'女',birth_date,age,is_archived:1,login_enabled:true,created_via:'admin',patient_code:old?.patient_code||`TB-${String(row.id).padStart(5,'0')}`,enroll_date:old?.enroll_date||'',...study,revision:(old?.revision||0)+1,updated_at:timestamp()});
     if(!old)db.patients.push(row);
     if(target&&!target.participant_ids.includes(row.id)){assert(!db.projectGroups.some(g=>g.project_id===target.project_id&&g.id!==target.id&&g.participant_ids.includes(row.id)),'患者已在本项目其他分组');target.participant_ids.push(row.id);target.participants||=[];target.participants.push({id:row.id,name,mobile});target.revision++;}
     log(row,admin,old?'编辑档案':'新增档案',reason||'医生建档',before,row);return row;

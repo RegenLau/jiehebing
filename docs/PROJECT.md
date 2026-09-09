@@ -141,9 +141,9 @@ JSON 顶层统一为 `{code,message,data}`，成功码 `200`。多数业务分�
 
 | 页面/行为 | 接口 |
 |---|---|
-| 项目列表 | `GET /app/core/project/index` |
-| 项目基本信息、分组索引及变更记录 | `GET /app/core/project/detail` |
-| 项目新增/编辑 | `POST /app/core/project/save` |
+| 项目列表 | `GET /app/core/project/index`；返回分组数及去重患者数 |
+| 项目编辑数据及分组索引 | `GET /app/core/project/detail`；不提供单独的项目详情页面入口 |
+| 项目新增/编辑 | `POST /app/core/project/save`；当前仅维护编号、名称、研究周期和研究目的 |
 | 人工变更项目状态 | `POST /app/core/project/change-status` |
 | 通用内容选择目录 | `GET /app/core/project/catalog` |
 | 分组详情 | `GET /app/core/project/group-detail` |
@@ -151,7 +151,7 @@ JSON 顶层统一为 `{code,message,data}`，成功码 `200`。多数业务分�
 | 患者候选及本项目归属 | `GET /app/core/project/participants` |
 | 分组更新关联配置 | `POST /app/core/project/group-save` |
 
-项目列表 `/project/index`，分组选择 `/project/groups?project_id=...`，新建在分组列表使用基础信息弹窗，详情 `/project/group?project_id=...&id=...`，编辑另追加 `mode=edit`。旧的无id路径转回列表新建入口。分组API校验项目归属，更新携带revision避免覆盖过期配置。服务代码在mock-api/projects.mjs，不调用PHP。
+项目列表 `/project/index` 的操作为分组、编辑及状态，不再提供项目详情入口。分组选择 `/project/groups?project_id=...`，新建使用基础信息弹窗并在成功后停留于列表；“进入分组”使用 `/project/group?project_id=...&id=...`，“编辑”另追加 `mode=edit`。旧的无id路径转回列表新建入口。分组API校验项目归属，更新携带revision避免覆盖过期配置。服务代码在mock-api/projects.mjs，不调用PHP。
 
 ## 后续研究功能接口（2026-09-09）
 

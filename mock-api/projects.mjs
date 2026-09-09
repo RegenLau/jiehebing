@@ -19,14 +19,18 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     assert(q.status === undefined || q.status === '' || ['0', '1', '2'].includes(q.status), '项目状态不合法');
     const keyword = clean(q.keyword).toLowerCase();
     const rows = db.projects.filter(p => (!keyword || `${p.code} ${p.name}`.toLowerCase().includes(keyword)) && (q.status === undefined || q.status === '' || p.status === Number(q.status)));
-    return page([...rows].sort((a,b) => b.id-a.id).map(({ history, ...p }) => ({ ...p, group_count: db.projectGroups.filter(g => g.project_id === p.id).length })), q);
+    return page([...rows].sort((a,b) => b.id-a.id).map(({ history, ...p }) => {
+      const groups = db.projectGroups.filter(g => g.project_id === p.id);
+      const patientIds = new Set(db.patients.filter(patient => patient.project_id === p.id).map(patient => patient.id));
+      for (const group of groups) for (const id of group.participant_ids || []) patientIds.add(id);
+      return { ...p, group_count: groups.length, patient_count: patientIds.size };
+    }), q);
   });
   core('GET', 'project/detail', ({ query: q }) => ({ ...project(q.id), groups: db.projectGroups.filter(g => g.project_id === Number(q.id)) }));
   core('POST', 'project/save', ({ body: b, admin }) => {
     const existing = b.id === undefined ? null : project(b.id);
     assert(b.status === undefined || b.status === (existing?.status ?? 0), '请通过变更状态操作修改状态');
-    const data = { code: text(b.code,'项目编号',40,true), name: text(b.name,'项目名称',100,true), purpose: text(b.purpose,'研究目的',1000), notes: text(b.notes,'备注',1000), research_type: b.research_type, start_date: clean(b.start_date), end_date: clean(b.end_date) };
-    assert(['open','single_blind','double_blind'].includes(data.research_type), '请选择研究类型');
+    const data = { code: text(b.code,'项目编号',40,true), name: text(b.name,'项目名称',100,true), purpose: text(b.purpose,'研究目的',1000), start_date: clean(b.start_date), end_date: clean(b.end_date) };
     assert(/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(data.code), '项目编号仅支持字母、数字、短横线和下划线');
     assert(!db.projects.some(p => p !== existing && p.code.toLowerCase() === data.code.toLowerCase()), '项目编号已存在');
     assert(isDate(data.start_date) && isDate(data.end_date) && data.start_date <= data.end_date, '请填写有效且顺序正确的研究周期');

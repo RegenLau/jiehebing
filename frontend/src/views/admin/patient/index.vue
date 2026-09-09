@@ -3,6 +3,7 @@
     <div class="toolbar">
       <div>
         <h2>患者管理</h2>
+        <p>患者须由后台建档，方可使用档案手机号登录患者端小程序。</p>
       </div>
       <div class="actions"
         ><ElInput
@@ -30,14 +31,12 @@
         <ElTableColumn prop="name" label="患者姓名" min-width="140" />
         <ElTableColumn prop="mobile" label="手机号" min-width="150" />
         <ElTableColumn prop="gender_text" label="性别" width="90" />
-        <ElTableColumn prop="age" label="年龄" width="90" />
-        <ElTableColumn prop="hospital_name" label="就诊医院" min-width="180" />
-        <ElTableColumn prop="department_name" label="就诊科室" min-width="150" />
-        <ElTableColumn prop="visit_type_text" label="就诊类型" width="100" />
-        <ElTableColumn label="建档状态" width="110">
+        <ElTableColumn prop="birth_date" label="出生日期" width="120" />
+        <ElTableColumn prop="age" label="年龄" width="80" />
+        <ElTableColumn label="患者端登录" width="120">
           <template #default="{ row }">
-            <ElTag :type="row.is_archived === 1 ? 'success' : 'info'">
-              {{ row.is_archived === 1 ? '已建档' : '未建档' }}
+            <ElTag :type="row.login_enabled ? 'success' : 'info'">
+              {{ row.login_enabled ? '可登录' : '不可登录' }}
             </ElTag>
           </template>
         </ElTableColumn>
@@ -68,8 +67,6 @@
 </template>
 
 <script setup lang="ts">
-  import ResearchExport from '@/components/business/research-export/index.vue'
-
   import Management from './modules/management.vue'
   const management = ref<InstanceType<typeof Management>>()
   const keyword = ref('')
@@ -156,6 +153,11 @@
       margin: 0 0 6px;
       font-size: 22px;
       font-weight: 700;
+    }
+
+    p {
+      margin: 0;
+      color: var(--el-text-color-secondary);
     }
   }
 

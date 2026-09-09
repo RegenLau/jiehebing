@@ -44,6 +44,10 @@ function sendJson(res, data, message = 'success') {
   res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ code: 200, message, data }));
 }
+function sendPatientJson(res, data, message = '成功') {
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ code: 0, message, data }));
+}
 function spreadsheet(res, name, headers, rows) {
   const book = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -63,6 +67,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
   for (const survey of db.surveys) survey.version = 1;
   for (const answer of db.answers) answer.template_snapshot = structuredClone(db.surveys.find(s => s.id === answer.template_id));
   const sessions = new Map();
+  const patientSessions = new Map();
   const captchas = new Map();
   const nextId = rows => Math.max(0, ...rows.map(r => r.id)) + 1;
   const invalidateSessions = id => { for (const [token, session] of sessions) if (session.id === id) sessions.delete(token); };
@@ -267,13 +272,25 @@ export function createMockServer({ now = () => new Date() } = {}) {
         const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
         sessions.delete(token); return sendJson(res, []);
       }
+      if (req.method === 'POST' && path === '/app/logout') {
+        const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+        patientSessions.delete(token); return sendPatientJson(res, [], '退出成功');
+      }
       if (req.method === 'GET' && path.startsWith('/mock-files/')) {
         const file = db.files.get(path.slice('/mock-files/'.length));
         if (!file) throw new ApiError('模拟文件不存在（服务重启后上传文件会清空）', 404, 404);
         res.writeHead(200, { 'Content-Type': file.type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); return res.end(file.buffer);
       }
+      if (req.method === 'GET' && path === '/app/patient/archive-detail') {
+        const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+        const session = patientSessions.get(token);
+        const patient = db.patients.find(p => p.id === session?.id && p.login_enabled && p.created_via === 'admin');
+        assert(session && session.expires > clock().getTime() && patient, '登录已过期，请重新登录', 402);
+        return sendPatientJson(res, patient, '获取成功');
+      }
       const publicCaptcha = req.method === 'GET' && ['/app/core/captcha', '/app/admin/captcha'].includes(path);
-      const publicLogin = req.method === 'POST' && ['/app/core/login', '/app/admin/login'].includes(path);
+      const publicAdminLogin = req.method === 'POST' && ['/app/core/login', '/app/admin/login'].includes(path);
+      const publicPatientLogin = req.method === 'POST' && path === '/app/login';
       if (publicCaptcha) {
         for (const [id, expires] of captchas) if (expires <= clock().getTime()) captchas.delete(id);
         const uuid = randomUUID(); captchas.set(uuid, clock().getTime() + 300000);
@@ -281,9 +298,9 @@ export function createMockServer({ now = () => new Date() } = {}) {
         return sendJson(res, { result: 1, uuid, image: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}` });
       }
       const handler = routes.get(`${req.method} ${path}`);
-      if (!publicLogin && !handler) throw new ApiError('该接口未实现本地 Mock', 404, 404);
+      if (!publicAdminLogin && !publicPatientLogin && !handler) throw new ApiError('该接口未实现本地 Mock', 404, 404);
       let admin;
-      if (!publicLogin) {
+      if (!publicAdminLogin && !publicPatientLogin) {
         const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
         const session = sessions.get(token);
         admin = db.admins.find(a => a.id === session?.id);
@@ -299,7 +316,18 @@ export function createMockServer({ now = () => new Date() } = {}) {
         else if (buffer.length) { try { body = JSON.parse(buffer.toString()); } catch { throw new ApiError('请求数据格式不正确'); } }
         assert(body && typeof body === 'object' && !Array.isArray(body), '请求数据格式不正确');
       }
-      if (publicLogin) {
+      if (publicPatientLogin) {
+        const mobile = clean(body.mobile);
+        assert(/^1\d{10}$/.test(mobile), '请填写11位手机号');
+        const patient = db.patients.find(p => p.mobile === mobile && p.login_enabled && p.created_via === 'admin');
+        assert(patient, '未查询到后台患者档案，请联系工作人员添加后再登录', 407);
+        const token = randomUUID(); patientSessions.set(token, { id: patient.id, expires: clock().getTime() + 7200000 });
+        return sendPatientJson(res, {
+          user: { id: patient.id, name: patient.name, mobile: patient.mobile, birth_date: patient.birth_date },
+          token: { token_type: 'Bearer', access_token: token, refresh_token: '', expires_in: 7200 }
+        }, '登录成功');
+      }
+      if (publicAdminLogin) {
         const expires = captchas.get(body.uuid);
         assert(expires && expires > clock().getTime() && String(body.code) === '1234', '验证码错误或已过期');
         captchas.delete(body.uuid);

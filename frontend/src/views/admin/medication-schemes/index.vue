@@ -66,15 +66,35 @@
               :min="0"
               :max="form.pickup_days" /></ElFormItem
         ></div>
-        <div v-if="!readonly" class="toolbar"
-          ><ElSelect v-model="medicineId" filterable placeholder="选择常用药品"
-            ><ElOption
-              v-for="m in medicines"
-              :key="m.id"
-              :label="m.common_name + ' · ' + m.specification"
-              :value="m.id"
-              :disabled="m.status !== 1" /></ElSelect
-          ><ElButton @click="addDrug">添加药品</ElButton></div
+        <div v-if="!readonly" class="drug-entry"
+          ><div class="drug-entry__heading"
+            ><h3>添加药品</h3
+            ><p>{{
+              form.id ? '从药品库逐个添加' : '可通过处方识别批量录入，或从药品库逐个添加'
+            }}</p></div
+          ><div class="drug-entry__actions"
+            ><ElButton
+              v-if="!form.id"
+              type="primary"
+              plain
+              :icon="Camera"
+              @click="openPrescriptionRecognition"
+              >处方识别</ElButton
+            ><div class="single-drug-entry"
+              ><ElSelect
+                ref="medicineSelect"
+                v-model="medicineId"
+                filterable
+                placeholder="选择常用药品"
+                ><ElOption
+                  v-for="m in medicines"
+                  :key="m.id"
+                  :label="m.common_name + ' · ' + m.specification"
+                  :value="m.id"
+                  :disabled="m.status !== 1" /></ElSelect
+              ><ElButton :icon="Plus" @click="addDrug">添加单个药</ElButton></div
+            ></div
+          ></div
         >
         <div v-for="(drug, index) in form.drugs" :key="drug.drug_id" class="drug"
           ><div class="toolbar"
@@ -124,11 +144,56 @@
         ></template
       >
     </ElDialog>
+    <ElDialog
+      v-model="prescriptionVisible"
+      title="处方识别"
+      width="min(640px, 92vw)"
+      append-to-body
+      :close-on-click-modal="false"
+      @closed="resetPrescription"
+    >
+      <div class="prescription-dialog">
+        <ElAlert
+          title="请上传清晰、完整的处方图片，识别结果需由医务人员逐项核对后再加入方案。"
+          type="warning"
+          show-icon
+          :closable="false"
+        />
+        <ElUpload
+          v-model:file-list="prescriptionFiles"
+          drag
+          accept="image/jpeg,image/png"
+          :auto-upload="false"
+          :limit="1"
+          :on-change="validatePrescription"
+          :on-exceed="handlePrescriptionExceed"
+        >
+          <ElIcon class="prescription-upload__icon"><UploadFilled /></ElIcon>
+          <div class="el-upload__text">将处方图片拖到此处，或<em>点击选择</em></div>
+          <template #tip>
+            <div class="el-upload__tip">支持 JPG、PNG，单张不超过 10MB</div>
+          </template>
+        </ElUpload>
+        <ElAlert
+          title="当前本地演示环境尚未接入真实处方识别服务，不会生成模拟药品。"
+          description="可返回新增方案后，通过“添加单个药”继续录入。"
+          type="info"
+          show-icon
+          :closable="false"
+        />
+      </div>
+      <template #footer>
+        <ElButton @click="prescriptionVisible = false">关闭</ElButton>
+        <ElButton type="primary" @click="switchToSingleDrug">添加单个药</ElButton>
+      </template>
+    </ElDialog>
   </div>
 </template>
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue'
+  import { ref, onMounted, nextTick } from 'vue'
+  import { Camera, Plus, UploadFilled } from '@element-plus/icons-vue'
   import { ElMessage, ElMessageBox } from 'element-plus'
+  import type { UploadFile, UploadFiles, UploadUserFile } from 'element-plus'
   import request from '@/utils/http'
   import { fetchCommonMedicineList, type CommonMedicineRecord } from '@/api/common-medicine'
   import type { Drug } from '@/api/project'
@@ -180,8 +245,11 @@
     visible = ref(false),
     readonly = ref(false),
     saving = ref(false),
+    prescriptionVisible = ref(false),
+    prescriptionFiles = ref<UploadUserFile[]>([]),
     medicines = ref<CommonMedicineRecord[]>([]),
-    medicineId = ref<number>()
+    medicineId = ref<number>(),
+    medicineSelect = ref()
   async function load() {
     loading.value = true
     try {
@@ -244,6 +312,31 @@
       precautions: m.medication_guidance,
       quantity: 30
     })
+    medicineId.value = undefined
+  }
+  function openPrescriptionRecognition() {
+    prescriptionFiles.value = []
+    prescriptionVisible.value = true
+  }
+  function validatePrescription(file: UploadFile, files: UploadFiles) {
+    const raw = file.raw
+    const isSupported = Boolean(raw && ['image/jpeg', 'image/png'].includes(raw.type))
+    const isWithinLimit = Boolean(raw && raw.size <= 10 * 1024 * 1024)
+    if (!isSupported || !isWithinLimit) {
+      prescriptionFiles.value = files.filter((item) => item.uid !== file.uid)
+      ElMessage.warning(isSupported ? '处方图片不能超过 10MB' : '处方识别仅支持 JPG、PNG 图片')
+    }
+  }
+  function handlePrescriptionExceed() {
+    ElMessage.warning('每次仅支持选择 1 张处方图片')
+  }
+  function resetPrescription() {
+    prescriptionFiles.value = []
+  }
+  async function switchToSingleDrug() {
+    prescriptionVisible.value = false
+    await nextTick()
+    medicineSelect.value?.focus?.()
   }
   async function save() {
     if (
@@ -298,46 +391,118 @@
   .scheme-page {
     padding: 20px;
   }
+
   .toolbar {
     display: flex;
-    align-items: center;
     gap: 16px;
+    align-items: center;
     margin-bottom: 20px;
   }
+
   .toolbar h2 {
     flex: 1;
   }
+
   .toolbar .el-input,
   .toolbar .el-select {
     max-width: 300px;
   }
+
+  .drug-entry {
+    padding: 16px;
+    margin: 4px 0 20px;
+    background: var(--el-fill-color-extra-light);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+  }
+
+  .drug-entry__heading {
+    margin-bottom: 12px;
+  }
+
+  .drug-entry__heading h3,
+  .drug-entry__heading p {
+    margin: 0;
+  }
+
+  .drug-entry__heading h3 {
+    font-size: 16px;
+  }
+
+  .drug-entry__heading p {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .drug-entry__actions,
+  .single-drug-entry {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .single-drug-entry {
+    flex: 1;
+  }
+
+  .single-drug-entry .el-select {
+    width: min(360px, 100%);
+  }
+
+  .prescription-dialog {
+    display: grid;
+    gap: 20px;
+  }
+
+  .prescription-upload__icon {
+    margin-bottom: 12px;
+    font-size: 48px;
+    color: var(--el-text-color-placeholder);
+  }
+
   .grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0 16px;
   }
+
   .drug {
-    border: 1px solid var(--el-border-color);
     padding: 16px;
     margin: 16px 0;
+    border: 1px solid var(--el-border-color);
     border-radius: 8px;
   }
+
   .el-pagination {
     margin-top: 20px;
   }
+
   .history {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
     padding: 16px;
   }
+
   .history pre {
-    white-space: pre-wrap;
     overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
-  @media (max-width: 700px) {
+
+  @media (width <= 700px) {
     .grid {
       grid-template-columns: 1fr;
+    }
+
+    .drug-entry__actions,
+    .single-drug-entry {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .single-drug-entry .el-select {
+      width: 100%;
     }
   }
 </style>

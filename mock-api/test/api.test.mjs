@@ -141,6 +141,39 @@ test('captcha, login failures, bearer authentication, and unknown routes are iso
   assert.equal((await api.json(P + 'system/user', { auth: signedOutToken })).code, 401)
 })
 
+test('patient mini-program login only accepts mobile numbers added by the admin', async (t) => {
+  const api = await start(t)
+  await api.login()
+  const initial = await api.all(P + 'patient/index')
+  assert.ok(initial.every((patient) => patient.created_via === 'admin' && patient.login_enabled))
+  assert.ok(initial.every((patient) => patient.birth_date && !('hospital_name' in patient) && !('department_name' in patient) && !('consent_date' in patient)))
+
+  const missing = await api.json('/app/login', { auth: '', body: { mobile: '13910009999' } })
+  assert.equal(missing.code, 407)
+  assert.match(missing.message, /后台患者档案/)
+  assert.equal((await api.all(P + 'patient/index')).length, initial.length, 'failed login never creates a patient')
+
+  const group = await api.ok(P + 'project/group-create', { body: { project_id: 1, name: '小程序登录验证组' } })
+  const patient = await api.ok(P + 'patient/save', { body: {
+    name: '新建登录患者', mobile: '13910009999', gender: 2, birth_date: '1990-06-18',
+    project_id: 1, group_id: group.id, owner_id: 1, enroll_date: TODAY,
+    offline_confirmed: true, consent_confirmed: true
+  } })
+  assert.equal(patient.login_enabled, true)
+  assert.equal(patient.age, 36)
+  assert.ok(!('hospital_name' in patient) && !('department_name' in patient) && !('consent_date' in patient))
+
+  const login = await api.json('/app/login', { auth: '', body: { mobile: patient.mobile } })
+  assert.equal(login.code, 0)
+  assert.equal(login.data.user.id, patient.id)
+  const token = login.data.token.access_token
+  const archive = await api.json('/app/patient/archive-detail', { auth: token })
+  assert.equal(archive.code, 0)
+  assert.equal(archive.data.birth_date, patient.birth_date)
+  assert.equal((await api.json('/app/logout', { auth: token, body: {} })).code, 0)
+  assert.equal((await api.json('/app/patient/archive-detail', { auth: token })).code, 402)
+})
+
 test('patient pages, related medication/reaction records and explicit empty patient remain consistent', async (t) => {
   const api = await start(t)
   await api.login()
@@ -496,16 +529,19 @@ test('research project basic fields, editable statuses and restart isolation', a
   const menu = (await api.ok(P+'system/menu')).find(m=>m.path==='/project')
   assert.ok(menu.children.some(c=>c.path==='groups' && c.meta.isHide))
   assert.ok(menu.children.some(c=>c.path==='group' && c.meta.isHide))
-  const payload = { code:'TB-TEST-001', name:'项目验收', research_type:'open', start_date:TODAY, end_date:'2027-09-08', purpose:'研究目的', notes:'' }
+  const payload = { code:'TB-TEST-001', name:'项目验收', start_date:TODAY, end_date:'2027-09-08', purpose:'研究目的' }
   const created = await api.ok(P+'project/save',{body:payload})
   assert.equal(created.status,0)
   assert.equal(created.center,undefined)
-  for (const invalid of [{code:'tb-test-001'},{name:''},{research_type:'other'},{end_date:'2026-02-30'},{end_date:'2026-09-07'},{status:1}]) {
+  assert.equal(created.research_type,undefined)
+  assert.equal(created.notes,undefined)
+  for (const invalid of [{code:'tb-test-001'},{name:''},{end_date:'2026-02-30'},{end_date:'2026-09-07'},{status:1}]) {
     assert.notEqual((await api.json(P+'project/save',{body:{...payload,...invalid}})).code,200)
   }
-  for (const type of ['single_blind','double_blind']) {
-    assert.equal((await api.ok(P+'project/save',{body:{...payload,id:created.id,research_type:type}})).research_type,type)
-  }
+  const legacy = await api.ok(P+'project/detail',{query:{id:1}})
+  const editedLegacy = await api.ok(P+'project/save',{body:{id:legacy.id,code:legacy.code,name:legacy.name,start_date:legacy.start_date,end_date:legacy.end_date,purpose:'更新研究目的',research_type:'double_blind',notes:'不应覆盖'}})
+  assert.equal(editedLegacy.research_type,legacy.research_type)
+  assert.equal(editedLegacy.notes,legacy.notes)
   const page = await api.ok(P+'project/index',{query:{current:2,size:1}})
   assert.equal(page.list.length,1)
   assert.equal(page.total,initial.length+1)
@@ -553,13 +589,14 @@ test('saved group configuration validates sources and members without changing p
   const config={...a,medication:{id:scheme.id,treatment_days:30,pickup_days:14,advance_days:3,quantities:scheme.drugs.map(d=>({drug_id:d.drug_id,quantity:30}))},surveys:[schedule(survey.id)],tasks:[schedule(1)],participant_ids:[1,2]}
   const saved=await api.ok(P+'project/group-save',{body:config})
   assert.equal(saved.revision,2);assert.deepEqual(saved.participant_ids,[1,2]);assert.equal(saved.participants[0].name,patients.find(p=>p.id===1).name)
+  assert.equal((await api.all(P+'project/index')).find(p=>p.id===1).patient_count,2)
   assert.deepEqual(saved.medication.snapshot.drugs,scheme.drugs)
   const people=await api.ok(P+'project/participants',{query:{project_id:1}})
   assert.equal(people.find(p=>p.id===1).group_id,a.id)
   assert.notEqual((await api.json(P+'project/group-save',{body:{...b,participant_ids:[1]}})).code,200)
   await api.ok(P+'project/group-save',{body:{...other,participant_ids:[1]}})
   for(const invalid of [
-    {participant_ids:[999999]}, {participant_ids:[25]}, {participant_ids:[1,1]}, {participant_ids:[1.2]},
+    {participant_ids:[999999]}, {participant_ids:[1,1]}, {participant_ids:[1.2]},
     {surveys:[schedule(9999)]},{surveys:[schedule(survey.id),schedule(survey.id)]},
     {surveys:[{...schedule(survey.id),interval_days:-1}]},
     {tasks:[{...schedule(1),anchor:'date',date:'2026-02-30',interval_days:0}]},
@@ -635,9 +672,13 @@ test('patient registration, treatment and dispensing preserve independent record
  const api=await start(t);await api.login();
  const g=await api.ok(P+'project/group-create',{body:{project_id:1,name:'患者入组测试'}});const catalog=await api.ok(P+'project/catalog');const source=catalog.medication_schemes[0];
  await api.ok(P+'project/group-save',{body:{...g,medication:{id:source.id,treatment_days:30,pickup_days:30,advance_days:3,quantities:source.drugs.map(d=>({drug_id:d.drug_id,quantity:30}))}}});
- const body={name:'测试患者',mobile:'13900000999',gender:1,age:40,hospital_name:'模拟医院',department_name:'门诊',project_id:1,group_id:g.id,owner_id:1,enroll_date:TODAY,consent_date:TODAY,offline_confirmed:true,consent_confirmed:true};
+ const body={name:'测试患者',mobile:'13900000999',gender:1,birth_date:'1986-03-12',project_id:1,group_id:g.id,owner_id:1,enroll_date:TODAY,offline_confirmed:true,consent_confirmed:true};
  const p=await api.ok(P+'patient/save',{body});assert.equal(p.study_state,'待启用');
+ assert.equal(p.birth_date,body.birth_date);assert.equal(p.age,40);assert.equal(p.login_enabled,true);
+ assert.ok(!('hospital_name' in p)&&!('department_name' in p)&&!('consent_date' in p));
  assert.notEqual((await api.json(P+'patient/save',{body})).code,200);
+ assert.notEqual((await api.json(P+'patient/save',{body:{...body,mobile:'13900000998',birth_date:''}})).code,200);
+ assert.notEqual((await api.json(P+'patient/save',{body:{...body,mobile:'13900000998',birth_date:'2027-01-01'}})).code,200);
  assert.notEqual((await api.json(P+'patient/state',{body:{user_id:p.id,state:'治疗中',effective_date:TODAY,reason:'未确认方案'}})).code,200);
  const treatment=await api.ok(P+'patient/treatment',{body:{user_id:p.id,start_date:TODAY,treatment_days:30,reason:'医生确认',drugs:source.drugs}});assert.equal(treatment.source_group_id,g.id);
  await api.ok(P+'patient/state',{body:{user_id:p.id,state:'治疗中',effective_date:TODAY,reason:'确认启用'}});
@@ -652,7 +693,7 @@ test('patient registration, treatment and dispensing preserve independent record
 test('generated execution follows group dates and retains safety tasks when medication pauses',async t=>{
  const api=await start(t);await api.login();const g=await api.ok(P+'project/group-create',{body:{project_id:1,name:'任务生成测试'}});const source=(await api.ok(P+'project/catalog')).medication_schemes[0];
  await api.ok(P+'project/group-save',{body:{...g,medication:{id:source.id,treatment_days:10,pickup_days:10,advance_days:2,quantities:source.drugs.map(d=>({drug_id:d.drug_id,quantity:10}))},tasks:[{id:1,anchor:'enrollment',offset_days:1,interval_days:7,deadline_days:2,date:'',reminders:{start:true,due:true,overdue:true}}]}});
- const p=await api.ok(P+'patient/save',{body:{name:'任务模拟患者',mobile:'13900000888',gender:2,age:35,hospital_name:'测试医院',department_name:'门诊',project_id:1,group_id:g.id,owner_id:1,enroll_date:TODAY,consent_date:TODAY,offline_confirmed:true,consent_confirmed:true}});
+ const p=await api.ok(P+'patient/save',{body:{name:'任务模拟患者',mobile:'13900000888',gender:2,birth_date:'1991-08-20',project_id:1,group_id:g.id,owner_id:1,enroll_date:TODAY,offline_confirmed:true,consent_confirmed:true}});
  const body={user_id:p.id,start_date:TODAY,treatment_days:10,reason:'方案确认',drugs:source.drugs};await api.ok(P+'patient/treatment',{body});
  const plans=await api.all(P+'medication-plan/index',{scope:'all',user_id:p.id});assert.equal(plans.length,20);
  const tasks=await api.ok(P+'followup/index',{query:{user_id:p.id}});assert.equal(tasks.total,2);assert.equal(tasks.list[1].date,'2026-09-09');assert.equal(tasks.list[1].due_date,'2026-09-10');
