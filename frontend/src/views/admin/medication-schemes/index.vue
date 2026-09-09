@@ -1,149 +1,138 @@
 <template>
   <div class="scheme-page">
-    <div class="toolbar"
-      ><h2>用药方案</h2><ElButton type="primary" @click="open()">新增方案</ElButton></div
-    >
-    <ElCard shadow="never">
+    <template v-if="!isFormPage">
       <div class="toolbar"
-        ><ElInput
-          v-model="keyword"
-          placeholder="方案名称"
-          clearable
-          @keyup.enter="search"
-        /><ElSelect v-model="status" placeholder="全部状态" clearable @change="search"
-          ><ElOption label="启用" :value="1" /><ElOption label="停用" :value="0" /></ElSelect
-        ><ElButton @click="search">查询</ElButton></div
+        ><h2>用药方案</h2><ElButton type="primary" @click="goToFormPage()">新增方案</ElButton></div
       >
-      <ElTable v-loading="loading" :data="rows" border
-        ><ElTableColumn prop="name" label="方案名称" /><ElTableColumn
-          prop="description"
-          label="说明"
-          show-overflow-tooltip
-        /><ElTableColumn prop="version" label="版本" width="100" /><ElTableColumn
-          label="状态"
-          width="90"
-          ><template #default="{ row }">{{
-            row.status === 1 ? '启用' : '停用'
-          }}</template></ElTableColumn
-        ><ElTableColumn label="操作" width="190"
-          ><template #default="{ row }"
-            ><ElButton link type="primary" @click="open(row.id, true)">详情</ElButton
-            ><ElButton link type="primary" @click="open(row.id)">编辑</ElButton
-            ><ElButton link type="warning" @click="toggle(row as Scheme)">{{
-              row.status === 1 ? '停用' : '启用'
-            }}</ElButton></template
-          ></ElTableColumn
-        ></ElTable
-      >
-      <ElPagination
-        v-model:current-page="current"
-        :page-size="10"
-        :total="total"
-        layout="total,prev,pager,next"
-        @current-change="load"
-      />
-    </ElCard>
-    <ElDialog
-      v-model="visible"
-      :title="readonly ? '方案详情' : form.id ? '编辑用药方案' : '新增用药方案'"
-      width="min(1100px,95vw)"
-      :close-on-click-modal="false"
-      :before-close="close"
-    >
-      <ElForm label-position="top" :disabled="readonly || saving">
-        <div class="grid"
-          ><ElFormItem label="方案名称（必填）"
-            ><ElInput v-model="form.name" maxlength="100" /></ElFormItem
-          ><ElFormItem label="说明"
-            ><ElInput v-model="form.description" maxlength="1000" /></ElFormItem
-          ><ElFormItem label="默认治疗天数"
-            ><ElInputNumber v-model="form.treatment_days" :min="1" :max="3650" /></ElFormItem
-          ><ElFormItem label="默认取药周期（天）"
-            ><ElInputNumber v-model="form.pickup_days" :min="1" :max="3650" /></ElFormItem
-          ><ElFormItem label="提前提醒取药（天）"
-            ><ElInputNumber
-              v-model="form.advance_days"
-              :min="0"
-              :max="form.pickup_days" /></ElFormItem
-        ></div>
-        <div v-if="!readonly" class="drug-entry"
-          ><div class="drug-entry__heading"
-            ><h3>添加药品</h3
-            ><p>{{
-              form.id ? '从药品库逐个添加' : '可通过处方识别批量录入，或从药品库逐个添加'
-            }}</p></div
-          ><div class="drug-entry__actions"
-            ><ElButton
-              v-if="!form.id"
-              type="primary"
-              plain
-              :icon="Camera"
-              @click="openPrescriptionRecognition"
-              >处方识别</ElButton
-            ><div class="single-drug-entry"
-              ><ElSelect
-                ref="medicineSelect"
-                v-model="medicineId"
-                filterable
-                placeholder="选择常用药品"
-                ><ElOption
-                  v-for="m in medicines"
-                  :key="m.id"
-                  :label="m.common_name + ' · ' + m.specification"
-                  :value="m.id"
-                  :disabled="m.status !== 1" /></ElSelect
-              ><ElButton :icon="Plus" @click="addDrug">添加单个药</ElButton></div
-            ></div
-          ></div
+      <ElCard shadow="never">
+        <div class="toolbar"
+          ><ElInput
+            v-model="keyword"
+            placeholder="方案名称"
+            clearable
+            @keyup.enter="search"
+          /><ElSelect v-model="status" placeholder="全部状态" clearable @change="search"
+            ><ElOption label="启用" :value="1" /><ElOption label="停用" :value="0" /></ElSelect
+          ><ElButton @click="search">查询</ElButton></div
         >
-        <div v-for="(drug, index) in form.drugs" :key="drug.drug_id" class="drug"
-          ><div class="toolbar"
-            ><strong>{{ drug.name }} · {{ drug.specification }}</strong
-            ><ElButton v-if="!readonly" link type="danger" @click="form.drugs.splice(index, 1)"
-              >移除</ElButton
-            ></div
-          ><div class="grid"
-            ><ElFormItem label="单次用量"><ElInput v-model="drug.dose" /></ElFormItem
-            ><ElFormItem label="单位"><ElInput v-model="drug.unit" /></ElFormItem
-            ><ElFormItem label="频次"
-              ><ElInput v-model="drug.frequency" placeholder="例如每日2次" /></ElFormItem
-            ><ElFormItem label="服药时间"
-              ><ElInput v-model="drug.times" placeholder="08:00,20:00" /></ElFormItem
-            ><ElFormItem label="默认首次发药数量"
-              ><ElInputNumber v-model="drug.quantity" :min="1" :max="100000" /></ElFormItem
-            ><ElFormItem label="注意事项"><ElInput v-model="drug.precautions" /></ElFormItem></div
-        ></div>
-        <ElEmpty v-if="!form.drugs.length" description="请添加药品" />
-        <ElFormItem v-if="form.id && !readonly" label="修改原因（必填）"
-          ><ElInput v-model="form.reason" maxlength="300"
-        /></ElFormItem>
-      </ElForm>
-      <template v-if="readonly"
-        ><h3>变更记录</h3
-        ><ElTable :data="form.history || []"
-          ><ElTableColumn prop="time" label="时间" /><ElTableColumn
-            prop="operator"
-            label="操作人"
-          /><ElTableColumn prop="reason" label="原因" /><ElTableColumn type="expand"
+        <ElTable v-loading="loading" :data="rows" border
+          ><ElTableColumn prop="name" label="方案名称" /><ElTableColumn
+            prop="description"
+            label="说明"
+            show-overflow-tooltip
+          /><ElTableColumn prop="version" label="版本" width="100" /><ElTableColumn
+            label="状态"
+            width="100"
             ><template #default="{ row }"
-              ><div class="history"
-                ><div
-                  ><h4>修改前</h4><pre>{{ describe(row.before) }}</pre></div
-                ><div
-                  ><h4>修改后</h4><pre>{{ describe(row.after) }}</pre>
-                </div></div
-              ></template
+              ><ElTag :type="row.status === 1 ? 'success' : 'info'" effect="light">{{
+                row.status === 1 ? '启用' : '停用'
+              }}</ElTag></template
+            ></ElTableColumn
+          ><ElTableColumn label="操作" width="150"
+            ><template #default="{ row }"
+              ><ElButton link type="primary" @click="goToFormPage(row.id)">编辑</ElButton
+              ><ElButton link type="warning" @click="toggle(row as Scheme)">{{
+                row.status === 1 ? '停用' : '启用'
+              }}</ElButton></template
             ></ElTableColumn
           ></ElTable
-        ></template
-      >
-      <template #footer
-        ><ElButton :disabled="saving" @click="visible = false">关闭</ElButton
-        ><ElButton v-if="!readonly" type="primary" :loading="saving" @click="save"
-          >保存方案</ElButton
-        ></template
-      >
-    </ElDialog>
+        >
+        <ElPagination
+          v-model:current-page="current"
+          :page-size="10"
+          :total="total"
+          layout="total,prev,pager,next"
+          @current-change="load"
+        />
+      </ElCard>
+    </template>
+    <template v-else>
+      <div class="form-page__header">
+        <div class="form-page__title">
+          <ElButton :icon="ArrowLeft" :disabled="saving" @click="backToList">返回列表</ElButton>
+          <div>
+            <h2>{{ isEditPage ? '编辑用药方案' : '新增用药方案' }}</h2>
+            <p>{{ isEditPage ? '修改方案信息与药品明细' : '填写方案信息并添加药品明细' }}</p>
+          </div>
+        </div>
+        <div class="form-page__actions">
+          <ElButton :disabled="saving" @click="backToList">取消</ElButton>
+          <ElButton type="primary" :loading="saving" :disabled="formLoading" @click="save"
+            >保存方案</ElButton
+          >
+        </div>
+      </div>
+      <ElCard v-loading="formLoading" shadow="never" class="form-page__card">
+        <ElForm label-position="top" :disabled="saving || formLoading">
+          <div class="grid"
+            ><ElFormItem label="方案名称（必填）"
+              ><ElInput v-model="form.name" maxlength="100" /></ElFormItem
+            ><ElFormItem label="说明"
+              ><ElInput v-model="form.description" maxlength="1000" /></ElFormItem
+            ><ElFormItem label="默认治疗天数"
+              ><ElInputNumber v-model="form.treatment_days" :min="1" :max="3650" /></ElFormItem
+            ><ElFormItem label="默认取药周期（天）"
+              ><ElInputNumber v-model="form.pickup_days" :min="1" :max="3650" /></ElFormItem
+            ><ElFormItem label="提前提醒取药（天）"
+              ><ElInputNumber
+                v-model="form.advance_days"
+                :min="0"
+                :max="form.pickup_days" /></ElFormItem
+          ></div>
+          <div class="drug-entry"
+            ><div class="drug-entry__heading"
+              ><h3>添加药品</h3
+              ><p>{{
+                isEditPage ? '从药品库逐个添加' : '可通过处方识别批量录入，或从药品库逐个添加'
+              }}</p></div
+            ><div class="drug-entry__actions"
+              ><ElButton
+                v-if="!isEditPage"
+                type="primary"
+                plain
+                :icon="Camera"
+                @click="openPrescriptionRecognition"
+                >处方识别</ElButton
+              ><div class="single-drug-entry"
+                ><ElSelect
+                  ref="medicineSelect"
+                  v-model="medicineId"
+                  filterable
+                  placeholder="选择常用药品"
+                  ><ElOption
+                    v-for="m in medicines"
+                    :key="m.id"
+                    :label="m.common_name + ' · ' + m.specification"
+                    :value="m.id"
+                    :disabled="m.status !== 1" /></ElSelect
+                ><ElButton :icon="Plus" @click="addDrug">添加单个药</ElButton></div
+              ></div
+            ></div
+          >
+          <div v-for="(drug, index) in form.drugs" :key="drug.drug_id" class="drug"
+            ><div class="toolbar"
+              ><strong>{{ drug.name }} · {{ drug.specification }}</strong
+              ><ElButton link type="danger" @click="form.drugs.splice(index, 1)"
+                >移除</ElButton
+              ></div
+            ><div class="grid"
+              ><ElFormItem label="单次用量"><ElInput v-model="drug.dose" /></ElFormItem
+              ><ElFormItem label="单位"><ElInput v-model="drug.unit" /></ElFormItem
+              ><ElFormItem label="频次"
+                ><ElInput v-model="drug.frequency" placeholder="例如每日2次" /></ElFormItem
+              ><ElFormItem label="服药时间"
+                ><ElInput v-model="drug.times" placeholder="08:00,20:00" /></ElFormItem
+              ><ElFormItem label="默认首次发药数量"
+                ><ElInputNumber v-model="drug.quantity" :min="1" :max="100000" /></ElFormItem
+              ><ElFormItem label="注意事项"><ElInput v-model="drug.precautions" /></ElFormItem></div
+          ></div>
+          <ElEmpty v-if="!form.drugs.length" description="请添加药品" />
+          <ElFormItem v-if="isEditPage" label="修改原因（必填）"
+            ><ElInput v-model="form.reason" maxlength="300"
+          /></ElFormItem>
+        </ElForm>
+      </ElCard>
+    </template>
     <ElDialog
       v-model="prescriptionVisible"
       title="处方识别"
@@ -190,10 +179,11 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { ref, onMounted, nextTick } from 'vue'
-  import { Camera, Plus, UploadFilled } from '@element-plus/icons-vue'
+  import { computed, nextTick, ref, watch } from 'vue'
+  import { ArrowLeft, Camera, Plus, UploadFilled } from '@element-plus/icons-vue'
   import { ElMessage, ElMessageBox } from 'element-plus'
   import type { UploadFile, UploadFiles, UploadUserFile } from 'element-plus'
+  import { useRoute, useRouter } from 'vue-router'
   import request from '@/utils/http'
   import { fetchCommonMedicineList, type CommonMedicineRecord } from '@/api/common-medicine'
   import type { Drug } from '@/api/project'
@@ -208,22 +198,6 @@
     advance_days: number
     drugs: (Drug & { quantity: number })[]
     reason: string
-    history?: { time: string; operator: string; reason: string; before: unknown; after: unknown }[]
-  }
-  function describe(value: unknown) {
-    if (!value) return '新增前无记录'
-    const r = value as Scheme
-    return [
-      r.name,
-      r.description,
-      '版本：' + r.version,
-      '状态：' + (r.status === 1 ? '启用' : '停用'),
-      '治疗天数：' + (r.treatment_days ?? '未配置'),
-      '取药周期：' + (r.pickup_days ?? '未配置'),
-      ...(r.drugs || []).map(
-        (d) => d.name + ' ' + d.dose + d.unit + '/次 · ' + d.frequency + ' · ' + d.times
-      )
-    ].join('\n')
   }
   const blank = (): Scheme => ({
     name: '',
@@ -242,14 +216,17 @@
     current = ref(1),
     total = ref(0),
     loading = ref(false),
-    visible = ref(false),
-    readonly = ref(false),
+    formLoading = ref(false),
     saving = ref(false),
     prescriptionVisible = ref(false),
     prescriptionFiles = ref<UploadUserFile[]>([]),
     medicines = ref<CommonMedicineRecord[]>([]),
     medicineId = ref<number>(),
     medicineSelect = ref()
+  const route = useRoute()
+  const router = useRouter()
+  const isFormPage = computed(() => route.query.mode === 'create' || route.query.mode === 'edit')
+  const isEditPage = computed(() => route.query.mode === 'edit')
   async function load() {
     loading.value = true
     try {
@@ -267,22 +244,40 @@
     current.value = 1
     void load()
   }
-  async function open(id?: number, view = false) {
-    readonly.value = view
+  async function goToFormPage(id?: number) {
+    await router.push({
+      path: route.path,
+      query: id ? { mode: 'edit', id: String(id) } : { mode: 'create' }
+    })
+  }
+  async function backToList() {
+    prescriptionVisible.value = false
+    await router.replace({ path: route.path })
+  }
+  async function prepareFormPage() {
     medicineId.value = undefined
-    if (id) {
-      const row = await request.get<Scheme>({
-        url: '/app/core/medication-scheme/detail',
-        params: { id }
-      })
-      form.value = {
-        ...blank(),
-        ...row,
-        reason: '',
-        drugs: row.drugs.map((d) => ({ ...d, quantity: d.quantity || 30 }))
+    form.value = blank()
+    const queryId = Array.isArray(route.query.id) ? route.query.id[0] : route.query.id
+    const id = Number(queryId)
+    if (isEditPage.value && (!Number.isInteger(id) || id <= 0)) {
+      ElMessage.warning('缺少有效的用药方案编号')
+      await backToList()
+      return
+    }
+    formLoading.value = true
+    try {
+      if (isEditPage.value) {
+        const row = await request.get<Scheme>({
+          url: '/app/core/medication-scheme/detail',
+          params: { id }
+        })
+        form.value = {
+          ...blank(),
+          ...row,
+          reason: '',
+          drugs: row.drugs.map((d) => ({ ...d, quantity: d.quantity || 30 }))
+        }
       }
-    } else form.value = blank()
-    if (!view) {
       const all: CommonMedicineRecord[] = []
       let n = 1
       while (true) {
@@ -291,8 +286,11 @@
         if (all.length >= p.total) break
       }
       medicines.value = all
+      await nextTick()
+      window.scrollTo({ top: 0 })
+    } finally {
+      formLoading.value = false
     }
-    visible.value = true
   }
   function addDrug() {
     const m = medicines.value.find((m) => m.id === medicineId.value)
@@ -339,12 +337,16 @@
     medicineSelect.value?.focus?.()
   }
   async function save() {
-    if (
-      !form.value.name.trim() ||
-      !form.value.drugs.length ||
-      (form.value.id && !form.value.reason.trim())
-    ) {
-      ElMessage.warning('请填写方案名称、药品及修改原因')
+    if (!form.value.name.trim()) {
+      ElMessage.warning('请填写方案名称')
+      return
+    }
+    if (!form.value.drugs.length) {
+      ElMessage.warning('请至少添加 1 个药品')
+      return
+    }
+    if (isEditPage.value && !form.value.reason.trim()) {
+      ElMessage.warning('请填写修改原因')
       return
     }
     saving.value = true
@@ -354,8 +356,7 @@
         params: form.value,
         showSuccessMessage: true
       })
-      visible.value = false
-      await load()
+      await backToList()
     } finally {
       saving.value = false
     }
@@ -382,10 +383,15 @@
       /* 取消或请求错误 */
     }
   }
-  function close(done: () => void) {
-    if (!saving.value) done()
-  }
-  onMounted(load)
+  watch(
+    () => [route.query.mode, route.query.id],
+    () => {
+      if (!isFormPage.value || isEditPage.value) prescriptionVisible.value = false
+      if (isFormPage.value) void prepareFormPage()
+      else void load()
+    },
+    { immediate: true }
+  )
 </script>
 <style scoped>
   .scheme-page {
@@ -406,6 +412,40 @@
   .toolbar .el-input,
   .toolbar .el-select {
     max-width: 300px;
+  }
+
+  .form-page__header {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+
+  .form-page__title {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+
+  .form-page__title h2,
+  .form-page__title p {
+    margin: 0;
+  }
+
+  .form-page__title p {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .form-page__actions {
+    display: flex;
+    gap: 12px;
+  }
+
+  .form-page__card {
+    min-height: 420px;
   }
 
   .drug-entry {
@@ -478,19 +518,18 @@
     margin-top: 20px;
   }
 
-  .history {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    padding: 16px;
-  }
-
-  .history pre {
-    overflow-wrap: anywhere;
-    white-space: pre-wrap;
-  }
-
   @media (width <= 700px) {
+    .form-page__header,
+    .form-page__title {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .form-page__actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+
     .grid {
       grid-template-columns: 1fr;
     }

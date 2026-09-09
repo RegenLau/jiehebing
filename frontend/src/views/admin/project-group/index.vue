@@ -15,13 +15,6 @@
       >
       <template v-else-if="loaded">
         <ElForm :model="form" label-position="top" :disabled="readonly || saving">
-          <div class="basic-info">
-            <h3>{{ form.name }}</h3>
-            <p>{{ form.description || '暂无分组说明' }}</p>
-            <span class="muted"
-              >患者 {{ form.participant_ids.length }} 人 · 分组第 {{ form.revision }} 版</span
-            >
-          </div>
           <ElTabs v-model="activeTab" class="group-tabs">
             <ElTabPane label="患者" name="participants">
               <ElTable :data="form.participants || []" border empty-text="暂无已入组患者">
@@ -41,6 +34,15 @@
                   ><template #default="{ row }">{{
                     row.study_state || '待启用'
                   }}</template></ElTableColumn
+                >
+                <ElTableColumn label="操作" width="90" fixed="right"
+                  ><template #default="{ row }"
+                    ><RouterLink
+                      class="patient-detail-link"
+                      :to="{ path: '/patient/detail', query: { user_id: String(row.id) } }"
+                      >详情</RouterLink
+                    ></template
+                  ></ElTableColumn
                 >
               </ElTable>
               <p class="muted">患者入组关系由患者建档或研究登记维护，此处仅展示当前结果。</p>
@@ -115,9 +117,10 @@
                 <p class="muted">以上是本组默认条件，实际发药以患者发药登记为准。</p>
               </template>
             </ElTabPane>
-            <ElTabPane label="随访任务" name="followup"
-              ><Schedules v-model="form.surveys" :sources="catalog.surveys" label="问卷" /><h4
-                >检查、复诊及其他任务</h4
+            <ElTabPane label="随访任务-问卷" name="followup-surveys"
+              ><Schedules v-model="form.surveys" :sources="catalog.surveys" label="问卷"
+            /></ElTabPane>
+            <ElTabPane label="随访任务-提醒" name="followup-reminders"
               ><Schedules v-model="form.tasks" :sources="catalog.task_templates" label="任务模板"
             /></ElTabPane>
           </ElTabs>
@@ -205,7 +208,7 @@
       catalog.value = sources
       form.value = { ...record, participant_ids: record.participant_ids || [] }
       projectName.value = project.name
-      activeTab.value = readonly.value ? 'participants' : 'medication'
+      activeTab.value = 'participants'
       loaded.value = true
     } catch {
       if (seq === sequence) error.value = '分组加载失败，请核对项目和分组后重试'
@@ -270,21 +273,8 @@
     max-width: 1200px;
     margin: auto;
   }
-  .basic-info {
-    padding: 24px;
-    border: 1px solid var(--el-border-color-light);
-    border-radius: 8px;
-    background: var(--el-bg-color);
-  }
-  .basic-info h3 {
-    margin: 0 0 12px;
-  }
-  .basic-info p {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
   .group-tabs {
-    margin-top: 24px;
+    margin-top: 0;
   }
   .group-tabs :deep(.el-tabs__item) {
     font-size: 16px;
@@ -315,6 +305,13 @@
   }
   .muted {
     font-size: 12px;
+  }
+  .patient-detail-link {
+    color: var(--el-color-primary);
+    text-decoration: none;
+  }
+  .patient-detail-link:hover {
+    color: var(--el-color-primary-light-3);
   }
   .fields {
     display: grid;

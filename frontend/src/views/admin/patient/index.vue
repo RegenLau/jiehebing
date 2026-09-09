@@ -12,12 +12,12 @@
           clearable
           @keyup.enter="search"
         /><ElButton @click="search">查询</ElButton
-        ><ElButton type="primary" @click="management?.open()">新增患者</ElButton>
+        ><ElButton type="primary" @click="goPatientManagement()">新增患者</ElButton>
         <ElButton @click="loadList" :loading="loading">刷新</ElButton>
       </div>
     </div>
 
-    <Management ref="management" @saved="loadList" /><ElCard shadow="never">
+    <ElCard shadow="never">
       <ElTable :data="list" v-loading="loading" border>
         <ElTableColumn prop="id" label="ID" width="80" /><ElTableColumn
           prop="patient_code"
@@ -45,7 +45,7 @@
         <ElTableColumn label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <ElButton link type="primary" @click="goPatientDetail(row)">详情</ElButton
-            ><ElButton link type="primary" @click="management?.open(row.id)">研究管理</ElButton>
+            ><ElButton link type="primary" @click="goPatientManagement(row)">研究管理</ElButton>
           </template>
         </ElTableColumn>
       </ElTable>
@@ -67,8 +67,6 @@
 </template>
 
 <script setup lang="ts">
-  import Management from './modules/management.vue'
-  const management = ref<InstanceType<typeof Management>>()
   const keyword = ref('')
   function search() {
     pagination.current = 1
@@ -128,6 +126,14 @@
       query: {
         user_id: String(record.id)
       }
+    })
+  }
+
+  const goPatientManagement = (row?: any) => {
+    const record = row as PatientRecord | undefined
+    router.push({
+      path: '/patient/management',
+      query: record ? { user_id: String(record.id) } : undefined
     })
   }
 

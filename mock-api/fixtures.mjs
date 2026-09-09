@@ -60,24 +60,6 @@ export function createFixtures(now) {
     thumb: '/api/mock-files/medicine-cover', sort_order: i, status: i % 5 ? 1 : 0,
     status_text: i % 5 ? '启用' : '停用', created_at: `${shiftDate(today, -60)} 06:00:00`, updated_at: time
   }));
-  const medicines = patients.filter(p => p.id <= 24).flatMap((p, i) => [0, 1].map((n) => {
-    const m = commonMedicines[(i + n) % 16];
-    return { ...m, id: i * 2 + n + 1, user_id: p.id, name: m.common_name, remark: '模拟用药记录', trade_name: '模拟药品',
-      medicine_count: '30', batch_no: `MOCK-${p.id}-01`, sort: n, source: n ? 'manual' : 'ocr', source_text: n ? '手动添加' : '识别导入', created_at: `${p.enroll_date} 07:00:00` };
-  }));
-  let nextPlan = 1;
-  const plans = [];
-  for (let day = -35; day <= 3; day++) {
-    for (const m of medicines) {
-      const p = patients.find(p => p.id === m.user_id);
-      if (shiftDate(today, day) < m.created_at.slice(0, 10)) continue;
-      const status = day > 0 ? 0 : (m.id + day + 100) % 5 === 0 ? 0 : 1;
-      const plan_date = shiftDate(today, day);
-      plans.push({ ...m, id: nextPlan++, medicine_id: m.id, patient_name: p.name, patient_mobile: p.mobile,
-        plan_date, day_number: Math.round((Date.parse(plan_date) - Date.parse(m.created_at.slice(0, 10))) / 86400000) + 1, plan_time: '08:00', plan_index: 1, status,
-        status_text: status ? '已打卡' : '待打卡', checked_at: status ? `${plan_date} 08:05:00` : '', created_at: m.created_at });
-    }
-  }
   const adverse = Array.from({ length: 36 }, (_, i) => {
     const p = patients[i % 24];
     const severity = i % 3 + 1;
@@ -152,7 +134,42 @@ export function createFixtures(now) {
     const project = projects.find(item => item.id === group.project_id);
     for (const patientId of group.participant_ids) {
       const patient = patients.find(item => item.id === patientId);
-      Object.assign(patient, { project_id: project.id, project_name: project.name, group_id: group.id, group_name: group.name, owner_id: admins[0].id, owner_name: admins[0].realname });
+      Object.assign(patient, { project_id: project.id, project_name: project.name, group_id: group.id, group_name: group.name, medication_scheme_id: group.medication.id, medication_scheme_name: group.medication.snapshot.name, owner_id: admins[0].id, owner_name: admins[0].realname });
+    }
+  }
+  const medicines = [];
+  const plans = [];
+  let nextMedicine = 1;
+  let nextPlan = 1;
+  for (const patient of patients) {
+    const group = projectGroups.find(item => item.id === patient.group_id);
+    for (const [sort, drug] of group.medication.snapshot.drugs.entries()) {
+      const source = commonMedicines.find(item => item.id === drug.drug_id);
+      const times = drug.times.split(',').map(value => value.trim());
+      const quantity = group.medication.quantities.find(item => item.drug_id === drug.drug_id)?.quantity || 0;
+      const medicine = {
+        ...source, id: nextMedicine++, user_id: patient.id, common_medicine_id: source.id, name: source.common_name,
+        project_id: group.project_id, group_id: group.id, group_name: group.name, medication_scheme_id: group.medication.id,
+        medication_scheme_name: group.medication.snapshot.name, remark: `来自研究分组“${group.name}”`, trade_name: '模拟药品',
+        medicine_count: String(quantity), batch_no: `MOCK-${patient.id}-${String(sort + 1).padStart(2, '0')}`, sort,
+        source: 'group', source_text: '研究分组方案', usage: '口服', dosage: `${drug.dose}${drug.unit}/次`,
+        dosage_value: String(drug.dose), dosage_unit: drug.unit, frequency: times.length, plan_times: times,
+        medication_guidance: drug.precautions, created_at: `${patient.enroll_date} 07:00:00`, updated_at: time
+      };
+      medicines.push(medicine);
+      for (let day = -35; day <= 3; day++) {
+        const plan_date = shiftDate(today, day);
+        if (plan_date < patient.enroll_date) continue;
+        for (const [planIndex, planTime] of times.entries()) {
+          const status = day > 0 ? 0 : (medicine.id + day + planIndex + 100) % 5 === 0 ? 0 : 1;
+          plans.push({
+            ...medicine, id: nextPlan++, medicine_id: medicine.id, patient_name: patient.name, patient_mobile: patient.mobile,
+            plan_date, day_number: Math.round((Date.parse(plan_date) - Date.parse(patient.enroll_date)) / 86400000) + 1,
+            plan_time: planTime, plan_index: planIndex + 1, status, status_text: status ? '已打卡' : '待打卡',
+            checked_at: status ? `${plan_date} ${planTime}:00` : '', created_at: medicine.created_at
+          });
+        }
+      }
     }
   }
   return { projects, projectGroups, medicationSchemes, taskTemplates, patients, medicines, plans, adverse, commonMedicines, surveys, answers, articles, admins, files, loginLogs: [], operationLogs: [] };
@@ -175,6 +192,7 @@ export function createMenu() {
   }));
   result[0].children.push({ path: 'user-center', name: 'UserCenter', component: '/dashboard/user-center', meta: { title: '个人中心', isHide: true, keepAlive: false } });
   result[1].children.push({ path: 'detail', name: 'PatientDetail', component: '/admin/patient-detail', meta: { title: 'menus.patient.detail', isHide: true, activePath: '/patient/index', keepAlive: false } });
+  result[1].children.push({ path: 'management', name: 'PatientManagement', component: '/admin/patient-management', meta: { title: '患者研究管理', isHide: true, activePath: '/patient/index', keepAlive: false } });
   result.splice(1, 0, { path: '/project', name: 'Project', component: '/index/index', meta: { title: 'menus.project.title', icon: 'ri:folder-chart-line' },
     children: [
       { path: 'index', name: 'ProjectIndex', component: '/admin/project', meta: { title: 'menus.project.list', keepAlive: true } },

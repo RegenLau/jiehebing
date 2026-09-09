@@ -11,6 +11,12 @@ export interface PatientRecord {
   is_archived: number
   login_enabled: boolean
   created_via: string
+  project_id?: number
+  project_name?: string
+  group_id?: number
+  group_name?: string
+  medication_scheme_id?: number
+  medication_scheme_name?: string
   enroll_date: string
   status: number
   created_at: string

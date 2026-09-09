@@ -4,17 +4,11 @@
       <div>
         <h2>患者详情</h2>
         <p v-if="patient.id"
-          >查看 {{ patient.name || '-' }} 的药品、用药计划、问卷答题和不良反应上报情况。</p
+          >查看 {{ patient.name || '-' }} 的分组用药、每日反馈、检查报告及研究记录。</p
         >
       </div>
       <div class="actions">
-        <ElButton @click="router.push({ path: '/followup/index', query: { user_id: userId } })"
-          >随访任务</ElButton
-        ><ElButton @click="router.push({ path: '/reports/index', query: { user_id: userId } })"
-          >检查报告</ElButton
-        ><ElButton @click="router.push({ path: '/followup/feedback', query: { user_id: userId } })"
-          >每日反馈</ElButton
-        ><ElButton @click="goBack">返回患者列表</ElButton>
+        <ElButton @click="goBack">返回患者列表</ElButton>
         <ElButton @click="loadAll" :loading="pageLoading">刷新</ElButton>
       </div>
     </div>
@@ -27,6 +21,9 @@
         <div><span>出生日期：</span>{{ patient.birth_date || '-' }}</div>
         <div><span>年龄：</span>{{ patient.age ?? '-' }}</div>
         <div><span>患者端登录：</span>{{ patient.login_enabled ? '可登录' : '不可登录' }}</div>
+        <div><span>研究项目：</span>{{ patient.project_name || '-' }}</div>
+        <div><span>研究分组：</span>{{ patient.group_name || '-' }}</div>
+        <div><span>用药方案：</span>{{ patient.medication_scheme_name || '-' }}</div>
         <div><span>建档日期：</span>{{ patient.enroll_date || '-' }}</div>
       </div>
     </ElCard>
@@ -111,6 +108,13 @@
         </ElTabPane>
 
         <ElTabPane label="患者药品" name="medicine">
+          <ElAlert
+            :title="`所属分组：${patient.group_name || '-'}；用药方案：${patient.medication_scheme_name || '-'}`"
+            type="info"
+            :closable="false"
+            show-icon
+            class="scheme-alert"
+          />
           <ElTable :data="medicines.list" v-loading="medicines.loading" border>
             <ElTableColumn prop="name" label="药品名称" min-width="180" />
             <ElTableColumn prop="specification" label="规格" min-width="140" />
@@ -216,6 +220,14 @@
             />
           </div>
         </ElTabPane>
+
+        <ElTabPane label="每日反馈" name="feedback" lazy>
+          <FeedbackRecords embedded :user-id="userId" />
+        </ElTabPane>
+
+        <ElTabPane label="检查报告" name="reports" lazy>
+          <PatientReports embedded :user-id="userId" />
+        </ElTabPane>
       </ElTabs>
     </ElCard>
 
@@ -316,6 +328,8 @@
 </template>
 
 <script setup lang="ts">
+  import FeedbackRecords from '@/views/admin/feedback/index.vue'
+  import PatientReports from '@/views/admin/reports/index.vue'
   import { fetchMedicationPlanList, type MedicationPlanRecord } from '@/api/medication-plan'
   import {
     fetchPatientAdverseReactionList,
@@ -340,7 +354,9 @@
     return typeof value === 'string' && value ? Number(value) : 0
   })
 
-  const activeTab = ref<'today' | 'all' | 'medicine' | 'survey' | 'adverse'>('today')
+  const activeTab = ref<
+    'today' | 'all' | 'medicine' | 'survey' | 'adverse' | 'feedback' | 'reports'
+  >('today')
   const pageLoading = ref(false)
   const patientLoading = ref(false)
   const surveyLoading = ref(false)
@@ -580,7 +596,7 @@
       loadSurveyStatus()
       return
     }
-    loadAdverseReactions()
+    if (name === 'adverse') loadAdverseReactions()
   }
 
   const loadAll = async () => {
@@ -596,7 +612,7 @@
         await loadMedicines()
       } else if (activeTab.value === 'survey') {
         await loadSurveyStatus()
-      } else {
+      } else if (activeTab.value === 'adverse') {
         await loadAdverseReactions()
       }
     } finally {
@@ -670,6 +686,10 @@
     display: flex;
     justify-content: flex-end;
     margin-top: 16px;
+  }
+
+  .scheme-alert {
+    margin-bottom: 16px;
   }
 
   .answer-detail {

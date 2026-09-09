@@ -153,7 +153,7 @@ test('patient mini-program login only accepts mobile numbers added by the admin'
   assert.match(missing.message, /后台患者档案/)
   assert.equal((await api.all(P + 'patient/index')).length, initial.length, 'failed login never creates a patient')
 
-  const group = await api.ok(P + 'project/group-create', { body: { project_id: 1, name: '小程序登录验证组' } })
+  const group = (await api.ok(P + 'project/detail', { query: { id: 1 } })).groups[0]
   const patient = await api.ok(P + 'patient/save', { body: {
     name: '新建登录患者', mobile: '13910009999', gender: 2, birth_date: '1990-06-18',
     project_id: 1, group_id: group.id, owner_id: 1, enroll_date: TODAY,
@@ -174,7 +174,7 @@ test('patient mini-program login only accepts mobile numbers added by the admin'
   assert.equal((await api.json('/app/patient/archive-detail', { auth: token })).code, 402)
 })
 
-test('patient pages, related medication/reaction records and explicit empty patient remain consistent', async (t) => {
+test('patient pages and medication records remain consistent with each assigned group scheme', async (t) => {
   const api = await start(t)
   await api.login()
   const patients = await api.all(P + 'patient/index')
@@ -198,12 +198,21 @@ test('patient pages, related medication/reaction records and explicit empty pati
   const ownReactions = await api.all(P + 'adverse-reaction/index', { user_id: patient.id })
   assert.deepEqual(ids(ownReactions), ids(reactions.filter((row) => row.user_id === patient.id)))
   assert.ok(ownReactions.every((row) => row.patient_name === patient.name))
-  const empty = patients.find((row) => !plans.some((plan) => plan.user_id === row.id) && !reactions.some((reaction) => reaction.user_id === row.id))
-  assert.ok(empty, 'seed provides a patient without associated records')
-  assert.deepEqual(await api.all(P + 'patient/medicine-list', { user_id: empty.id }), [])
-  assert.deepEqual(await api.all(P + 'medication-plan/index', { user_id: empty.id, scope: 'all' }), [])
-  const statuses = await api.ok(P + 'patient/survey-status', { query: { user_id: empty.id } })
-  assert.ok(statuses.every((row) => !row.answered && row.answer_count === 0))
+  const projects = await api.all(P + 'project/index')
+  const groups = (await Promise.all(projects.map(project => api.ok(P + 'project/detail', { query: { id: project.id } })))).flatMap(project => project.groups)
+  for (const current of patients) {
+    const group = groups.find(row => row.id === current.group_id && row.project_id === current.project_id)
+    assert.ok(group?.medication, `patient ${current.id} belongs to a group with a medication scheme`)
+    assert.equal(current.medication_scheme_id, group.medication.id)
+    assert.equal(current.medication_scheme_name, group.medication.snapshot.name)
+    const patientMedicines = await api.all(P + 'patient/medicine-list', { user_id: current.id })
+    assert.deepEqual(
+      patientMedicines.map(row => row.common_medicine_id).sort((a, b) => a - b),
+      group.medication.snapshot.drugs.map(row => row.drug_id).sort((a, b) => a - b)
+    )
+    assert.ok(patientMedicines.every(row => row.group_id === group.id && row.medication_scheme_id === group.medication.id && row.source === 'group'))
+    assert.ok(plans.filter(row => row.user_id === current.id).every(row => row.group_id === group.id && row.medication_scheme_id === group.medication.id))
+  }
 })
 
 test('medication and reaction filters include full history and precise overdue windows', async (t) => {
@@ -529,6 +538,8 @@ test('research project basic fields, editable statuses and restart isolation', a
   const menu = (await api.ok(P+'system/menu')).find(m=>m.path==='/project')
   assert.ok(menu.children.some(c=>c.path==='groups' && c.meta.isHide))
   assert.ok(menu.children.some(c=>c.path==='group' && c.meta.isHide))
+  const patientMenu = (await api.ok(P+'system/menu')).find(m=>m.path==='/patient')
+  assert.ok(patientMenu.children.some(c=>c.path==='management' && c.name==='PatientManagement' && c.meta.isHide))
   const payload = { code:'TB-TEST-001', name:'项目验收', start_date:TODAY, end_date:'2027-09-08', purpose:'研究目的' }
   const created = await api.ok(P+'project/save',{body:payload})
   assert.equal(created.status,0)
@@ -731,7 +742,10 @@ test('patient registration, treatment and dispensing preserve independent record
  assert.notEqual((await api.json(P+'patient/save',{body:{...body,mobile:'13900000998',birth_date:''}})).code,200);
  assert.notEqual((await api.json(P+'patient/save',{body:{...body,mobile:'13900000998',birth_date:'2027-01-01'}})).code,200);
  assert.notEqual((await api.json(P+'patient/state',{body:{user_id:p.id,state:'治疗中',effective_date:TODAY,reason:'未确认方案'}})).code,200);
+ assert.notEqual((await api.json(P+'patient/treatment',{body:{user_id:p.id,start_date:TODAY,treatment_days:29,reason:'尝试覆盖分组天数',drugs:source.drugs}})).code,200);
+ assert.notEqual((await api.json(P+'patient/treatment',{body:{user_id:p.id,start_date:TODAY,treatment_days:30,reason:'尝试覆盖分组剂量',drugs:source.drugs.map((d,i)=>i?d:{...d,dose:String(Number(d.dose)+1)})}})).code,200);
  const treatment=await api.ok(P+'patient/treatment',{body:{user_id:p.id,start_date:TODAY,treatment_days:30,reason:'医生确认',drugs:source.drugs}});assert.equal(treatment.source_group_id,g.id);
+ assert.deepEqual(treatment.drugs.map(d=>d.drug_id),source.drugs.map(d=>d.drug_id));assert.equal(treatment.treatment_days,30);
  await api.ok(P+'patient/state',{body:{user_id:p.id,state:'治疗中',effective_date:TODAY,reason:'确认启用'}});
  const disp=await api.ok(P+'patient/dispense',{body:{user_id:p.id,issued_date:TODAY,reason:'实际发药',items:treatment.drugs.map(d=>({drug_id:d.drug_id,quantity:30}))}});assert.equal(disp.items.length,source.drugs.length);
  const before=await api.ok(P+'patient/management',{query:{user_id:p.id}});

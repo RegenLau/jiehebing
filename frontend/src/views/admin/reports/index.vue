@@ -1,14 +1,19 @@
 <template>
-  <div class="page"
+  <div class="page" :class="{ embedded }"
     ><div class="toolbar"
-      ><h2>检查报告</h2
+      ><h2 v-if="!embedded">检查报告</h2
       ><ResearchExport
         kind="reports"
-        :params="{ keyword, status: status || route.query.status, user_id: route.query.user_id }"
+        :params="{
+          keyword,
+          status: status || route.query.status,
+          user_id: effectiveUserId || undefined
+        }"
       /><ElButton type="primary" @click="create">代录报告</ElButton></div
     ><ElCard shadow="never"
       ><div class="toolbar"
         ><ElInput
+          v-if="!embedded"
           v-model="keyword"
           placeholder="患者或报告类型"
           clearable
@@ -52,7 +57,12 @@
       /><ElForm label-position="top" :disabled="saving"
         ><template v-if="!form.id"
           ><ElFormItem label="患者"
-            ><ElSelect v-model="form.user_id" filterable @change="patientChanged"
+            ><ElSelect
+              v-model="form.user_id"
+              filterable
+              :disabled="Boolean(effectiveUserId)"
+              @change="patientChanged"
+            >
               ><ElOption
                 v-for="p in patients"
                 :key="p.id"
@@ -158,7 +168,7 @@
 <script setup lang="ts">
   import ResearchExport from '@/components/business/research-export/index.vue'
 
-  import { ref, onMounted, watch } from 'vue'
+  import { computed, ref, onMounted, watch } from 'vue'
   import { useRoute } from 'vue-router'
   import request from '@/utils/http'
   import { fetchPatientList, type PatientRecord } from '@/api/patient'
@@ -174,7 +184,11 @@
     versions: { time: string; note: string; files: { url: string; name: string; type: string }[] }[]
     history: { time: string; operator: string; reason: string }[]
   }
-  const blank = (): Report => ({
+  const props = withDefaults(defineProps<{ embedded?: boolean; userId?: number }>(), {
+      embedded: false,
+      userId: 0
+    }),
+    blank = (): Report => ({
       type: '',
       exam_date: '',
       status: '',
@@ -183,6 +197,8 @@
       history: []
     }),
     route = useRoute(),
+    embedded = computed(() => props.embedded),
+    effectiveUserId = computed(() => props.userId || Number(route.query.user_id) || 0),
     form = ref(blank()),
     rows = ref<Report[]>([]),
     patients = ref<PatientRecord[]>([]),
@@ -205,7 +221,7 @@
         params: {
           keyword: keyword.value,
           status: status.value || route.query.status,
-          user_id: route.query.user_id,
+          user_id: effectiveUserId.value || undefined,
           current: current.value,
           size: 10
         }
@@ -222,6 +238,7 @@
   }
   async function create() {
     form.value = blank()
+    form.value.user_id = effectiveUserId.value || undefined
     uploads.value = []
     note.value = ''
     tasks.value = []
@@ -233,6 +250,7 @@
       if (all.length >= p.total) break
     }
     patients.value = all
+    if (form.value.user_id) await patientChanged()
     visible.value = true
   }
   async function patientChanged() {
@@ -306,7 +324,7 @@
     if (!saving.value) done()
   }
   watch(
-    () => route.fullPath,
+    () => [route.fullPath, effectiveUserId.value],
     () => {
       current.value = 1
       status.value = ''
@@ -318,6 +336,12 @@
 <style scoped>
   .page {
     padding: 20px;
+  }
+  .page.embedded {
+    padding: 0;
+  }
+  .page.embedded > .toolbar {
+    justify-content: flex-end;
   }
   .toolbar {
     display: flex;

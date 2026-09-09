@@ -1,14 +1,15 @@
 <template>
-  <div class="page"
+  <div class="page" :class="{ embedded }"
     ><div class="toolbar"
-      ><h2>每日反馈记录</h2
+      ><h2 v-if="!embedded">每日反馈记录</h2
       ><ResearchExport
         kind="feedback"
-        :params="{ keyword, date, user_id: route.query.user_id }"
+        :params="{ keyword, date, user_id: effectiveUserId || undefined }"
       /><ElButton type="primary" @click="create">代录反馈</ElButton></div
     ><ElCard shadow="never"
       ><div class="toolbar"
         ><ElInput
+          v-if="!embedded"
           v-model="keyword"
           placeholder="患者姓名"
           clearable
@@ -43,7 +44,7 @@
       :close-on-click-modal="false"
       ><ElForm label-position="top" :disabled="saving"
         ><ElFormItem label="患者"
-          ><ElSelect v-model="form.user_id" filterable
+          ><ElSelect v-model="form.user_id" filterable :disabled="Boolean(effectiveUserId)"
             ><ElOption
               v-for="p in patients"
               :key="p.id"
@@ -77,7 +78,7 @@
 <script setup lang="ts">
   import ResearchExport from '@/components/business/research-export/index.vue'
 
-  import { ref, onMounted, watch } from 'vue'
+  import { computed, ref, onMounted, watch } from 'vue'
   import { useRoute } from 'vue-router'
   import request from '@/utils/http'
   import { fetchPatientList, type PatientRecord } from '@/api/patient'
@@ -94,7 +95,13 @@
     note: string
     source?: string
   }
-  const route = useRoute(),
+  const props = withDefaults(defineProps<{ embedded?: boolean; userId?: number }>(), {
+      embedded: false,
+      userId: 0
+    }),
+    route = useRoute(),
+    embedded = computed(() => props.embedded),
+    effectiveUserId = computed(() => props.userId || Number(route.query.user_id) || 0),
     names = ['咳嗽', '咳痰', '发热', '盗汗', '乏力', '食欲下降', '胸闷气短', '其他'],
     changes = ['首次记录', '减轻', '无变化', '加重', '新出现', '消失'],
     blank = (): Feedback => ({
@@ -121,7 +128,7 @@
         params: {
           keyword: keyword.value,
           date: date.value,
-          user_id: route.query.user_id,
+          user_id: effectiveUserId.value || undefined,
           current: current.value,
           size: 10
         }
@@ -138,6 +145,7 @@
   }
   async function create() {
     form.value = blank()
+    form.value.user_id = effectiveUserId.value || undefined
     const all: PatientRecord[] = []
     let n = 1
     while (true) {
@@ -166,7 +174,7 @@
     if (!saving.value) done()
   }
   watch(
-    () => route.fullPath,
+    () => [route.fullPath, effectiveUserId.value],
     () => {
       current.value = 1
       void load()
@@ -177,6 +185,13 @@
 <style scoped>
   .page {
     padding: 20px;
+  }
+  .page.embedded {
+    padding: 0;
+  }
+  .page.embedded > .toolbar {
+    justify-content: flex-end;
+    margin-top: 0;
   }
   .toolbar {
     display: flex;
