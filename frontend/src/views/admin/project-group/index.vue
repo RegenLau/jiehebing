@@ -3,10 +3,10 @@
     <div class="heading"
       ><div
         ><ElButton link type="primary" :disabled="saving" @click="back">返回分组列表</ElButton
-        ><h2>{{ readonly ? form.name + ' · 分组详情' : '设置分组' }}</h2
+        ><h2>{{ form.name }} · {{ readonly ? '分组详情' : '配置方案与任务' }}</h2
         ><p>{{ projectName }}</p></div
-      ><ElButton v-if="readonly && loaded" type="primary" @click="editGroup"
-        >编辑分组</ElButton
+      ><ElButton v-if="readonly && loaded" type="primary" @click="configureGroup"
+        >配置方案与任务</ElButton
       ></div
     >
     <div v-loading="opening" class="group-body">
@@ -14,31 +14,37 @@
         ><template #extra><ElButton @click="loadPage">重试</ElButton></template></ElResult
       >
       <template v-else-if="loaded">
-        <ElForm ref="formRef" :model="form" label-position="top" :disabled="readonly || saving">
+        <ElForm :model="form" label-position="top" :disabled="readonly || saving">
           <div class="basic-info">
-            <template v-if="readonly">
-              <h3>{{ form.name }}</h3>
-              <p>{{ form.description || '暂无分组说明' }}</p>
-              <span class="muted"
-                >患者 {{ form.participant_ids.length }} 人 · 配置第 {{ form.revision }} 版</span
-              >
-            </template>
-            <div v-else class="fields">
-              <ElFormItem
-                label="分组名称"
-                prop="name"
-                :rules="[{ required: true, message: '请填写分组名称', trigger: 'blur' }]"
-                ><ElInput v-model.trim="form.name" maxlength="60" placeholder="例如 A 组"
-              /></ElFormItem>
-              <ElFormItem label="分组说明"
-                ><ElInput
-                  v-model.trim="form.description"
-                  maxlength="1000"
-                  placeholder="说明本组适用范围"
-              /></ElFormItem>
-            </div>
+            <h3>{{ form.name }}</h3>
+            <p>{{ form.description || '暂无分组说明' }}</p>
+            <span class="muted"
+              >患者 {{ form.participant_ids.length }} 人 · 分组第 {{ form.revision }} 版</span
+            >
           </div>
           <ElTabs v-model="activeTab" class="group-tabs">
+            <ElTabPane label="患者" name="participants">
+              <ElTable :data="form.participants || []" border empty-text="暂无已入组患者">
+                <ElTableColumn label="患者编号" min-width="140"
+                  ><template #default="{ row }">{{
+                    row.patient_code || '-'
+                  }}</template></ElTableColumn
+                >
+                <ElTableColumn prop="name" label="姓名" min-width="100" />
+                <ElTableColumn prop="mobile" label="手机号" min-width="140" />
+                <ElTableColumn label="入组日期" min-width="120"
+                  ><template #default="{ row }">{{
+                    row.enroll_date || '-'
+                  }}</template></ElTableColumn
+                >
+                <ElTableColumn label="研究状态" min-width="110"
+                  ><template #default="{ row }">{{
+                    row.study_state || '待启用'
+                  }}</template></ElTableColumn
+                >
+              </ElTable>
+              <p class="muted">患者入组关系由患者建档或研究登记维护，此处仅展示当前结果。</p>
+            </ElTabPane>
             <ElTabPane label="用药方案" name="medication">
               <ElSelect
                 :model-value="form.medication?.id"
@@ -114,54 +120,22 @@
                 >检查、复诊及其他任务</h4
               ><Schedules v-model="form.tasks" :sources="catalog.task_templates" label="任务模板"
             /></ElTabPane>
-            <ElTabPane label="患者" name="participants">
-              <ElFormItem label="选择患者"
-                ><ElSelect
-                  v-model="form.participant_ids"
-                  multiple
-                  filterable
-                  placeholder="按姓名或手机号搜索已建档患者"
-                  style="width: 100%"
-                >
-                  <ElOption
-                    v-for="p in participants"
-                    :key="p.id"
-                    :value="p.id"
-                    :label="`${p.name} · ${p.mobile}${p.group_id && p.group_id !== groupId ? '（已在' + p.group_name + '）' : p.is_archived !== 1 ? '（未建档）' : ''}`"
-                    :disabled="
-                      Boolean(p.group_id && p.group_id !== groupId) ||
-                      (p.is_archived !== 1 && !originalMemberIds.includes(p.id))
-                    "
-                  /> </ElSelect
-              ></ElFormItem>
-              <ElTable
-                :data="participants.filter((p) => form.participant_ids.includes(p.id))"
-                border
-                empty-text="尚未添加患者"
-                ><ElTableColumn prop="name" label="姓名" /><ElTableColumn
-                  prop="mobile"
-                  label="手机号"
-              /></ElTable>
-              <p class="muted">患者加入分组后，不会自动修改其用药或生成任务。</p>
-            </ElTabPane>
           </ElTabs>
         </ElForm>
         <div v-if="!readonly" class="footer"
           ><ElButton :disabled="saving" @click="back">返回分组列表</ElButton
-          ><ElButton type="primary" :loading="saving" @click="save">保存分组</ElButton></div
+          ><ElButton type="primary" :loading="saving" @click="save">保存方案与任务</ElButton></div
         >
       </template>
     </div>
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, nextTick, ref, watch } from 'vue'
+  import { computed, ref, watch } from 'vue'
   import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
-  import { ElMessage, type FormInstance } from 'element-plus'
+  import { ElMessage } from 'element-plus'
   import {
     fetchGroupDetail,
-    fetchParticipants,
-    type ParticipantOption,
     fetchProjectDetail,
     fetchProjectCatalog,
     saveGroup,
@@ -195,10 +169,7 @@
     error = ref(''),
     projectName = ref('')
   const readonly = computed(() => Boolean(groupId.value) && route.query.mode !== 'edit')
-  const formRef = ref<FormInstance>()
-  const activeTab = ref('medication')
-  const participants = ref<ParticipantOption[]>([]),
-    originalMemberIds = ref<number[]>([])
+  const activeTab = ref('participants')
   const drugName = (id: number) =>
     form.value.medication?.snapshot.drugs?.find((d) => d.drug_id === id)?.name || ''
   const drugUnit = (id: number) =>
@@ -225,21 +196,17 @@
       return
     }
     try {
-      const [sources, project, record, people] = await Promise.all([
+      const [sources, project, record] = await Promise.all([
         fetchProjectCatalog(),
         fetchProjectDetail(pid),
-        fetchGroupDetail(pid, gid),
-        fetchParticipants(pid)
+        fetchGroupDetail(pid, gid)
       ])
       if (seq !== sequence) return
       catalog.value = sources
       form.value = { ...record, participant_ids: record.participant_ids || [] }
-      participants.value = people
-      originalMemberIds.value = [...form.value.participant_ids]
       projectName.value = project.name
+      activeTab.value = readonly.value ? 'participants' : 'medication'
       loaded.value = true
-      await nextTick()
-      formRef.value?.clearValidate()
     } catch {
       if (seq === sequence) error.value = '分组加载失败，请核对项目和分组后重试'
     } finally {
@@ -249,7 +216,7 @@
   function back() {
     void router.push({ path: '/project/groups', query: { project_id: projectId.value } })
   }
-  function editGroup() {
+  function configureGroup() {
     void router.push({
       path: '/project/group',
       query: { project_id: projectId.value, id: groupId.value, mode: 'edit' }
@@ -277,8 +244,7 @@
     }
   }
   async function save() {
-    if (readonly.value || saving.value || !(await formRef.value?.validate().catch(() => false)))
-      return
+    if (readonly.value || saving.value) return
     if ([...form.value.surveys, ...form.value.tasks].some((s) => s.anchor === 'date' && !s.date)) {
       ElMessage.warning('请填写指定执行日期')
       return

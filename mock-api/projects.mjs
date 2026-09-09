@@ -10,6 +10,22 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
   };
   const project = id => find(db.projects, id, '项目');
   const group = (projectId, id) => { const row = find(db.projectGroups, id, '分组'); assert(row.project_id === project(projectId).id, '分组不属于当前项目', 404); return row; };
+  const groupView = row => ({
+    ...copy(row),
+    participants: (row.participant_ids || []).map(id => {
+      const patient = find(db.patients,id,'患者');
+      return {
+        id:patient.id,
+        patient_code:patient.patient_code || '',
+        name:patient.name,
+        mobile:patient.mobile,
+        gender_text:patient.gender_text || '',
+        birth_date:patient.birth_date || '',
+        enroll_date:patient.enroll_date || '',
+        study_state:patient.study_state || '待启用'
+      };
+    })
+  });
   const log = (p, admin, action, note, before, after) => {
     p.updated_at = timestamp();
     const changes = Object.keys(after).filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k])).map(field => ({ field, before: before[field] ?? '', after: after[field] }));
@@ -65,7 +81,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
   });
   core('POST', 'project/group-create', ({ body: b, admin }) => {
     const p = project(b.project_id);
-    assert(Object.keys(b).every(k => ['project_id','name','description'].includes(k)), '创建分组只需基础信息，请创建后再设置方案、任务和人员');
+    assert(Object.keys(b).every(k => ['project_id','name','description'].includes(k)), '创建分组只需基础信息，请创建后再设置方案和任务');
     const name = text(b.name,'分组名称',60,true), description = text(b.description,'分组说明',1000);
     assert(!db.projectGroups.some(g => g.project_id === p.id && g.name.toLowerCase() === name.toLowerCase()), '当前项目已有同名分组');
     const record = { id:nextId(db.projectGroups), project_id:p.id, name, description, revision:1, medication:null, surveys:[],tasks:[],participant_ids:[],participants:[],created_at:timestamp(),updated_at:timestamp() };
@@ -73,7 +89,20 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     log(p,admin,'新增分组',name, {group:{}}, {group:copy(record)});
     return record;
   });
-  core('GET', 'project/group-detail', ({ query: q }) => group(q.project_id, q.id));
+  core('GET', 'project/group-detail', ({ query: q }) => groupView(group(q.project_id, q.id)));
+  core('POST', 'project/group-basic-save', ({ body: b, admin }) => {
+    const p = project(b.project_id);
+    assert(Object.keys(b).every(k => ['id','project_id','revision','name','description'].includes(k)), '编辑分组只允许修改分组名称和分组说明');
+    const existing = group(p.id,b.id);
+    assert(b.revision === existing.revision, '分组已更新，请重新打开后编辑');
+    const name = text(b.name,'分组名称',60,true), description = text(b.description,'分组说明',1000);
+    assert(!db.projectGroups.some(g => g.project_id === p.id && g !== existing && g.name.toLowerCase() === name.toLowerCase()), '当前项目已有同名分组');
+    if (existing.name === name && existing.description === description) return groupView(existing);
+    const before = copy(existing);
+    Object.assign(existing,{name,description,revision:existing.revision+1,updated_at:timestamp()});
+    log(p,admin,'编辑分组基础信息',name,{group:before},{group:copy(existing)});
+    return groupView(existing);
+  });
   core('POST', 'project/group-save', ({ body: b, admin }) => {
     const p = project(b.project_id);
     assert(b.id !== undefined, '请先创建分组基础信息');
@@ -138,6 +167,6 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     Object.assign(record,data,{revision:record.revision+1,updated_at:timestamp()});
     if (!existing) db.projectGroups.push(record);
     log(p,admin,existing ? '编辑分组' : '新增分组',`${name}（配置第${record.revision}版）`, { group:before }, { group:copy(record) });
-    return record;
+    return groupView(record);
   });
 }

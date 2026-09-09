@@ -135,7 +135,7 @@ JSON 顶层统一为 `{code,message,data}`，成功码 `200`。多数业务分�
 
 验收应分别记录接口与关联数据检查、真实 XLSX 解析、上传图片预览、实际浏览器操作、原后台请求隔离、TypeScript 与构建结果。源码审阅、文件存在或单个接口成功，都不能替代这些运行证据。最终已验证项与限制请查根目录 `README.md`。
 
-## 研究项目管理接口
+## 研究管理接口
 
 功能与版本规则统一以 [功能架构](结核病临床研究患者管理系统_功能架构.md) 为准，本文仅记录实现入口。
 
@@ -146,12 +146,12 @@ JSON 顶层统一为 `{code,message,data}`，成功码 `200`。多数业务分�
 | 项目新增/编辑 | `POST /app/core/project/save`；当前仅维护编号、名称、研究周期和研究目的 |
 | 人工变更项目状态 | `POST /app/core/project/change-status` |
 | 通用内容选择目录 | `GET /app/core/project/catalog` |
-| 分组详情 | `GET /app/core/project/group-detail` |
+| 分组详情及当前已入组患者 | `GET /app/core/project/group-detail` |
 | 分组创建（仅基础信息） | `POST /app/core/project/group-create` |
-| 患者候选及本项目归属 | `GET /app/core/project/participants` |
+| 分组基础信息编辑 | `POST /app/core/project/group-basic-save`；只更新名称和说明 |
 | 分组更新关联配置 | `POST /app/core/project/group-save` |
 
-项目列表 `/project/index` 的操作为分组、编辑及状态，不再提供项目详情入口。分组选择 `/project/groups?project_id=...`，新建使用基础信息弹窗并在成功后停留于列表；“进入分组”使用 `/project/group?project_id=...&id=...`，“编辑”另追加 `mode=edit`。旧的无id路径转回列表新建入口。分组API校验项目归属，更新携带revision避免覆盖过期配置。服务代码在mock-api/projects.mjs，不调用PHP。
+项目列表 `/project/index` 的操作为分组、编辑及状态，不再提供项目详情入口。分组选择 `/project/groups?project_id=...`，新建使用基础信息弹窗并在成功后停留于列表；列表“编辑”仍在当前页弹窗中修改名称和说明，“进入分组”使用 `/project/group?project_id=...&id=...`。分组详情固定为患者、用药方案、随访任务三个页签，患者页只展示已入组患者；患者关系由患者建档/研究登记维护。详情页的“配置方案与任务”进入 `mode=edit`，只调整用药及随访配置。旧的无id路径转回列表新建入口。分组API校验项目归属，更新携带revision避免覆盖过期数据。服务代码在mock-api/projects.mjs，不调用PHP。
 
 ## 后续研究功能接口（2026-09-09）
 

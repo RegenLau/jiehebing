@@ -4,7 +4,7 @@
       ><div
         ><ElButton link type="primary" @click="router.push('/project/index')">返回项目列表</ElButton
         ><h2>{{ project?.name || '研究项目' }} · 研究分组</h2
-        ><p>选择已有小组查看详情，或新建研究分组。</p></div
+        ><p>编辑分组基础信息，或进入分组查看患者并配置方案与任务。</p></div
       ><ElButton v-if="project" type="primary" @click="openGroup()">新建分组</ElButton></div
     >
     <ElCard v-loading="loading" shadow="never">
@@ -34,12 +34,12 @@
               {{ row.participant_ids?.length || 0 }}</template
             ></ElTableColumn
           >
-          <ElTableColumn label="配置版本" width="100"
+          <ElTableColumn label="分组版本" width="100"
             ><template #default="{ row }">第 {{ row.revision }} 版</template></ElTableColumn
           >
           <ElTableColumn label="操作" width="180"
             ><template #default="{ row }"
-              ><ElButton link type="primary" @click="editGroup(row.id)">编辑</ElButton
+              ><ElButton link type="primary" @click="openEdit(row)">编辑</ElButton
               ><ElButton link type="primary" @click="openGroup(row.id)"
                 >进入分组</ElButton
               ></template
@@ -73,7 +73,7 @@
             placeholder="选填"
         /></ElFormItem>
       </ElForm>
-      <p class="tip">创建后再设置用药方案、随访任务和患者。</p>
+      <p class="tip">创建后可进入分组配置用药方案和随访任务；患者在建档时加入分组。</p>
       <template #footer
         ><ElButton :disabled="creating" @click="createVisible = false">取消</ElButton
         ><ElButton type="primary" :loading="creating" @click="submitCreate"
@@ -81,12 +81,48 @@
         ></template
       >
     </ElDialog>
+    <ElDialog
+      v-model="editVisible"
+      title="编辑分组"
+      width="520px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!editing"
+      :before-close="closeEdit"
+    >
+      <ElForm ref="editRef" :model="editForm" label-position="top" :disabled="editing">
+        <ElFormItem
+          label="分组名称"
+          prop="name"
+          :rules="[{ required: true, message: '请填写分组名称', trigger: 'blur' }]"
+          ><ElInput v-model.trim="editForm.name" maxlength="60" placeholder="例如 A 组"
+        /></ElFormItem>
+        <ElFormItem label="分组说明"
+          ><ElInput
+            v-model.trim="editForm.description"
+            type="textarea"
+            :rows="3"
+            maxlength="1000"
+            show-word-limit
+            placeholder="选填"
+        /></ElFormItem>
+      </ElForm>
+      <template #footer
+        ><ElButton :disabled="editing" @click="editVisible = false">取消</ElButton
+        ><ElButton type="primary" :loading="editing" @click="submitEdit">保存</ElButton></template
+      >
+    </ElDialog>
   </div>
 </template>
 <script setup lang="ts">
   import { computed, nextTick, reactive, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
-  import { createGroup, fetchProjectDetail, type ProjectRecord } from '@/api/project'
+  import {
+    createGroup,
+    fetchProjectDetail,
+    saveGroupBasic,
+    type GroupRecord,
+    type ProjectRecord
+  } from '@/api/project'
   import type { FormInstance } from 'element-plus'
   defineOptions({ name: 'ProjectGroups' })
   const route = useRoute(),
@@ -99,6 +135,11 @@
     creating = ref(false),
     createRef = ref<FormInstance>()
   const createForm = reactive({ name: '', description: '' })
+  const editVisible = ref(false),
+    editing = ref(false),
+    editRef = ref<FormInstance>(),
+    editingGroup = ref<GroupRecord>()
+  const editForm = reactive({ name: '', description: '' })
   let createProjectId = 0
   function closeCreate(done: () => void) {
     if (!creating.value) done()
@@ -117,12 +158,51 @@
       creating.value = false
     }
   }
+  function closeEdit(done: () => void) {
+    if (!editing.value) done()
+  }
+  async function openEdit(value: unknown) {
+    const row = value as GroupRecord
+    editingGroup.value = row
+    editForm.name = row.name
+    editForm.description = row.description || ''
+    editVisible.value = true
+    await nextTick()
+    editRef.value?.clearValidate()
+  }
+  async function submitEdit() {
+    const row = editingGroup.value
+    if (
+      editing.value ||
+      !row?.id ||
+      row.revision === undefined ||
+      !(await editRef.value?.validate().catch(() => false))
+    )
+      return
+    editing.value = true
+    try {
+      await saveGroupBasic({
+        id: row.id,
+        project_id: row.project_id,
+        revision: row.revision,
+        name: editForm.name,
+        description: editForm.description
+      })
+      editVisible.value = false
+      await load()
+    } catch {
+      /* 保留内容供修正 */
+    } finally {
+      editing.value = false
+    }
+  }
   let sequence = 0
   async function load() {
     const seq = ++sequence
     loading.value = true
     project.value = undefined
     createVisible.value = false
+    editVisible.value = false
     error.value = ''
     try {
       if (!Number.isSafeInteger(projectId.value) || projectId.value <= 0) {
@@ -153,12 +233,6 @@
     void router.push({
       path: '/project/group',
       query: { project_id: projectId.value, ...(id ? { id } : {}) }
-    })
-  }
-  function editGroup(id: number) {
-    void router.push({
-      path: '/project/group',
-      query: { project_id: projectId.value, id, mode: 'edit' }
     })
   }
   watch(() => route.fullPath, load, { immediate: true })

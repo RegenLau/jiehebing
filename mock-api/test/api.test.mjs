@@ -565,6 +565,8 @@ test('basic group creation is independent from configuration and enforces projec
   const api=await start(t)
   assert.equal((await api.json(P+'project/group-create',{body:{project_id:1,name:'A'}})).code,401)
   await api.login()
+  const seeded=(await api.ok(P+'project/detail',{query:{id:1}})).groups
+  assert.equal(seeded.length,2)
   for(const body of [{project_id:1,name:''},{project_id:999,name:'A'},{project_id:1,name:'A',medication:{id:1}}]) assert.notEqual((await api.json(P+'project/group-create',{body})).code,200)
   const a=await api.ok(P+'project/group-create',{body:{project_id:1,name:'A'}})
   assert.equal(a.description,'');assert.equal(a.medication,null)
@@ -573,13 +575,62 @@ test('basic group creation is independent from configuration and enforces projec
   assert.notEqual((await api.json(P+'project/group-create',{body:{project_id:1,name:'a'}})).code,200)
   await api.ok(P+'project/group-create',{body:{project_id:2,name:'A'}})
   assert.equal((await api.json(P+'project/group-detail',{query:{project_id:2,id:a.id}})).code,404)
-  const restarted=await start(t);await restarted.login();assert.deepEqual((await restarted.ok(P+'project/detail',{query:{id:1}})).groups,[])
+  const restarted=await start(t);await restarted.login();assert.deepEqual((await restarted.ok(P+'project/detail',{query:{id:1}})).groups,seeded)
+})
+
+test('group basic edit preserves configuration and returns current enrolled patient data', async t => {
+  const api=await start(t);await api.login()
+  const patients=await api.all(P+'patient/index')
+  const projects=await api.all(P+'project/index')
+  const groups=(await Promise.all(projects.map(project=>api.ok(P+'project/detail',{query:{id:project.id}})))).flatMap(project=>project.groups)
+  const a=groups.find(group=>group.participant_ids.length)
+  const otherProject=projects.find(project=>project.id!==a.project_id)
+  await api.ok(P+'project/group-create',{body:{project_id:a.project_id,name:'基础编辑B组'}})
+  const configured=await api.ok(P+'project/group-detail',{query:{project_id:a.project_id,id:a.id}})
+  const edited=await api.ok(P+'project/group-basic-save',{body:{id:a.id,project_id:a.project_id,revision:configured.revision,name:'基础编辑A组（新）',description:'只修改基础信息'}})
+  assert.equal(edited.revision,configured.revision+1)
+  assert.equal(edited.name,'基础编辑A组（新）');assert.equal(edited.description,'只修改基础信息')
+  assert.deepEqual(edited.medication,configured.medication);assert.deepEqual(edited.surveys,configured.surveys);assert.deepEqual(edited.tasks,configured.tasks);assert.deepEqual(edited.participant_ids,configured.participant_ids)
+  const patient=patients.find(p=>p.id===configured.participant_ids[0])
+  assert.deepEqual(edited.participants[0],{id:patient.id,patient_code:patient.patient_code,name:patient.name,mobile:patient.mobile,gender_text:patient.gender_text,birth_date:patient.birth_date,enroll_date:patient.enroll_date,study_state:patient.study_state})
+  assert.deepEqual(await api.ok(P+'project/group-detail',{query:{project_id:a.project_id,id:a.id}}),edited)
+  const unchanged=await api.ok(P+'project/group-basic-save',{body:{id:a.id,project_id:a.project_id,revision:edited.revision,name:edited.name,description:edited.description}})
+  assert.equal(unchanged.revision,edited.revision)
+  for(const body of [
+    {id:a.id,project_id:a.project_id,revision:configured.revision,name:'过期编辑',description:''},
+    {id:a.id,project_id:a.project_id,revision:edited.revision,name:'基础编辑B组',description:''},
+    {id:a.id,project_id:a.project_id,revision:edited.revision,name:'',description:''},
+    {id:a.id,project_id:a.project_id,revision:edited.revision,name:'非法字段',description:'',participant_ids:[]}
+  ]) assert.notEqual((await api.json(P+'project/group-basic-save',{body})).code,200)
+  assert.equal((await api.json(P+'project/group-basic-save',{body:{id:a.id,project_id:otherProject.id,revision:edited.revision,name:'跨项目',description:''}})).code,404)
+})
+
+test('seed research groups cover every patient exactly once',async t=>{
+  const api=await start(t);await api.login()
+  const patients=await api.all(P+'patient/index')
+  const projects=await api.all(P+'project/index')
+  const groups=(await Promise.all(projects.map(project=>api.ok(P+'project/detail',{query:{id:project.id}})))).flatMap(project=>project.groups)
+  assert.equal(groups.length,6)
+  assert.ok(projects.every(project=>project.group_count===2))
+  assert.ok(groups.every(group=>group.medication&&group.surveys.length&&group.tasks.length))
+  const memberIds=groups.flatMap(group=>group.participant_ids)
+  assert.equal(memberIds.length,patients.length)
+  assert.equal(new Set(memberIds).size,patients.length)
+  assert.deepEqual([...memberIds].sort((a,b)=>a-b),patients.map(patient=>patient.id).sort((a,b)=>a-b))
+  for(const patient of patients){
+    const group=groups.find(item=>item.id===patient.group_id)
+    assert.ok(group)
+    assert.equal(group.project_id,patient.project_id)
+    assert.equal(group.name,patient.group_name)
+    assert.ok(group.participants.some(item=>item.id===patient.id&&item.mobile===patient.mobile))
+  }
 })
 
 test('saved group configuration validates sources and members without changing patient execution',async t=>{
   const api=await start(t);await api.login()
   const plans=await api.all(P+'medication-plan/index')
   const patients=await api.all(P+'patient/index')
+  const initialProjectPatientCount=(await api.all(P+'project/index')).find(p=>p.id===1).patient_count
   const catalog=await api.ok(P+'project/catalog')
   assert.equal(catalog.articles,undefined);assert.equal(catalog.contacts,undefined)
   const scheme=catalog.medication_schemes.find(s=>s.status===1),survey=catalog.surveys.find(s=>s.status===1)
@@ -589,7 +640,7 @@ test('saved group configuration validates sources and members without changing p
   const config={...a,medication:{id:scheme.id,treatment_days:30,pickup_days:14,advance_days:3,quantities:scheme.drugs.map(d=>({drug_id:d.drug_id,quantity:30}))},surveys:[schedule(survey.id)],tasks:[schedule(1)],participant_ids:[1,2]}
   const saved=await api.ok(P+'project/group-save',{body:config})
   assert.equal(saved.revision,2);assert.deepEqual(saved.participant_ids,[1,2]);assert.equal(saved.participants[0].name,patients.find(p=>p.id===1).name)
-  assert.equal((await api.all(P+'project/index')).find(p=>p.id===1).patient_count,2)
+  assert.equal((await api.all(P+'project/index')).find(p=>p.id===1).patient_count,initialProjectPatientCount+2)
   assert.deepEqual(saved.medication.snapshot.drugs,scheme.drugs)
   const people=await api.ok(P+'project/participants',{query:{project_id:1}})
   assert.equal(people.find(p=>p.id===1).group_id,a.id)

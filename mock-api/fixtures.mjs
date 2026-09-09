@@ -122,7 +122,39 @@ export function createFixtures(now) {
     drugs: commonMedicines.filter(m => m.status === 1).slice(id - 1, id + 1).map(m => ({ drug_id: m.id, name: m.common_name, specification: m.specification, dose: m.dosage_value, unit: m.dosage_unit, frequency: '每日1次（演示）', times: '08:00', precautions: m.medication_guidance }))
   }));
   const taskTemplates = ['检查', '复诊', '取药', '报告提交'].map((type,i) => ({ id:i+1, name:`${type}模板（演示）`, type, status:1, version:'V1.0', description:`按研究安排完成${type}`, requirements: i === 0 || i === 3 ? '提交检查日期及报告原图' : '提交完成日期和补充说明' }));
-  const projectGroups = [];
+  const groupDefinitions = [
+    { id: 1, project_id: 1, name: '筹备标准随访组', description: '筹备阶段的标准随访流程演示组。', scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(8, 13).map(p => p.id) },
+    { id: 2, project_id: 1, name: '筹备强化随访组', description: '筹备阶段的强化提醒与复查流程演示组。', scheme_id: 2, task_ids: [1, 3], participant_ids: patients.slice(13, 18).map(p => p.id) },
+    { id: 3, project_id: 2, name: '规范用药随访组', description: '用于演示规范用药、定期复查及随访问卷。', scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(18, 23).map(p => p.id) },
+    { id: 4, project_id: 2, name: '强化管理随访组', description: '用于演示加强提醒、取药和报告提交管理。', scheme_id: 2, task_ids: [1, 3, 4], participant_ids: patients.slice(23).map(p => p.id) },
+    { id: 5, project_id: 3, name: '历史完成随访组', description: '用于查看已结束项目的历史分组配置。', scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(0, 4).map(p => p.id) },
+    { id: 6, project_id: 3, name: '历史重点复核组', description: '用于查看已结束项目的重点复核配置。', scheme_id: 2, task_ids: [1, 4], participant_ids: patients.slice(4, 8).map(p => p.id) }
+  ];
+  const schedule = (source, interval_days, offset_days = 0) => ({
+    id: source.id, snapshot: structuredClone(source), anchor: 'enrollment', date: '', offset_days, interval_days, deadline_days: 3,
+    reminders: { start: true, due: true, overdue: true }
+  });
+  const projectGroups = groupDefinitions.map(definition => {
+    const scheme = medicationSchemes.find(item => item.id === definition.scheme_id);
+    const participants = definition.participant_ids.map(id => {
+      const patient = patients.find(item => item.id === id);
+      return { id: patient.id, name: patient.name, mobile: patient.mobile };
+    });
+    return {
+      id: definition.id, project_id: definition.project_id, name: definition.name, description: definition.description, revision: 2,
+      medication: { id: scheme.id, snapshot: structuredClone(scheme), treatment_days: 180, pickup_days: 30, advance_days: 5, quantities: scheme.drugs.map(drug => ({ drug_id: drug.drug_id, quantity: 30 })) },
+      surveys: [schedule(surveys[0], definition.id % 2 ? 14 : 7)],
+      tasks: definition.task_ids.map((id, index) => schedule(taskTemplates.find(item => item.id === id), 30, index * 3)),
+      participant_ids: definition.participant_ids, participants, created_at: time, updated_at: time
+    };
+  });
+  for (const group of projectGroups) {
+    const project = projects.find(item => item.id === group.project_id);
+    for (const patientId of group.participant_ids) {
+      const patient = patients.find(item => item.id === patientId);
+      Object.assign(patient, { project_id: project.id, project_name: project.name, group_id: group.id, group_name: group.name, owner_id: admins[0].id, owner_name: admins[0].realname });
+    }
+  }
   return { projects, projectGroups, medicationSchemes, taskTemplates, patients, medicines, plans, adverse, commonMedicines, surveys, answers, articles, admins, files, loginLogs: [], operationLogs: [] };
 }
 

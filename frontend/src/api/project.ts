@@ -63,7 +63,16 @@ export interface GroupRecord {
   surveys: Schedule[]
   tasks: Schedule[]
   participant_ids: number[]
-  participants?: { id: number; name: string; mobile: string }[]
+  participants?: {
+    id: number
+    patient_code?: string
+    name: string
+    mobile: string
+    gender_text?: string
+    birth_date?: string
+    enroll_date?: string
+    study_state?: string
+  }[]
   created_at?: string
   updated_at?: string
 }
@@ -148,6 +157,18 @@ export const fetchParticipants = (project_id: number) =>
 export const createGroup = (params: { project_id: number; name: string; description: string }) =>
   request.post<GroupRecord>({
     url: '/app/core/project/group-create',
+    params,
+    showSuccessMessage: true
+  })
+export const saveGroupBasic = (params: {
+  id: number
+  project_id: number
+  revision: number
+  name: string
+  description: string
+}) =>
+  request.post<GroupRecord>({
+    url: '/app/core/project/group-basic-save',
     params,
     showSuccessMessage: true
   })
