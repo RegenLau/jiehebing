@@ -1,3 +1,7 @@
+export const DEFAULT_PICKUP_REQUIREMENTS =
+  "请在预计药量不足前联系医院确认取药安排，实际发药由医务人员登记。";
+export const DEFAULT_PICKUP_REMIND_TIME = "09:00";
+
 export function calculatePatientStock({
   db,
   patient,
@@ -112,7 +116,7 @@ export function buildPickupReminderTask({
   if (!treatment) return null;
   const group = db.projectGroups.find((row) => row.id === patient.group_id);
   const reminder = group?.reminder?.snapshot;
-  if (!group?.medication || !reminder?.pickup_enabled) return null;
+  if (!group?.medication) return null;
 
   const stock = calculatePatientStock({
     db,
@@ -137,7 +141,11 @@ export function buildPickupReminderTask({
     due_date: trigger.expected_shortage_date,
     description: `${trigger.name}预计余药 ${trigger.estimated} ${trigger.unit}，约可用 ${trigger.days} 天`,
     requirements:
-      "请在预计药量不足前联系医院确认取药安排，实际发药由医务人员登记。",
+      group.pickup_requirements || DEFAULT_PICKUP_REQUIREMENTS,
+    remind_time:
+      group.pickup_remind_time ||
+      reminder?.pickup_remind_time ||
+      DEFAULT_PICKUP_REMIND_TIME,
     status: "待完成",
     source: "系统余药计算",
     virtual: true,
@@ -149,6 +157,10 @@ export function buildPickupReminderTask({
       daily_quantity: trigger.daily_quantity,
       available_days: trigger.days,
       advance_days: trigger.advance_days,
+      remind_time:
+        group.pickup_remind_time ||
+        reminder?.pickup_remind_time ||
+        DEFAULT_PICKUP_REMIND_TIME,
       reminder_date: trigger.reminder_date,
       expected_shortage_date: trigger.expected_shortage_date,
     },

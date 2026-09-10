@@ -318,9 +318,15 @@
           <div><span>来源：</span>{{ currentMedicine.source_text || '-' }}</div>
           <div><span>添加时间：</span>{{ currentMedicine.created_at || '-' }}</div>
           <div class="full"><span>备注：</span>{{ currentMedicine.remark || '无' }}</div>
-          <div class="full"
-            ><span>用药指导：</span>{{ currentMedicine.medication_guidance || '无' }}</div
-          >
+          <div class="full medicine-guidance-detail">
+            <span>用药指导：</span>
+            <div
+              v-if="currentMedicine.medication_guidance"
+              class="medicine-guidance-html"
+              v-html="currentMedicine.medication_guidance"
+            ></div>
+            <span v-else>无</span>
+          </div>
         </div>
       </div>
     </ElDialog>
@@ -710,6 +716,24 @@
 
     .full {
       grid-column: 1 / -1;
+    }
+  }
+
+  .medicine-guidance-detail {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .medicine-guidance-html {
+    line-height: 1.7;
+
+    :deep(p:first-child) {
+      margin-top: 0;
+    }
+
+    :deep(p:last-child) {
+      margin-bottom: 0;
     }
   }
 

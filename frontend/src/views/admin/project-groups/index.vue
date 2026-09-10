@@ -5,15 +5,32 @@
         ><ElButton link type="primary" @click="router.push('/project/index')">返回项目列表</ElButton
         ><h2>{{ project?.name || '研究项目' }} · 研究分组</h2
         ><p>编辑分组基础信息，或进入分组查看患者并配置方案与任务。</p></div
-      ><ElButton v-if="project" type="primary" @click="openGroup()">新建分组</ElButton></div
+      ><ElButton
+        v-if="project"
+        type="primary"
+        :disabled="projectEnded"
+        :title="projectEnded ? '项目已结束，分组仅支持查看' : '新建分组'"
+        @click="openGroup()"
+        >新建分组</ElButton
+      ></div
     >
+    <ElAlert
+      v-if="projectEnded"
+      class="readonly-alert"
+      type="info"
+      :closable="false"
+      show-icon
+      title="项目已结束，分组信息和方案任务配置仅供查看。"
+    />
     <ElCard v-loading="loading" shadow="never">
       <ElResult v-if="error" icon="warning" title="无法加载研究分组" :sub-title="error"
         ><template #extra><ElButton @click="load">重试</ElButton></template></ElResult
       >
       <template v-else-if="project">
         <ElEmpty v-if="!project.groups?.length" description="当前项目还没有分组"
-          ><ElButton type="primary" @click="openGroup()">创建第一个分组</ElButton></ElEmpty
+          ><ElButton type="primary" :disabled="projectEnded" @click="openGroup()"
+            >创建第一个分组</ElButton
+          ></ElEmpty
         >
         <ElTable v-else :data="project.groups" border>
           <ElTableColumn prop="name" label="分组名称" min-width="160" />
@@ -46,14 +63,20 @@
           >
           <ElTableColumn label="操作" width="230"
             ><template #default="{ row }"
-              ><ElButton link type="primary" @click="openEdit(row)">编辑</ElButton
+              ><ElButton
+                link
+                type="primary"
+                :disabled="projectEnded"
+                :title="projectEnded ? '项目已结束，仅支持查看' : '编辑分组'"
+                @click="openEdit(row)"
+                >编辑</ElButton
               ><ElButton link type="primary" @click="openGroup(row.id)">进入分组</ElButton
               ><ElButton
                 link
                 type="danger"
                 :loading="deletingGroupId === row.id"
                 :disabled="!canDeleteGroup(row)"
-                :title="canDeleteGroup(row) ? '删除空分组' : '分组内仍有患者，不能删除'"
+                :title="deleteGroupTitle(row)"
                 @click="removeGroup(row)"
                 >删除</ElButton
               ></template
@@ -146,6 +169,7 @@
     loading = ref(false),
     error = ref('')
   const projectId = computed(() => Number(route.query.project_id))
+  const projectEnded = computed(() => project.value?.status === 2)
   const createVisible = ref(false),
     creating = ref(false),
     createRef = ref<FormInstance>()
@@ -161,7 +185,12 @@
     if (!creating.value) done()
   }
   async function submitCreate() {
-    if (creating.value || !(await createRef.value?.validate().catch(() => false))) return
+    if (
+      projectEnded.value ||
+      creating.value ||
+      !(await createRef.value?.validate().catch(() => false))
+    )
+      return
     creating.value = true
     try {
       await createGroup({ project_id: createProjectId, ...createForm })
@@ -178,6 +207,7 @@
     if (!editing.value) done()
   }
   async function openEdit(value: unknown) {
+    if (projectEnded.value) return
     const row = value as GroupRecord
     editingGroup.value = row
     editForm.name = row.name
@@ -189,6 +219,7 @@
   async function submitEdit() {
     const row = editingGroup.value
     if (
+      projectEnded.value ||
       editing.value ||
       !row?.id ||
       row.revision === undefined ||
@@ -214,7 +245,11 @@
   }
   function canDeleteGroup(value: unknown) {
     const row = value as GroupRecord
-    return row.can_delete ?? (row.participant_ids?.length || 0) === 0
+    return !projectEnded.value && (row.can_delete ?? (row.participant_ids?.length || 0) === 0)
+  }
+  function deleteGroupTitle(value: unknown) {
+    if (projectEnded.value) return '项目已结束，仅支持查看'
+    return canDeleteGroup(value) ? '删除空分组' : '分组内仍有患者，不能删除'
   }
   function reminderScheduleCount(value: unknown) {
     const row = value as GroupRecord
@@ -222,7 +257,7 @@
   }
   async function removeGroup(value: unknown) {
     const row = value as GroupRecord
-    if (!row.id || !canDeleteGroup(row) || deletingGroupId.value) return
+    if (projectEnded.value || !row.id || !canDeleteGroup(row) || deletingGroupId.value) return
     const confirmed = await ElMessageBox.confirm(
       `确认删除空分组“${row.name}”？该分组内尚未用于患者的用药方案与随访任务配置将一并删除。`,
       '删除分组',
@@ -262,7 +297,7 @@
       const result = await fetchProjectDetail(projectId.value)
       if (seq === sequence) {
         project.value = result
-        if (route.query.create === '1') await openGroup()
+        if (route.query.create === '1' && result.status !== 2) await openGroup()
       }
     } catch {
       if (seq === sequence) error.value = '项目不存在或暂时无法加载'
@@ -272,6 +307,7 @@
   }
   async function openGroup(id?: number) {
     if (!id) {
+      if (projectEnded.value) return
       createProjectId = projectId.value
       createForm.name = ''
       createForm.description = ''
@@ -291,6 +327,10 @@
   .tip {
     font-size: 13px;
     color: var(--el-text-color-secondary);
+  }
+
+  .readonly-alert {
+    margin-bottom: 16px;
   }
 
   .groups-page {

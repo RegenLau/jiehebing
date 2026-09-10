@@ -5,7 +5,7 @@ export function registerTaskTemplates({core,db,assert,find,page,clean,timestamp,
   const log=(row,admin,before,reason)=>{row.history||=[];row.history.unshift({time:timestamp(),operator:admin.realname||admin.username,reason,before,after:snapshot(row)});};
   core('GET','task-template/index',({query:q})=>{
     assert(!q.type||types.includes(q.type),'任务类型不合法');assert(q.status===undefined||q.status===''||['0','1'].includes(q.status),'状态不合法');
-    return page([...db.taskTemplates].reverse().filter(r=>(!q.keyword||r.name.includes(clean(q.keyword)))&&(!q.type||q.type===r.type)&&(q.status===undefined||q.status===''||r.status===Number(q.status))).map(snapshot),q);
+    return page([...db.taskTemplates].reverse().filter(r=>!r.system_kind&&(!q.keyword||r.name.includes(clean(q.keyword)))&&(!q.type||q.type===r.type)&&(q.status===undefined||q.status===''||r.status===Number(q.status))).map(snapshot),q);
   });
   core('GET','task-template/detail',({query:q})=>find(db.taskTemplates,q.id,'任务模板'));
   core('POST','task-template/save',({body:b,admin})=>{

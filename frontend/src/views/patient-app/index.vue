@@ -519,9 +519,14 @@
                   </small>
                 </template>
                 <strong v-else>尚未登记实际发药，暂不计算取药提醒</strong>
-                <details v-if="drug.precautions" class="medicine-guidance">
+                <details class="medicine-guidance">
                   <summary>查看用药指导</summary>
-                  <p>{{ drug.precautions }}</p>
+                  <div
+                    v-if="drug.medication_guidance"
+                    class="medicine-guidance-content"
+                    v-html="drug.medication_guidance"
+                  ></div>
+                  <p v-else class="medicine-guidance-empty">暂无用药指导</p>
                 </details>
               </article>
               <p v-if="medicationData.stock.length" class="stock-method">
@@ -722,6 +727,33 @@
                   ></div
                 >
               </header>
+              <article class="linked-profile-card" aria-live="polite">
+                <div class="linked-profile-title">
+                  <div>
+                    <span>就诊档案</span>
+                    <strong>{{ data.patient.patient_code }}</strong>
+                  </div>
+                  <span class="linked-profile-status">
+                    <ArtSvgIcon
+                      :class="{ rotating: profileRefreshing }"
+                      :icon="profileRefreshing ? 'ri:loader-4-line' : 'ri:link-m'"
+                    />
+                    {{ profileRefreshing ? '同步中' : '已同步' }}
+                  </span>
+                </div>
+                <dl class="linked-profile-details">
+                  <div
+                    ><dt>登录手机号</dt><dd>{{ data.patient.mobile }}</dd></div
+                  >
+                  <div
+                    ><dt>所属研究</dt><dd>{{ data.patient.project_name || '-' }}</dd></div
+                  >
+                  <div
+                    ><dt>研究分组</dt><dd>{{ data.patient.group_name || '-' }}</dd></div
+                  >
+                </dl>
+                <p>资料由研究团队统一维护；如有变更，重新进入“我的”即可同步。</p>
+              </article>
               <div class="profile-menu">
                 <button type="button" @click="openReports">
                   <span class="round-icon blue"><ArtSvgIcon icon="ri:file-list-3-line" /></span>
@@ -1205,7 +1237,7 @@
                 </div>
               </dl>
               <section class="schedule-requirement">
-                <h3>提交要求</h3>
+                <h3>要求说明</h3>
                 <p>{{
                   scheduleTask.requirements || scheduleTask.description || '请按计划完成本次安排。'
                 }}</p>
@@ -1248,7 +1280,7 @@
               :key="item.key"
               :class="{ active: activeTab === item.key }"
               type="button"
-              @click="activeTab = item.key"
+              @click="selectMainTab(item.key)"
             >
               <ArtSvgIcon :icon="item.icon" />
               <span>{{ item.label }}</span>
@@ -1340,7 +1372,7 @@
     unit: string
     times: string[]
     frequency: string
-    precautions: string
+    medication_guidance: string
     quantity: number
   }
   interface BootstrapData {
@@ -1405,6 +1437,7 @@
     due_date: string
     description: string
     requirements?: string
+    remind_time?: string
     status: string
     source: string
     virtual: boolean
@@ -1418,6 +1451,7 @@
       daily_quantity: number
       available_days: number
       advance_days: number
+      remind_time: string
       reminder_date: string
       expected_shortage_date: string
     }
@@ -1563,6 +1597,7 @@
   const homeData = ref<HomeData | null>(null)
   const homeLoading = ref(false)
   const activeTab = ref<MainTab>('home')
+  const profileRefreshing = ref(false)
   const medicationData = ref<MedicationData | null>(null)
   const medicationPanel = ref<'checkin' | 'medicines'>('checkin')
   const medicationError = ref('')
@@ -1855,6 +1890,21 @@
       stage.value = 'login'
       errorMessage.value = error instanceof Error ? error.message : '登录已过期，请重新登录'
     }
+  }
+  async function refreshLinkedProfile() {
+    if (profileRefreshing.value || stage.value !== 'home') return
+    profileRefreshing.value = true
+    try {
+      await loadBootstrap()
+    } finally {
+      profileRefreshing.value = false
+    }
+  }
+  function selectMainTab(tab: MainTab) {
+    activeTab.value = tab
+    if (tab !== 'profile') return
+    profileMode.value = 'main'
+    void refreshLinkedProfile()
   }
   async function login() {
     if (!/^1\d{10}$/.test(mobile.value)) {
@@ -3812,11 +3862,24 @@
     cursor: pointer;
   }
 
-  .medicine-guidance p {
+  .medicine-guidance-content,
+  .medicine-guidance-empty {
     padding: 0 2px 10px;
     line-height: 1.7;
     color: #566274;
-    white-space: pre-wrap;
+  }
+
+  .medicine-guidance-content :deep(p:first-child),
+  .medicine-guidance-content :deep(ul:first-child),
+  .medicine-guidance-content :deep(ol:first-child) {
+    margin-top: 0;
+  }
+
+  .medicine-guidance-content :deep(p:last-child),
+  .medicine-guidance-content :deep(ul:last-child),
+  .medicine-guidance-content :deep(ol:last-child),
+  .medicine-guidance-empty {
+    margin-bottom: 0;
   }
 
   .stock-method {
@@ -4294,6 +4357,109 @@
     background: #2f73f7;
     border: 2px solid #84aeff;
     border-radius: 50%;
+  }
+
+  .linked-profile-card {
+    padding: 16px;
+    margin-bottom: 14px;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 8px 26px rgb(62 86 126 / 6%);
+  }
+
+  .linked-profile-title {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .linked-profile-title > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .linked-profile-title > div > span {
+    font-size: 12px;
+    color: #8a94a3;
+  }
+
+  .linked-profile-title strong {
+    overflow: hidden;
+    font-size: 17px;
+    color: #182033;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .linked-profile-status {
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: 4px;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    font-size: 12px;
+    color: #13794c;
+    background: #eaf8f0;
+    border-radius: 14px;
+  }
+
+  .linked-profile-status svg {
+    font-size: 15px;
+  }
+
+  .linked-profile-status .rotating {
+    animation: profile-sync-rotate 0.9s linear infinite;
+  }
+
+  .linked-profile-details {
+    display: grid;
+    gap: 10px;
+    margin: 16px 0 0;
+  }
+
+  .linked-profile-details > div {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+  }
+
+  .linked-profile-details dt,
+  .linked-profile-details dd {
+    margin: 0;
+    line-height: 1.45;
+  }
+
+  .linked-profile-details dt {
+    font-size: 13px;
+    color: #8a94a3;
+  }
+
+  .linked-profile-details dd {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: 14px;
+    color: #30394c;
+    text-align: right;
+  }
+
+  .linked-profile-card > p {
+    padding-top: 12px;
+    margin: 14px 0 0;
+    font-size: 12px;
+    line-height: 1.55;
+    color: #7a8494;
+    border-top: 1px solid #f0f2f6;
+  }
+
+  @keyframes profile-sync-rotate {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .profile-card {

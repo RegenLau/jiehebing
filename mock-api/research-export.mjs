@@ -29,7 +29,7 @@ export function registerResearchExport({
         "研究分组",
         "研究状态",
         "入组日期",
-        "患者端登录",
+        "登录状态",
       ];
       rows = db.patients
         .filter(
@@ -51,7 +51,7 @@ export function registerResearchExport({
           p.group_name || "",
           p.study_state || "待启用",
           p.enroll_date,
-          p.login_enabled ? "可登录" : "不可登录",
+          p.last_login_at ? "已登录" : "未登录",
         ]);
     } else if (q.kind === "tasks") {
       headers = [

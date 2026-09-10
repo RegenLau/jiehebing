@@ -30,13 +30,8 @@
         ><ElTableColumn label="操作" width="190"
           ><template #default="{ row }"
             ><ElButton link type="primary" @click="open(row.id, true)">详情</ElButton
-            ><ElButton v-if="!row.system_kind" link type="primary" @click="open(row.id)"
-              >编辑</ElButton
-            ><ElButton
-              v-if="!row.system_kind"
-              link
-              type="warning"
-              @click="toggle(row as Template)"
+            ><ElButton link type="primary" @click="open(row.id)">编辑</ElButton
+            ><ElButton link type="warning" @click="toggle(row as Template)"
               >{{ row.status === 1 ? '停用' : '启用' }}</ElButton
             ></template
           ></ElTableColumn
@@ -103,7 +98,6 @@
     version?: string
     reason: string
     history?: { time: string; operator: string; reason: string; before: unknown; after: unknown }[]
-    system_kind?: 'pickup'
   }
   function describe(value: unknown) {
     if (!value) return '新增前无记录'
@@ -117,7 +111,7 @@
     ].join('\n')
   }
   const types = ['提醒', '检查'],
-    templateOrder = ['取药提醒', '血常规复查', '生化指标复查', '胸部 CT 复查'],
+    templateOrder = ['血常规复查', '生化指标复查', '胸部 CT 复查'],
     blank = (): Template => ({
       name: '',
       type: '检查',

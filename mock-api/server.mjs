@@ -140,7 +140,14 @@ export function createMockServer({ now = () => new Date() } = {}) {
     const treatment = db.patientTreatments.filter(row => row.user_id === patient.id).at(-1);
     return { ...patient, arrangement_ready: Boolean(treatment), arrangement_type: treatment ? (treatment.adjusted ? '个体调整' : '分组方案') : '待确认方案' };
   });
-  core('GET', 'patient/medicine-list', ({ query }) => { find(db.patients, query.user_id, '患者'); return page(descId(db.medicines.filter(m => m.user_id === integer(query.user_id))), query); });
+  core('GET', 'patient/medicine-list', ({ query }) => {
+    find(db.patients, query.user_id, '患者');
+    const medicines = descId(db.medicines.filter(m => m.user_id === integer(query.user_id))).map(medicine => ({
+      ...medicine,
+      medication_guidance: db.commonMedicines.find(item => item.id === medicine.common_medicine_id)?.medication_guidance || ''
+    }));
+    return page(medicines, query);
+  });
   core('GET', 'patient/survey-status', ({ query }) => {
     const p = find(db.patients, query.user_id, '患者');
     return db.surveys.filter(s => s.status === 1).map(s => {
@@ -187,6 +194,13 @@ export function createMockServer({ now = () => new Date() } = {}) {
   core('GET', 'common-medicine/index', ({ query: q }) => page(statusFilter(db.commonMedicines.filter(m => !q.keyword || [m.common_name, m.company, m.ybm].some(v => v.includes(q.keyword))), q).sort((a, b) => a.sort_order - b.sort_order || b.id - a.id), q));
   const toggle = (rows, label) => ({ body: b }) => { assert([0, 1].includes(Number(b.status)), '状态值不合法'); const item = find(rows, b.id, label); item.status = Number(b.status); if ('status_text' in item) item.status_text = item.status ? '启用' : '停用'; return { id: item.id, status: item.status }; };
   core('POST', 'common-medicine/toggle-status', toggle(db.commonMedicines, '常用药品'));
+  core('POST', 'common-medicine/save-guidance', ({ body: b }) => {
+    const medicine = find(db.commonMedicines, b.id, '常用药品');
+    const medication_guidance = clean(b.medication_guidance);
+    assert(medication_guidance.length <= 50000, '用药指导不能超过50000字');
+    Object.assign(medicine, { medication_guidance, updated_at: timestamp() });
+    return medicine;
+  });
   core('GET', 'health-article/index', ({ query: q }) => page(statusFilter(db.articles.filter(a => !q.keyword || a.title.includes(q.keyword) || a.summary.includes(q.keyword)), q).sort((a, b) => b.sort - a.sort || b.id - a.id).map(({ content, ...a }) => a), q));
   core('GET', 'health-article/detail', ({ query }) => find(db.articles, query.id, '文章'));
   core('POST', 'health-article/toggle-status', ctx => {const result=toggle(db.articles,'文章')(ctx);if(result.status===1){const a=find(db.articles,result.id,'文章');a.confirmed_by=ctx.admin.realname||ctx.admin.username;a.confirmed_at=timestamp();}return result;});
@@ -362,6 +376,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
         assert(/^1\d{10}$/.test(mobile), '请填写11位手机号');
         const patient = db.patients.find(p => p.mobile === mobile && p.login_enabled && p.created_via === 'admin');
         assert(patient, '未查询到后台患者档案，请联系工作人员添加后再登录', 407);
+        patient.last_login_at = timestamp();
         const token = randomUUID(); patientSessions.set(token, { id: patient.id, expires: clock().getTime() + 7200000 });
         return sendPatientJson(res, {
           user: { id: patient.id, name: patient.name, mobile: patient.mobile, birth_date: patient.birth_date },

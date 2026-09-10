@@ -95,6 +95,9 @@ export function registerPatientApp({
     );
     return Number(medicine?.medicine_count || 0);
   };
+  const medicationGuidanceFor = (drugId) =>
+    db.commonMedicines.find((medicine) => medicine.id === drugId)
+      ?.medication_guidance || "";
   const matchesTreatment = (confirmation, treatment) =>
     Boolean(
       confirmation &&
@@ -150,6 +153,7 @@ export function registerPatientApp({
             ...treatment,
             drugs: treatment.drugs.map((drug) => ({
               ...drug,
+              medication_guidance: medicationGuidanceFor(drug.drug_id),
               quantity: quantityFor(patient, treatment, drug.drug_id),
             })),
           }
@@ -372,11 +376,15 @@ export function registerPatientApp({
       shiftDate,
       visibleThrough,
     });
-    return [...feedback, ...(pickupReminder ? [pickupReminder] : []), ...actual, ...planned]
+    return [
+      ...feedback,
+      ...(pickupReminder ? [pickupReminder] : []),
+      ...actual,
+      ...planned,
+    ]
       .sort(
         (a, b) =>
-          a.due_date.localeCompare(b.due_date) ||
-          a.date.localeCompare(b.date),
+          a.due_date.localeCompare(b.due_date) || a.date.localeCompare(b.date),
       )
       .map((row) => ({
         ...row,
@@ -398,6 +406,21 @@ export function registerPatientApp({
         overdue: row.due_date < today(),
         form: row.type === "问卷" ? row.snapshot?.snapshot || null : null,
       }));
+  const patientTasks = (patient) => {
+    const summary = taskSummary(patient, latestTreatment(patient));
+    const summaryIds = new Set(summary.map((row) => String(row.id)));
+    return [
+      ...summary,
+      ...assignedTasks(patient).filter(
+        (row) => !summaryIds.has(String(row.id)),
+      ),
+    ].sort(
+      (a, b) =>
+        a.due_date.localeCompare(b.due_date) ||
+        a.date.localeCompare(b.date) ||
+        String(a.id).localeCompare(String(b.id)),
+    );
+  };
   const resolveTask = (patient, taskId) => {
     const numericId = Number(taskId);
     if (Number.isInteger(numericId) && numericId > 0) {
@@ -482,6 +505,7 @@ export function registerPatientApp({
       medicines: treatment
         ? treatment.drugs.map((drug) => ({
             ...drug,
+            medication_guidance: medicationGuidanceFor(drug.drug_id),
             quantity: quantityFor(patient, treatment, drug.drug_id),
           }))
         : [],
@@ -571,7 +595,8 @@ export function registerPatientApp({
             pickup_enabled: reminder.pickup_enabled,
             pickup_advance_days:
               group?.medication?.advance_days ?? reminder.pickup_advance_days,
-            pickup_remind_time: reminder.pickup_remind_time,
+            pickup_remind_time:
+              group?.pickup_remind_time || reminder.pickup_remind_time,
           }
         : null,
       task_reminders: taskReminders,
@@ -631,7 +656,7 @@ export function registerPatientApp({
     requireHome(patient);
     return {
       date: today(),
-      tasks: assignedTasks(patient),
+      tasks: patientTasks(patient),
     };
   });
   patientRoute("GET", "/app/patient/reports", ({ patient }) => ({
@@ -1025,7 +1050,7 @@ export function registerPatientApp({
     );
     return {
       feedback: row,
-      tasks: assignedTasks(patient),
+      tasks: patientTasks(patient),
     };
   });
   patientRoute("POST", "/app/patient/adverse-report", ({ patient, body }) => {
@@ -1194,7 +1219,7 @@ export function registerPatientApp({
     });
     return {
       submission,
-      tasks: assignedTasks(patient),
+      tasks: patientTasks(patient),
     };
   });
   patientRoute("POST", "/app/patient/task-complete", ({ patient, body }) => {
@@ -1216,7 +1241,7 @@ export function registerPatientApp({
       task_id: task.id,
       status: task.status,
     });
-    return { task, tasks: assignedTasks(patient) };
+    return { task, tasks: patientTasks(patient) };
   });
   patientRoute("POST", "/app/patient/confirm-identity", ({ patient, body }) => {
     assert(typeof body.confirmed === "boolean", "请选择资料是否正确");

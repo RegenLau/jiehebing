@@ -247,6 +247,8 @@ test("patient mini-program login only accepts mobile numbers added by the admin"
       (patient) => patient.created_via === "admin" && patient.login_enabled,
     ),
   );
+  assert.ok(initial.some((patient) => patient.last_login_at));
+  assert.ok(initial.some((patient) => !patient.last_login_at));
   assert.ok(
     initial.every(
       (patient) =>
@@ -286,6 +288,7 @@ test("patient mini-program login only accepts mobile numbers added by the admin"
     },
   });
   assert.equal(patient.login_enabled, true);
+  assert.equal(patient.last_login_at, "");
   assert.equal(patient.age, 36);
   assert.ok(
     !("hospital_name" in patient) &&
@@ -299,12 +302,62 @@ test("patient mini-program login only accepts mobile numbers added by the admin"
   });
   assert.equal(login.code, 0);
   assert.equal(login.data.user.id, patient.id);
+  const loggedInPatient = (await api.all(P + "patient/index")).find(
+    (row) => row.id === patient.id,
+  );
+  assert.match(loggedInPatient.last_login_at, /^\d{4}-\d{2}-\d{2} /);
   const token = login.data.token.access_token;
   const archive = await api.json("/app/patient/archive-detail", {
     auth: token,
   });
   assert.equal(archive.code, 0);
   assert.equal(archive.data.birth_date, patient.birth_date);
+
+  const linkedMobile = "13910009997";
+  const linkedPatient = await api.ok(P + "patient/save", {
+    body: {
+      ...patient,
+      name: "后台改名患者",
+      mobile: linkedMobile,
+      reason: "验证患者端与后台档案联动",
+    },
+  });
+  assert.equal(linkedPatient.id, patient.id);
+
+  const linkedBootstrap = await api.json("/app/patient/bootstrap", {
+    auth: token,
+  });
+  assert.equal(linkedBootstrap.code, 0);
+  assert.equal(linkedBootstrap.data.patient.id, patient.id);
+  assert.equal(linkedBootstrap.data.patient.name, "后台改名患者");
+  assert.equal(linkedBootstrap.data.patient.mobile, linkedMobile);
+
+  const project = await api.ok(P + "project/detail", { query: { id: 1 } });
+  const linkedParticipant = project.groups
+    .flatMap((record) => record.participants)
+    .find((record) => record.id === patient.id);
+  assert.equal(linkedParticipant.name, linkedPatient.name);
+  assert.equal(linkedParticipant.mobile, linkedPatient.mobile);
+
+  assert.equal(
+    (
+      await api.json("/app/login", {
+        auth: "",
+        body: { mobile: patient.mobile },
+      })
+    ).code,
+    407,
+  );
+  const linkedLogin = await api.json("/app/login", {
+    auth: "",
+    body: { mobile: linkedMobile },
+  });
+  assert.equal(linkedLogin.code, 0);
+  assert.equal(linkedLogin.data.user.id, patient.id);
+  await api.json("/app/logout", {
+    auth: linkedLogin.data.token.access_token,
+    body: {},
+  });
   assert.equal(
     (await api.json("/app/logout", { auth: token, body: {} })).code,
     0,
@@ -378,7 +431,7 @@ test("patient in an ended project sees the terminal page and cannot use business
   );
 });
 
-test("patient task page mirrors active back-office task records", async (t) => {
+test("patient task page includes home pending tasks and active back-office records", async (t) => {
   const api = await start(t);
   await api.login();
   const backofficeTasks = await api.all(P + "followup/index", { user_id: 19 });
@@ -403,23 +456,6 @@ test("patient task page mirrors active back-office task records", async (t) => {
     );
   }
   assert.ok(showcaseTasks.every((task) => task.status === "待完成"));
-  const comparable = ({ id, name, type, date, due_date, status, source }) => ({
-    id,
-    name,
-    type,
-    date,
-    due_date,
-    status,
-    source,
-  });
-  assert.deepEqual(
-    tasks.data.tasks.map(comparable),
-    backofficeTasks
-      .filter((task) => ["待完成", "需补充"].includes(task.status))
-      .map(comparable),
-  );
-  assert.ok(tasks.data.tasks.every((task) => task.virtual === false));
-
   const home = await api.json("/app/patient/home", { auth: patientToken });
   assert.equal(home.code, 0);
   assert.ok(
@@ -428,6 +464,25 @@ test("patient task page mirrors active back-office task records", async (t) => {
     ),
     "showcase tasks do not inflate the home pending-task list",
   );
+  const taskIds = new Set(tasks.data.tasks.map((task) => String(task.id)));
+  assert.ok(
+    home.data.pending_tasks.every((task) => taskIds.has(String(task.id))),
+    "every home pending task is available on the task page",
+  );
+  assert.ok(
+    backofficeTasks
+      .filter((task) => ["待完成", "需补充"].includes(task.status))
+      .every((task) => taskIds.has(String(task.id))),
+    "every active back-office task is available on the task page",
+  );
+  assert.equal(taskIds.size, tasks.data.tasks.length, "tasks are not duplicated");
+  assert.ok(
+    tasks.data.tasks.every(
+      (task) => !["已完成", "已提交", "已取消"].includes(task.status),
+    ),
+  );
+  assert.ok(tasks.data.tasks.some((task) => task.type === "健康反馈"));
+  assert.ok(tasks.data.tasks.some((task) => task.type === "问卷"));
 });
 
 test("manual project end immediately moves its patient to the terminal page", async (t) => {
@@ -768,7 +823,7 @@ test("patient self-confirmation follows identity then current treatment and reop
   assert.ok(
     afterCheckin.data.pending_tasks.some((task) => task.type === "健康反馈"),
   );
-  assert.ok(tasks.data.tasks.every((task) => task.virtual === false));
+  assert.ok(tasks.data.tasks.some((task) => task.type === "健康反馈"));
   const scheduledBloodTest = tasks.data.tasks.find(
     (task) => task.name === "血常规复查",
   );
@@ -1061,8 +1116,17 @@ test("home pickup reminder dates follow actual dispensing, dose frequency, and s
   let currentNow = NOW;
   const api = await start(t, () => currentNow);
   await api.login();
-  const group = (await api.ok(P + "project/detail", { query: { id: 1 } }))
+  let group = (await api.ok(P + "project/detail", { query: { id: 1 } }))
     .groups[0];
+  const pickupRequirements = "请携带既往取药凭证，并先联系随访医院确认时间。";
+  const pickupRemindTime = "14:20";
+  group = await api.ok(P + "project/group-save", {
+    body: {
+      ...group,
+      pickup_requirements: pickupRequirements,
+      pickup_remind_time: pickupRemindTime,
+    },
+  });
   const onboarded = await api.ok(P + "patient/onboard", {
     body: {
       patient: {
@@ -1142,6 +1206,9 @@ test("home pickup reminder dates follow actual dispensing, dose frequency, and s
   assert.equal(pickup.due_date, stock[0].expected_shortage_date);
   assert.equal(pickup.pickup.drug_id, stock[0].drug_id);
   assert.equal(pickup.pickup.advance_days, group.medication.advance_days);
+  assert.equal(pickup.requirements, pickupRequirements);
+  assert.equal(pickup.remind_time, pickupRemindTime);
+  assert.equal(pickup.pickup.remind_time, pickupRemindTime);
   assert.notEqual(
     (
       await api.json("/app/patient/task-complete", {
@@ -1920,6 +1987,53 @@ test("health article edits, medicine status and cache clear persist within the s
   );
 });
 
+test("common medicine guidance is centrally saved and immediately served to patients", async (t) => {
+  const api = await start(t);
+  await api.login();
+  const patientLogin = await api.json("/app/login", {
+    auth: "",
+    body: { mobile: "13910001019" },
+  });
+  assert.equal(patientLogin.code, 0);
+  const patientToken = patientLogin.data.token.access_token;
+  const before = await api.json("/app/patient/medication", {
+    auth: patientToken,
+  });
+  assert.equal(before.code, 0);
+  const target = before.data.medicines[0];
+  assert.ok(target);
+  const guidance =
+    "<p><strong>服药提醒</strong></p><ul><li>请按医护人员确认的方案用药。</li></ul>";
+  const saved = await api.ok(P + "common-medicine/save-guidance", {
+    body: { id: target.drug_id, medication_guidance: guidance },
+  });
+  assert.equal(saved.medication_guidance, guidance);
+  const listed = await api.all(P + "common-medicine/index", {
+    keyword: saved.common_name,
+  });
+  assert.equal(
+    listed.find((row) => row.id === target.drug_id)?.medication_guidance,
+    guidance,
+  );
+  const after = await api.json("/app/patient/medication", {
+    auth: patientToken,
+  });
+  assert.equal(after.code, 0);
+  assert.equal(
+    after.data.medicines.find((row) => row.drug_id === target.drug_id)
+      ?.medication_guidance,
+    guidance,
+  );
+  assert.notEqual(
+    (
+      await api.json(P + "common-medicine/save-guidance", {
+        body: { id: 99999999, medication_guidance: guidance },
+      })
+    ).code,
+    200,
+  );
+});
+
 test("survey nested structure, per-patient answers, deletion protection and XLSX participant counts", async (t) => {
   const api = await start(t);
   await api.login();
@@ -2258,7 +2372,7 @@ test("multipart upload is byte accurate, visible in gallery, and restart resets 
   );
 });
 
-test("research project statuses follow dates, manual end overrides, and restart resets", async (t) => {
+test("research project statuses lock ended projects and their groups while restart resets", async (t) => {
   const api = await start(t);
   assert.equal((await api.json(P + "project/catalog")).code, 401);
   await api.login();
@@ -2359,7 +2473,7 @@ test("research project statuses follow dates, manual end overrides, and restart 
   const naturallyEnded = await api.ok(P + "project/detail", {
     query: { id: 4 },
   });
-  const extended = await api.ok(P + "project/save", {
+  const naturalEdit = await api.json(P + "project/save", {
     body: {
       id: naturallyEnded.id,
       code: naturallyEnded.code,
@@ -2369,8 +2483,64 @@ test("research project statuses follow dates, manual end overrides, and restart 
       purpose: naturallyEnded.purpose,
     },
   });
-  assert.equal(extended.status, 1);
-  assert.equal(extended.status_source, "date");
+  assert.notEqual(naturalEdit.code, 200);
+  assert.match(naturalEdit.message, /项目已结束/);
+  assert.equal(
+    (await api.ok(P + "project/detail", { query: { id: naturallyEnded.id } }))
+      .end_date,
+    naturallyEnded.end_date,
+  );
+  const endedGroup = naturallyEnded.groups[0];
+  assert.ok(endedGroup);
+  for (const [path, body] of [
+    [
+      "project/group-create",
+      { project_id: naturallyEnded.id, name: "结束后新增组", description: "" },
+    ],
+    [
+      "project/group-basic-save",
+      {
+        project_id: naturallyEnded.id,
+        id: endedGroup.id,
+        revision: endedGroup.revision,
+        name: endedGroup.name + "修改",
+        description: endedGroup.description,
+      },
+    ],
+    [
+      "project/group-save",
+      {
+        project_id: naturallyEnded.id,
+        id: endedGroup.id,
+        revision: endedGroup.revision,
+      },
+    ],
+    [
+      "project/group-delete",
+      { project_id: naturallyEnded.id, id: endedGroup.id },
+    ],
+    ["project/delete", { id: naturallyEnded.id }],
+  ]) {
+    const blocked = await api.json(P + path, { body });
+    assert.notEqual(blocked.code, 200, path);
+    assert.match(blocked.message, /项目已结束/, path);
+  }
+  const endedEnrollment = await api.json(P + "patient/save", {
+    body: {
+      name: "结束项目新增患者",
+      mobile: "13900008888",
+      gender: 1,
+      birth_date: "1986-03-12",
+      project_id: naturallyEnded.id,
+      group_id: endedGroup.id,
+      owner_id: 1,
+      enroll_date: TODAY,
+      offline_confirmed: true,
+      consent_confirmed: true,
+    },
+  });
+  assert.notEqual(endedEnrollment.code, 200);
+  assert.match(endedEnrollment.message, /项目已结束/);
   assert.notEqual(
     (
       await api.json(P + "project/change-status", {
@@ -2416,11 +2586,15 @@ test("research project statuses follow dates, manual end overrides, and restart 
   assert.equal(manuallyEnded.status, 2);
   assert.equal(manuallyEnded.status_source, "manual");
   assert.match(manuallyEnded.manual_ended_at, /^2026-09-08 /);
-  const editedAfterManualEnd = await api.ok(P + "project/save", {
+  const editedAfterManualEnd = await api.json(P + "project/save", {
     body: { ...payload, id: created.id, end_date: "2028-09-08" },
   });
-  assert.equal(editedAfterManualEnd.status, 2);
-  assert.equal(editedAfterManualEnd.status_source, "manual");
+  assert.notEqual(editedAfterManualEnd.code, 200);
+  assert.match(editedAfterManualEnd.message, /项目已结束/);
+  const endedProjectRow = (await api.all(P + "project/index")).find(
+    (project) => project.id === created.id,
+  );
+  assert.equal(endedProjectRow.can_delete, false);
   assert.notEqual(
     (
       await api.json(P + "project/change-status", {
@@ -2636,8 +2810,16 @@ test("group basic edit preserves configuration and returns current enrolled pati
       ),
     )
   ).flatMap((project) => project.groups);
-  const a = groups.find((group) => group.participant_ids.length);
-  const otherProject = projects.find((project) => project.id !== a.project_id);
+  const a = groups.find(
+    (group) =>
+      group.participant_ids.length &&
+      projects.some(
+        (project) => project.id === group.project_id && project.status !== 2,
+      ),
+  );
+  const otherProject = projects.find(
+    (project) => project.id !== a.project_id && project.status !== 2,
+  );
   await api.ok(P + "project/group-create", {
     body: { project_id: a.project_id, name: "基础编辑B组" },
   });
@@ -2826,6 +3008,8 @@ test("saved group configuration validates sources and members without changing p
   });
   const config = {
     ...a,
+    pickup_requirements: "请提前联系医院，按确认时间前往取药。",
+    pickup_remind_time: "14:20",
     medication: {
       id: scheme.id,
       treatment_days: 30,
@@ -2855,6 +3039,8 @@ test("saved group configuration validates sources and members without changing p
   assert.deepEqual(saved.medication.snapshot.drugs, scheme.drugs);
   assert.equal(saved.reminder.snapshot.name, reminder.name);
   assert.equal(saved.medication.advance_days, 15);
+  assert.equal(saved.pickup_requirements, config.pickup_requirements);
+  assert.equal(saved.pickup_remind_time, config.pickup_remind_time);
   assert.equal(saved.tasks[0].remind_time, "08:30");
   const people = await api.ok(P + "project/participants", {
     query: { project_id: 1 },
@@ -2891,6 +3077,9 @@ test("saved group configuration validates sources and members without changing p
     { tasks: [{ ...schedule(taskTemplate.id), anchor: "date", date: TODAY }] },
     { tasks: [{ ...schedule(taskTemplate.id), remind_time: "25:00" }] },
     { tasks: [schedule(1)] },
+    { pickup_requirements: "" },
+    { pickup_requirements: "取".repeat(1001) },
+    { pickup_remind_time: "25:00" },
     { medication: { ...config.medication, quantities: [] } },
     {
       medication: {
@@ -3056,18 +3245,21 @@ test("medication schemes maintain versions, validate drugs, and preserve group s
 test("task templates support maintenance, filters, revision checks and isolated references", async (t) => {
   const api = await start(t);
   await api.login();
-  const builtInPickup = (await api.all(P + "task-template/index")).find(
-    (template) => template.system_kind === "pickup",
+  const initialTemplates = await api.all(P + "task-template/index");
+  assert.ok(
+    initialTemplates.every(
+      (template) =>
+        template.name !== "取药提醒" && template.system_kind !== "pickup",
+    ),
   );
-  assert.equal(builtInPickup.name, "取药提醒");
   assert.notEqual(
     (
-      await api.json(P + "task-template/status", {
+      await api.json(P + "task-template/save", {
         body: {
-          id: builtInPickup.id,
-          version: builtInPickup.version,
-          status: 0,
-          reason: "错误停用",
+          name: "取药提醒",
+          type: "提醒",
+          description: "错误创建",
+          requirements: "不应进入任务模板",
         },
       })
     ).code,

@@ -78,6 +78,8 @@ export interface GroupRecord {
   revision?: number
   name: string
   description: string
+  pickup_requirements: string
+  pickup_remind_time: string
   medication: Medication | null
   reminder: { id: number; snapshot: ReminderSource } | null
   surveys: Schedule[]
@@ -165,6 +167,8 @@ export const saveGroup = (group: GroupRecord) =>
       revision: group.revision,
       name: group.name,
       description: group.description,
+      pickup_requirements: group.pickup_requirements,
+      pickup_remind_time: group.pickup_remind_time,
       medication: group.medication,
       reminder: group.reminder,
       surveys: group.surveys,

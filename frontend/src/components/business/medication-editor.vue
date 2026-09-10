@@ -266,11 +266,7 @@
             }}</ElRadioButton>
           </ElRadioGroup>
         </div>
-        <ElFormItem
-          v-if="context === 'scheme' || drug.precautions"
-          label="注意事项"
-          class="precautions-field"
-        >
+        <ElFormItem v-if="context === 'scheme'" label="注意事项" class="precautions-field">
           <ElInput
             v-model="drug.precautions"
             :disabled="readonly || disabled"
@@ -383,6 +379,7 @@
   function sync() {
     const drugs = cards.value.map((d) => ({
       ...d,
+      precautions: props.context === 'group' ? '' : d.precautions,
       reminders: d.reminders.map((r) => ({ ...r })),
       frequency: `每日${d.daily_count}次`,
       times: d.reminders.map((r) => r.time).join(',')

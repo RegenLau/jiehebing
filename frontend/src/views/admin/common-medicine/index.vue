@@ -45,10 +45,13 @@
             </ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn label="操作" width="120" fixed="right">
+        <ElTableColumn label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <ElButton link type="primary" @click="openDetail(row as CommonMedicineRecord)"
               >查看</ElButton
+            >
+            <ElButton link type="primary" @click="openGuidance(row as CommonMedicineRecord)"
+              >用药指导</ElButton
             >
             <ElButton link type="warning" @click="handleToggleStatus(row as CommonMedicineRecord)">
               {{ row.status === 1 ? '停用' : '启用' }}
@@ -84,11 +87,42 @@
           <div><span>状态：</span>{{ currentRecord.status_text || '-' }}</div>
           <div><span>排序：</span>{{ currentRecord.sort_order || 0 }}</div>
           <div><span>创建时间：</span>{{ currentRecord.created_at || '-' }}</div>
-          <div class="full">
-            <span>用药指导：</span>{{ currentRecord.medication_guidance || '无' }}
+          <div class="full guidance-detail">
+            <span>用药指导：</span>
+            <div
+              v-if="currentRecord.medication_guidance"
+              class="guidance-preview"
+              v-html="currentRecord.medication_guidance"
+            ></div>
+            <span v-else>无</span>
           </div>
         </div>
       </div>
+    </ElDialog>
+
+    <ElDialog
+      v-model="guidanceVisible"
+      :title="`用药指导 · ${guidanceForm.name || '-'}`"
+      width="920px"
+      destroy-on-close
+    >
+      <ElAlert
+        title="保存后，患者端“用药方案－我的药品”将展示这份指导。"
+        type="info"
+        :closable="false"
+        show-icon
+        class="guidance-alert"
+      />
+      <sa-editor
+        v-if="guidanceVisible"
+        v-model="guidanceForm.content"
+        height="360px"
+        placeholder="请输入该药品的用药指导"
+      />
+      <template #footer>
+        <ElButton :disabled="guidanceSaving" @click="guidanceVisible = false">取消</ElButton>
+        <ElButton type="primary" :loading="guidanceSaving" @click="saveGuidance">保存</ElButton>
+      </template>
     </ElDialog>
   </div>
 </template>
@@ -97,6 +131,7 @@
   import { ElMessageBox } from 'element-plus'
   import {
     fetchCommonMedicineList,
+    saveCommonMedicineGuidance,
     toggleCommonMedicineStatus,
     type CommonMedicineRecord
   } from '@/api/common-medicine'
@@ -105,8 +140,11 @@
 
   const loading = ref(false)
   const detailVisible = ref(false)
+  const guidanceVisible = ref(false)
+  const guidanceSaving = ref(false)
   const list = ref<CommonMedicineRecord[]>([])
   const currentRecord = ref<CommonMedicineRecord>()
+  const guidanceForm = reactive({ id: 0, name: '', content: '' })
   const searchForm = reactive({
     keyword: '',
     status: undefined as number | undefined
@@ -148,6 +186,24 @@
   const openDetail = (row: CommonMedicineRecord) => {
     currentRecord.value = row
     detailVisible.value = true
+  }
+
+  const openGuidance = (row: CommonMedicineRecord) => {
+    guidanceForm.id = row.id
+    guidanceForm.name = row.common_name
+    guidanceForm.content = row.medication_guidance || ''
+    guidanceVisible.value = true
+  }
+
+  const saveGuidance = async () => {
+    guidanceSaving.value = true
+    try {
+      await saveCommonMedicineGuidance(guidanceForm.id, guidanceForm.content)
+      guidanceVisible.value = false
+      await loadList()
+    } finally {
+      guidanceSaving.value = false
+    }
   }
 
   const handleToggleStatus = async (row: CommonMedicineRecord) => {
@@ -217,6 +273,28 @@
     .full {
       grid-column: 1 / -1;
     }
+  }
+
+  .guidance-detail {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .guidance-preview {
+    line-height: 1.7;
+
+    :deep(p:first-child) {
+      margin-top: 0;
+    }
+
+    :deep(p:last-child) {
+      margin-bottom: 0;
+    }
+  }
+
+  .guidance-alert {
+    margin-bottom: 16px;
   }
 
   @media (max-width: 768px) {

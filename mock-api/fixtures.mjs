@@ -1,4 +1,5 @@
 import { buildMockOcrResult, renderMockReportSvg, supportedReportTypes } from './report-ocr.mjs';
+import { DEFAULT_PICKUP_REMIND_TIME, DEFAULT_PICKUP_REQUIREMENTS } from './pickup-reminder.mjs';
 
 export function shanghaiDate(value) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
@@ -65,7 +66,7 @@ export function createFixtures(now) {
     return {
       id: i + 1, patient_code: `TB-P-${String(i + 1).padStart(3, '0')}`, name, mobile, gender,
       gender_text: gender === 1 ? '男' : '女', birth_date, age: ageOnDate(birth_date, today),
-      is_archived: 1, login_enabled: true, created_via: 'admin', study_state: isEndedProjectPatient ? '已完成' : isDemoPatient ? '治疗中' : '待启用',
+      is_archived: 1, login_enabled: true, last_login_at: isConfirmedPatient ? time : '', created_via: 'admin', study_state: isEndedProjectPatient ? '已完成' : isDemoPatient ? '治疗中' : '待启用',
       enroll_date, offline_confirmed: true, consent_confirmed: true,
       identity_confirmed: isConfirmedPatient, medicine_confirmed: isConfirmedPatient, status: 1,
       ...(isConfirmedPatient ? {
@@ -81,7 +82,7 @@ export function createFixtures(now) {
   const commonMedicines = Array.from({ length: 16 }, (_, i) => ({
     id: i + 1, common_name: drugNames[i % 4], company: '沈阳红旗制药有限公司', specification: drugSpecifications[i % 4],
     ybm: `DRUG-${String(i + 1).padStart(3, '0')}`, usage: '口服', frequency: 1,
-    dosage: '遵医嘱', dosage_value: '1', dosage_unit: i % 4 === 1 ? '粒' : '片', medication_guidance: '具体用药请遵医嘱。',
+    dosage: '遵医嘱', dosage_value: '1', dosage_unit: i % 4 === 1 ? '粒' : '片', medication_guidance: '<p>请严格按照医护人员确认的方案用药，不要自行调整剂量或停药；如有不适，请及时联系医护人员。</p>',
     thumb: '/api/mock-files/medicine-cover', sort_order: i, status: i % 5 ? 1 : 0,
     status_text: i % 5 ? '启用' : '停用', created_at: `${shiftDate(today, -60)} 06:00:00`, updated_at: time
   }));
@@ -157,10 +158,9 @@ export function createFixtures(now) {
   }
   const medicationSchemes = [1, 2, 3].map((id) => ({
     id, name: `用药方案 ${id}`, description: '具体用药安排由医生评估确认。', version: 'V1.0', status: id === 3 ? 0 : 1,
-    drugs: commonMedicines.filter(m => m.status === 1).slice(id - 1, id + 1).map(m => ({ drug_id: m.id, name: m.common_name, specification: m.specification, dose: m.dosage_value, unit: m.dosage_unit, frequency: '每日1次', times: '08:00', precautions: m.medication_guidance }))
+    drugs: commonMedicines.filter(m => m.status === 1).slice(id - 1, id + 1).map(m => ({ drug_id: m.id, name: m.common_name, specification: m.specification, dose: m.dosage_value, unit: m.dosage_unit, frequency: '每日1次', times: '08:00', precautions: '' }))
   }));
   const taskTemplates = [
-    { id:1, name:'取药提醒', type:'提醒', requirements:'按患者实际发药量和个体用法用量自动计算', system_kind:'pickup' },
     { id:2, name:'血常规复查', type:'检查', requirements:'完成血常规检查后提交检查日期及报告原图' },
     { id:3, name:'生化指标复查', type:'检查', requirements:'完成肝功能、肾功能等生化指标检查后提交检查日期及报告原图' },
     { id:4, name:'胸部 CT 复查', type:'检查', requirements:'完成胸部 CT 检查后提交检查日期及报告原图' }
@@ -242,7 +242,7 @@ export function createFixtures(now) {
   });
   const projectGroups = groupDefinitions.map(definition => {
     const scheme = medicationSchemes.find(item => item.id === definition.scheme_id);
-    const drugs = scheme.drugs.map(drug => ({ ...structuredClone(drug), quantity: 30, daily_count: 1,
+    const drugs = scheme.drugs.map(drug => ({ ...structuredClone(drug), precautions: '', quantity: 30, daily_count: 1,
       reminders: [{ time: drug.times, timing: '餐后' }], confirmed: true }));
     const pickupDays = Math.min(180, Math.max(1, Math.floor(Math.min(...drugs.map(drug => drug.quantity / Number(drug.dose) / drug.daily_count)))));
     const reminder = reminderSchemes.find(item => item.id === definition.reminder_scheme_id);
@@ -252,6 +252,8 @@ export function createFixtures(now) {
     });
     return {
       id: definition.id, project_id: definition.project_id, name: definition.name, description: definition.description, revision: 2,
+      pickup_requirements: DEFAULT_PICKUP_REQUIREMENTS,
+      pickup_remind_time: reminder.pickup_remind_time || DEFAULT_PICKUP_REMIND_TIME,
       medication: { id: scheme.id, snapshot: { ...structuredClone(scheme), drugs }, drugs: structuredClone(drugs), treatment_days: 180, pickup_mode: 'quantity', pickup_days: pickupDays, advance_days: reminder.pickup_enabled ? reminder.pickup_advance_days : 0, quantities: drugs.map(drug => ({ drug_id: drug.drug_id, quantity: drug.quantity })) },
       reminder: { id: reminder.id, snapshot: structuredClone(reminder) },
       surveys: [schedule(surveys[0], reminder, definition.id % 2 ? 14 : 7)],
@@ -323,7 +325,7 @@ export function createFixtures(now) {
         medicine_count: String(quantity), batch_no: `BATCH-${patient.id}-${String(sort + 1).padStart(2, '0')}`, sort,
         source: 'group', source_text: '研究分组方案', usage: '口服', dosage: `${drug.dose}${drug.unit}/次`,
         dosage_value: String(drug.dose), dosage_unit: drug.unit, frequency: times.length, plan_times: times,
-        medication_guidance: drug.precautions, created_at: `${patient.enroll_date} 07:00:00`, updated_at: time
+        medication_guidance: source.medication_guidance, created_at: `${patient.enroll_date} 07:00:00`, updated_at: time
       };
       medicines.push(medicine);
       for (let day = -35; day <= 3; day++) {

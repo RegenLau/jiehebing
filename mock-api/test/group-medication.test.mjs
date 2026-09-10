@@ -23,11 +23,13 @@ test('group drug cards preserve dose, daily reminders and calculate earliest pic
   const api=await setup(t),catalog=await api.ok('project/catalog'),source=catalog.medication_schemes[0];
   const group=await api.ok('project/group-create',{project_id:1,name:'卡片用药测试',description:''});
   const drugs=source.drugs.slice(0,2).map((d,i)=>card(d,i?120:30));
+  drugs[0].precautions='分组不再保存用药指导';
   const medication={id:source.id,drugs,treatment_days:90,pickup_mode:'quantity',pickup_days:999,advance_days:7,quantities:drugs.map(d=>({drug_id:d.drug_id,quantity:d.quantity}))};
   const saved=await api.ok('project/group-save',{...group,medication});
   assert.equal(saved.medication.pickup_days,5,'earliest supply: 30 / 2 / 3 = 5 days; ignore client cycle');
   assert.deepEqual(saved.medication.snapshot.drugs[0].reminders,drugs[0].reminders);
   assert.equal(saved.medication.snapshot.drugs[0].frequency,'每日3次');
+  assert.equal(saved.medication.snapshot.drugs[0].precautions,'');
   assert.deepEqual((await api.ok('project/catalog')).medication_schemes,catalog.medication_schemes);
   assert.deepEqual((await api.ok(`project/group-detail?project_id=1&id=${group.id}`)).medication,saved.medication);
   for(const bad of [

@@ -60,7 +60,12 @@
         <ElForm label-position="top" :disabled="saving">
           <div class="form-grid two-columns">
             <ElFormItem label="研究项目" required>
-              <ElSelect v-model="form.project_id" filterable @change="changeProject">
+              <ElSelect
+                v-model="form.project_id"
+                filterable
+                placeholder="仅显示待开始和进行中的项目"
+                @change="changeProject"
+              >
                 <ElOption
                   v-for="project in projects"
                   :key="project.id"
@@ -666,12 +671,22 @@
       all.push(...page.list)
       if (all.length >= page.total) break
     }
-    projects.value = all
+    projects.value = all.filter((project) => project.status === 0 || project.status === 1)
   }
   async function loadGroups(reset = true) {
-    groups.value = form.value.project_id
-      ? (await fetchProjectDetail(form.value.project_id)).groups || []
-      : []
+    if (!form.value.project_id) groups.value = []
+    else {
+      const selectedProject = await fetchProjectDetail(form.value.project_id)
+      if (!form.value.id && selectedProject.status === 2) {
+        form.value.project_id = undefined
+        groups.value = []
+        groupRecord.value = null
+        treatment.value = blankTreatment()
+        ElMessage.warning('该项目已结束，不能新增患者')
+        return
+      }
+      groups.value = selectedProject.groups || []
+    }
     if (reset) {
       form.value.group_id = undefined
       groupRecord.value = null
@@ -735,7 +750,11 @@
         form.value.owner_id = owners.value.find((owner) => owner.status === 1)?.id
         const routeProject = Number(route.query.project_id)
         const routeGroup = Number(route.query.group_id)
-        if (Number.isSafeInteger(routeProject) && routeProject > 0) {
+        if (
+          Number.isSafeInteger(routeProject) &&
+          routeProject > 0 &&
+          projects.value.some((project) => project.id === routeProject)
+        ) {
           form.value.project_id = routeProject
           await loadGroups(false)
           if (
@@ -771,6 +790,10 @@
         !form.value.enroll_date
       ) {
         ElMessage.warning('请完整选择研究项目、分组、负责人员和入组日期')
+        return
+      }
+      if (!projects.value.some((project) => project.id === form.value.project_id)) {
+        ElMessage.warning('只能选择待开始或进行中的研究项目')
         return
       }
       if (!form.value.offline_confirmed || !form.value.consent_confirmed) {

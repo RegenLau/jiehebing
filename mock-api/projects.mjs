@@ -1,4 +1,5 @@
 import { normalizeGroupDrugs, registerPrescriptionRecognition } from './group-medication.mjs';
+import { DEFAULT_PICKUP_REMIND_TIME, DEFAULT_PICKUP_REQUIREMENTS } from './pickup-reminder.mjs';
 import { effectiveProjectStatus, projectStatusView } from './project-status.mjs';
 // Project configuration is independent from patient treatment and generated tasks.
 export function registerProjects({ core, db, assert, find, page, clean, isDate, timestamp, nextId, today }) {
@@ -13,6 +14,10 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
   };
   const project = id => find(db.projects, id, '项目');
   const view = record => projectStatusView(record, today());
+  const writableProject = record => {
+    assert(effectiveProjectStatus(record, today()) !== 2, '项目已结束，仅支持查看，不能修改');
+    return record;
+  };
   const group = (projectId, id) => { const row = find(db.projectGroups, id, '分组'); assert(row.project_id === project(projectId).id, '分组不属于当前项目', 404); return row; };
   const groupView = row => {
     const fallbackTime = row.reminder?.snapshot?.task_remind_time || '09:00';
@@ -22,9 +27,11 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     });
     return {
       ...copy(row),
+      pickup_requirements: row.pickup_requirements || DEFAULT_PICKUP_REQUIREMENTS,
+      pickup_remind_time: row.pickup_remind_time || row.reminder?.snapshot?.pickup_remind_time || DEFAULT_PICKUP_REMIND_TIME,
       surveys: (row.surveys || []).map(scheduleView),
       tasks: (row.tasks || []).map(scheduleView),
-      can_delete: !(row.participant_ids || []).length && !db.patients.some(patient => patient.group_id === row.id),
+      can_delete: effectiveProjectStatus(project(row.project_id), today()) !== 2 && !(row.participant_ids || []).length && !db.patients.some(patient => patient.group_id === row.id),
       participants: (row.participant_ids || []).map(id => {
         const patient = find(db.patients,id,'患者');
         return {
@@ -53,12 +60,12 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
       const groups = db.projectGroups.filter(g => g.project_id === p.id);
       const patientIds = new Set(db.patients.filter(patient => patient.project_id === p.id).map(patient => patient.id));
       for (const group of groups) for (const id of group.participant_ids || []) patientIds.add(id);
-      return { ...view(p), group_count: groups.length, patient_count: patientIds.size, can_delete: groups.length === 0 && patientIds.size === 0 };
+      return { ...view(p), group_count: groups.length, patient_count: patientIds.size, can_delete: effectiveProjectStatus(p, today()) !== 2 && groups.length === 0 && patientIds.size === 0 };
     }), q);
   });
   core('GET', 'project/detail', ({ query: q }) => ({ ...view(project(q.id)), groups: db.projectGroups.filter(g => g.project_id === Number(q.id)).map(groupView) }));
   core('POST', 'project/save', ({ body: b, admin }) => {
-    const existing = b.id === undefined ? null : project(b.id);
+    const existing = b.id === undefined ? null : writableProject(project(b.id));
     assert(b.status === undefined, '项目状态由研究周期和手动结束决定');
     const data = { code: text(b.code,'项目编号',40,true), name: text(b.name,'项目名称',100,true), purpose: text(b.purpose,'研究目的',1000), start_date: clean(b.start_date), end_date: clean(b.end_date) };
     assert(/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(data.code), '项目编号仅支持字母、数字、短横线和下划线');
@@ -88,7 +95,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     return view(record);
   });
   core('POST', 'project/delete', ({ body: b }) => {
-    const record = project(b.id);
+    const record = writableProject(project(b.id));
     assert(!db.projectGroups.some(group => group.project_id === record.id), '项目下仍有分组，请先删除空分组');
     assert(!db.patients.some(patient => patient.project_id === record.id), '项目下仍有关联患者，不能删除');
     db.projects.splice(db.projects.indexOf(record), 1);
@@ -108,18 +115,18 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     });
   });
   core('POST', 'project/group-create', ({ body: b, admin }) => {
-    const p = project(b.project_id);
+    const p = writableProject(project(b.project_id));
     assert(Object.keys(b).every(k => ['project_id','name','description'].includes(k)), '创建分组只需基础信息，请创建后再设置方案和任务');
     const name = text(b.name,'分组名称',60,true), description = text(b.description,'分组说明',1000);
     assert(!db.projectGroups.some(g => g.project_id === p.id && g.name.toLowerCase() === name.toLowerCase()), '当前项目已有同名分组');
-    const record = { id:nextId(db.projectGroups), project_id:p.id, name, description, revision:1, medication:null, reminder:null, surveys:[],tasks:[],participant_ids:[],participants:[],created_at:timestamp(),updated_at:timestamp() };
+    const record = { id:nextId(db.projectGroups), project_id:p.id, name, description, pickup_requirements:DEFAULT_PICKUP_REQUIREMENTS, pickup_remind_time:DEFAULT_PICKUP_REMIND_TIME, revision:1, medication:null, reminder:null, surveys:[],tasks:[],participant_ids:[],participants:[],created_at:timestamp(),updated_at:timestamp() };
     db.projectGroups.push(record);
     log(p,admin,'新增分组',name, {group:{}}, {group:copy(record)});
     return groupView(record);
   });
   core('GET', 'project/group-detail', ({ query: q }) => groupView(group(q.project_id, q.id)));
   core('POST', 'project/group-basic-save', ({ body: b, admin }) => {
-    const p = project(b.project_id);
+    const p = writableProject(project(b.project_id));
     assert(Object.keys(b).every(k => ['id','project_id','revision','name','description'].includes(k)), '编辑分组只允许修改分组名称和分组说明');
     const existing = group(p.id,b.id);
     assert(b.revision === existing.revision, '分组已更新，请重新打开后编辑');
@@ -132,7 +139,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     return groupView(existing);
   });
   core('POST', 'project/group-delete', ({ body: b, admin }) => {
-    const p = project(b.project_id);
+    const p = writableProject(project(b.project_id));
     const record = group(p.id,b.id);
     assert(!(record.participant_ids || []).length && !db.patients.some(patient => patient.group_id === record.id), '分组内仍有患者，不能删除');
     const before = copy(record);
@@ -141,13 +148,16 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     return { id: record.id, name: record.name };
   });
   core('POST', 'project/group-save', ({ body: b, admin }) => {
-    const p = project(b.project_id);
+    const p = writableProject(project(b.project_id));
     assert(b.id !== undefined, '请先创建分组基础信息');
     const existing = group(p.id, b.id);
     if (existing) assert(b.revision === existing.revision, '分组配置已更新，请重新打开后编辑');
     const name = text(b.name,'分组名称',60,true);
     assert(!db.projectGroups.some(g => g.project_id === p.id && g !== existing && g.name.toLowerCase() === name.toLowerCase()), '当前项目已有同名分组');
     const description = text(b.description,'分组说明',1000);
+    const pickup_requirements = text(b.pickup_requirements ?? existing?.pickup_requirements ?? DEFAULT_PICKUP_REQUIREMENTS,'取药提醒要求说明',1000,true);
+    const pickup_remind_time = clean(b.pickup_remind_time || existing?.pickup_remind_time || existing?.reminder?.snapshot?.pickup_remind_time || DEFAULT_PICKUP_REMIND_TIME);
+    assert(/^([01]\d|2[0-3]):[0-5]\d$/.test(pickup_remind_time), '请填写有效的取药提醒时间');
     const binding = (rows, id, label, old) => {
       number(id,`${label}编号`,1,99999999);
       const source = find(rows,id,label);
@@ -163,7 +173,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
         ? {id:0,snapshot:{id:0,name:`${name}用药方案`,status:1,drugs:[]}}
         : binding(db.medicationSchemes,m.id,'用药方案',existing?.medication);
       if (m.drugs !== undefined) {
-        source.snapshot.drugs = normalizeGroupDrugs(m.drugs, {db,assert,find,clean}, existing?.medication?.snapshot.drugs);
+        source.snapshot.drugs = normalizeGroupDrugs(m.drugs, {db,assert,find,clean}, existing?.medication?.snapshot.drugs, false);
       }
       assert(source.snapshot.drugs?.length, '请添加并确认分组药品');
       const days = number(m.treatment_days,'治疗天数',1);
@@ -219,7 +229,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     });
     unique(participant_ids,'患者');
     const participants = participant_ids.map(id => { const p = find(db.patients,id,'患者'); return {id:p.id,name:p.name,mobile:p.mobile}; });
-    const data = { name, description, medication, reminder, surveys, tasks, participant_ids, participants };
+    const data = { name, description, pickup_requirements, pickup_remind_time, medication, reminder, surveys, tasks, participant_ids, participants };
     const record = existing || { id:nextId(db.projectGroups), project_id:p.id, revision:0, created_at:timestamp() };
     const before = existing ? copy(existing) : {};
     Object.assign(record,data,{revision:record.revision+1,updated_at:timestamp()});

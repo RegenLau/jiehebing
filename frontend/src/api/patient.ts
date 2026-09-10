@@ -10,6 +10,7 @@ export interface PatientRecord {
   age: number
   is_archived: number
   login_enabled: boolean
+  last_login_at?: string
   created_via: string
   project_id?: number
   project_name?: string

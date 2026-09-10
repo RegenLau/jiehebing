@@ -1,5 +1,5 @@
 // Group card edits are local snapshots; reusable medication templates stay unchanged.
-export function normalizeGroupDrugs(values, { db, assert, find, clean }, previous = []) {
+export function normalizeGroupDrugs(values, { db, assert, find, clean }, previous = [], keepPrecautions = true) {
   assert(Array.isArray(values) && values.length > 0 && values.length <= 50, '请添加1至50种药品');
   assert(new Set(values.map(d => d.drug_id)).size === values.length, '同一种药品不能重复添加');
   return values.map(d => {
@@ -22,10 +22,10 @@ export function normalizeGroupDrugs(values, { db, assert, find, clean }, previou
     });
     assert(new Set(reminders.map(item => item.time)).size === reminders.length, '同一药品的提醒时间不能重复');
     assert(Number.isInteger(d.quantity) && d.quantity > 0 && d.quantity <= 100000, '药品量应为1至100000的整数');
-    assert(clean(d.precautions).length <= 1000, '注意事项不能超过1000字');
+    if (keepPrecautions) assert(clean(d.precautions).length <= 1000, '注意事项不能超过1000字');
     return { drug_id:medicine.id, name, specification, dose, unit,
       daily_count:d.daily_count, frequency:`每日${d.daily_count}次`, times:reminders.map(item=>item.time).join(','),
-      reminders, quantity:d.quantity, precautions:clean(d.precautions), confirmed:true };
+      reminders, quantity:d.quantity, precautions:keepPrecautions ? clean(d.precautions) : '', confirmed:true };
   });
 }
 

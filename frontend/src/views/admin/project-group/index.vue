@@ -5,7 +5,7 @@
         ><ElButton link type="primary" :disabled="saving" @click="back">返回分组列表</ElButton
         ><h2>{{ form.name }} · {{ readonly ? '分组详情' : '配置方案与任务' }}</h2
         ><p>{{ projectName }}</p></div
-      ><ElButton v-if="readonly && loaded" type="primary" @click="configureGroup"
+      ><ElButton v-if="readonly && loaded && !projectEnded" type="primary" @click="configureGroup"
         >配置方案与任务</ElButton
       ></div
     >
@@ -14,6 +14,14 @@
         ><template #extra><ElButton @click="loadPage">重试</ElButton></template></ElResult
       >
       <template v-else-if="loaded">
+        <ElAlert
+          v-if="projectEnded"
+          class="readonly-alert"
+          type="info"
+          :closable="false"
+          show-icon
+          title="项目已结束，当前分组的患者、用药和任务配置仅供查看。"
+        />
         <div class="configuration-summary">
           <div>
             <span>用药方案</span>
@@ -24,7 +32,15 @@
             <strong>{{ form.surveys.length }} 项</strong>
           </div>
           <div>
-            <span>任务模板</span>
+            <span>取药提醒</span>
+            <strong>{{
+              form.medication
+                ? `提前 ${form.medication.advance_days} 天 · ${form.pickup_remind_time}`
+                : '未配置'
+            }}</strong>
+          </div>
+          <div>
+            <span>其他任务</span>
             <strong>{{ form.tasks.length }} 项</strong>
           </div>
         </div>
@@ -32,8 +48,17 @@
           <ElTabs v-model="activeTab" class="group-tabs">
             <ElTabPane label="患者" name="participants">
               <div class="participant-heading">
-                <p class="muted">从这里新增患者时，当前研究和分组会自动带入。</p>
-                <ElButton type="primary" :disabled="!form.medication" @click="addPatient">
+                <p class="muted">{{
+                  projectEnded
+                    ? '项目已结束，不能继续新增患者。'
+                    : '从这里新增患者时，当前研究和分组会自动带入。'
+                }}</p>
+                <ElButton
+                  v-if="!projectEnded"
+                  type="primary"
+                  :disabled="!form.medication"
+                  @click="addPatient"
+                >
                   新增患者
                 </ElButton>
               </div>
@@ -82,7 +107,7 @@
             <ElTabPane label="随访问卷" name="followup-surveys">
               <Schedules v-model="form.surveys" :sources="catalog.surveys" label="问卷" />
             </ElTabPane>
-            <ElTabPane label="任务模板" name="followup-tasks">
+            <ElTabPane label="取药提醒" name="pickup-reminder">
               <section class="pickup-rule-card">
                 <div class="pickup-rule-heading">
                   <div>
@@ -93,7 +118,7 @@
                 </div>
                 <ElAlert
                   v-if="!form.medication"
-                  title="请先在“用药方案”中配置药品，随后再设置提前提醒天数。"
+                  title="请先在“用药方案”中配置药品，随后再设置提前天数、提醒时间和要求说明。"
                   type="warning"
                   :closable="false"
                   show-icon
@@ -107,17 +132,37 @@
                       :precision="0"
                     />
                   </ElFormItem>
+                  <ElFormItem label="提醒时间（必填）">
+                    <ElTimePicker
+                      v-model="form.pickup_remind_time"
+                      format="HH:mm"
+                      value-format="HH:mm"
+                      placeholder="选择时间"
+                    />
+                  </ElFormItem>
+                  <ElFormItem label="要求说明（必填）">
+                    <ElInput
+                      v-model="form.pickup_requirements"
+                      type="textarea"
+                      :rows="3"
+                      maxlength="1000"
+                      show-word-limit
+                      placeholder="填写患者收到取药提醒后需要完成的事项"
+                    />
+                  </ElFormItem>
                   <p>
                     每日用量＝单次用量 × 每日服药次数；多种药品按最早预计不足的药品触发。
                     登记实际发药或余药盘点后，提醒日期会自动重算。
                   </p>
                 </div>
               </section>
+            </ElTabPane>
+            <ElTabPane label="其他任务" name="other-tasks">
               <div class="scheduled-task-heading">
-                <h3>检查及其他任务</h3>
-                <p>以下任务仍按时间基准、频次和完成期限生成。</p>
+                <h3>检查、复诊及其他任务</h3>
+                <p>以下任务按时间基准、频次和完成期限生成。</p>
               </div>
-              <Schedules v-model="form.tasks" :sources="scheduledTaskTemplates" label="任务模板" />
+              <Schedules v-model="form.tasks" :sources="scheduledTaskTemplates" label="其他任务" />
             </ElTabPane>
           </ElTabs>
         </ElForm>
@@ -140,6 +185,7 @@
     saveGroup,
     type Catalog,
     type GroupRecord,
+    type ProjectStatus,
     type Schedule
   } from '@/api/project'
   import Schedules from '../project/modules/schedules.vue'
@@ -153,6 +199,8 @@
     project_id: projectId.value,
     name: '',
     description: '',
+    pickup_requirements: '',
+    pickup_remind_time: '09:00',
     medication: null,
     reminder: null,
     surveys: [],
@@ -171,10 +219,20 @@
     opening = ref(false),
     loaded = ref(false),
     error = ref(''),
-    projectName = ref('')
-  const readonly = computed(() => Boolean(groupId.value) && route.query.mode !== 'edit')
+    projectName = ref(''),
+    projectStatus = ref<ProjectStatus>()
+  const projectEnded = computed(() => projectStatus.value === 2)
+  const readonly = computed(
+    () => projectEnded.value || (Boolean(groupId.value) && route.query.mode !== 'edit')
+  )
   const activeTab = ref('participants')
-  const allowedTabs = ['participants', 'medication', 'followup-surveys', 'followup-tasks']
+  const allowedTabs = [
+    'participants',
+    'medication',
+    'followup-surveys',
+    'pickup-reminder',
+    'other-tasks'
+  ]
   const scheduledTaskTemplates = computed(() =>
     catalog.value.task_templates.filter((source) => source.system_kind !== 'pickup')
   )
@@ -228,9 +286,11 @@
           .map((item) => normalizeSchedule(item, fallbackTime))
       }
       projectName.value = project.name
+      projectStatus.value = project.status
       const requestedTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
-      activeTab.value = allowedTabs.includes(requestedTab || '')
-        ? String(requestedTab)
+      const normalizedTab = requestedTab === 'followup-tasks' ? 'other-tasks' : requestedTab
+      activeTab.value = allowedTabs.includes(normalizedTab || '')
+        ? String(normalizedTab)
         : 'participants'
       loaded.value = true
     } catch {
@@ -243,6 +303,7 @@
     void router.push({ path: '/project/groups', query: { project_id: projectId.value } })
   }
   function configureGroup() {
+    if (projectEnded.value) return
     void router.push({
       path: '/project/group',
       query: {
@@ -254,6 +315,7 @@
     })
   }
   function addPatient() {
+    if (projectEnded.value) return
     void router.push({
       path: '/patient/management',
       query: { project_id: projectId.value, group_id: groupId.value }
@@ -263,6 +325,16 @@
   onBeforeRouteLeave(() => !saving.value)
   async function save() {
     if (readonly.value || saving.value) return
+    if (!form.value.pickup_requirements.trim()) {
+      activeTab.value = 'pickup-reminder'
+      ElMessage.warning('请填写取药提醒的要求说明')
+      return
+    }
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(form.value.pickup_remind_time)) {
+      activeTab.value = 'pickup-reminder'
+      ElMessage.warning('请选择取药提醒时间')
+      return
+    }
     if (!medicationEditor.value?.validate()) {
       activeTab.value = 'medication'
       return
@@ -303,6 +375,9 @@
   .group-tabs {
     margin-top: 0;
   }
+  .readonly-alert {
+    margin-bottom: 16px;
+  }
   .participant-heading {
     display: flex;
     align-items: center;
@@ -312,7 +387,7 @@
   }
   .configuration-summary {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
     margin-bottom: 16px;
   }
@@ -380,8 +455,16 @@
     border-radius: 8px;
     background: var(--el-color-primary-light-9);
   }
-  .pickup-rule-heading,
   .pickup-rule-setting {
+    display: grid;
+    grid-template-columns: 180px 200px minmax(0, 1fr);
+    gap: 0 20px;
+    align-items: start;
+  }
+  .pickup-rule-setting :deep(.el-date-editor.el-input) {
+    width: 100%;
+  }
+  .pickup-rule-heading {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -404,11 +487,11 @@
     margin-top: 16px;
   }
   .pickup-rule-setting :deep(.el-form-item) {
-    flex: 0 0 200px;
     margin-bottom: 0;
   }
   .pickup-rule-setting p {
-    padding-top: 27px;
+    grid-column: 1 / -1;
+    margin-top: 12px;
   }
   .scheduled-task-heading {
     margin: 24px 0 14px;

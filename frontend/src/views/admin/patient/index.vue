@@ -76,10 +76,10 @@
             }}</ElTag></template
           >
         </ElTableColumn>
-        <ElTableColumn label="患者端登录" width="120">
+        <ElTableColumn label="登录状态" width="110">
           <template #default="{ row }">
-            <ElTag :type="row.login_enabled ? 'success' : 'info'">
-              {{ row.login_enabled ? '可登录' : '不可登录' }}
+            <ElTag :type="row.last_login_at ? 'success' : 'info'">
+              {{ row.last_login_at ? '已登录' : '未登录' }}
             </ElTag>
           </template>
         </ElTableColumn>
@@ -192,8 +192,8 @@
   }
 
   const stateTag = (state?: string): 'success' | 'warning' | 'danger' | 'info' => {
+    if (state === '待启用' || state === '暂停用药') return 'warning'
     if (state === '治疗中') return 'success'
-    if (state === '暂停用药' || state === '提前退出') return 'warning'
     if (state === '失访') return 'danger'
     return 'info'
   }

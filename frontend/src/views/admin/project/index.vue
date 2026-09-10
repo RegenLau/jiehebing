@@ -56,7 +56,13 @@
               type="primary"
               @click="router.push({ path: '/project/groups', query: { project_id: row.id } })"
               >分组</ElButton
-            ><ElButton link type="primary" @click="edit(row.id)">编辑</ElButton
+            ><ElButton
+              link
+              type="primary"
+              :disabled="row.status === 2"
+              :title="row.status === 2 ? '项目已结束，仅支持查看' : '编辑项目'"
+              @click="edit(row.id)"
+              >编辑</ElButton
             ><ElButton link type="primary" :disabled="row.status === 2" @click="openStatus(row.id)"
               >状态</ElButton
             ><ElButton
@@ -64,7 +70,7 @@
               type="danger"
               :loading="deletingProjectId === row.id"
               :disabled="!canDeleteProject(row)"
-              :title="canDeleteProject(row) ? '删除空项目' : '项目仍有分组或患者，不能删除'"
+              :title="deleteProjectTitle(row)"
               @click="removeProject(row)"
               >删除</ElButton
             ></template
@@ -105,7 +111,9 @@
           ><ElFormItem label="结束日期" prop="end_date"
             ><div class="date-field"
               ><ElDatePicker v-model="form.end_date" value-format="YYYY-MM-DD" />
-              <span v-if="form.id" class="field-hint">{{ endDateHint }}</span></div
+              <span v-if="form.id" class="field-hint"
+                >项目结束前可调整研究周期，结束后项目及分组将只读。</span
+              ></div
             ></ElFormItem
           ></div
         >
@@ -153,7 +161,7 @@
   </div>
 </template>
 <script setup lang="ts">
-  import { computed, nextTick, onActivated, reactive, ref } from 'vue'
+  import { nextTick, onActivated, reactive, ref } from 'vue'
   import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
   import {
     fetchProjectList,
@@ -195,12 +203,6 @@
     statusProject = ref<ProjectRecord>(),
     reason = ref('')
   const deletingProjectId = ref<number>()
-  const editingStatusSource = ref<ProjectRecord['status_source']>()
-  const endDateHint = computed(() =>
-    editingStatusSource.value === 'manual'
-      ? '该项目已手动结束，调整日期不会恢复患者端访问。'
-      : '可将结束日期往后调整，项目状态将按新的研究周期重新计算。'
-  )
   let request = 0,
     editRequest = 0
   const rules: FormRules = {
@@ -249,6 +251,10 @@
     try {
       const r = id ? await fetchProjectDetail(id) : blank()
       if (seq !== editRequest) return
+      if (id && (r as ProjectRecord).status === 2) {
+        ElMessage.info('项目已结束，仅支持查看')
+        return
+      }
       form.value = {
         id: r.id,
         code: r.code,
@@ -257,7 +263,6 @@
         end_date: r.end_date,
         purpose: r.purpose
       }
-      editingStatusSource.value = id ? (r as ProjectRecord).status_source : undefined
       formVisible.value = true
       await nextTick()
       formRef.value?.clearValidate()
@@ -319,7 +324,14 @@
   }
   function canDeleteProject(value: unknown) {
     const row = value as ProjectRecord
-    return row.can_delete ?? (row.group_count === 0 && row.patient_count === 0)
+    return (
+      row.status !== 2 && (row.can_delete ?? (row.group_count === 0 && row.patient_count === 0))
+    )
+  }
+  function deleteProjectTitle(value: unknown) {
+    const row = value as ProjectRecord
+    if (row.status === 2) return '项目已结束，仅支持查看'
+    return canDeleteProject(row) ? '删除空项目' : '项目仍有分组或患者，不能删除'
   }
   async function removeProject(value: unknown) {
     const row = value as ProjectRecord

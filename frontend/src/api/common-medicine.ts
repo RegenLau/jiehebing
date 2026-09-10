@@ -48,3 +48,11 @@ export function toggleCommonMedicineStatus(id: number, status: number) {
     showSuccessMessage: true
   })
 }
+
+export function saveCommonMedicineGuidance(id: number, medication_guidance: string) {
+  return request.post<CommonMedicineRecord>({
+    url: '/app/core/common-medicine/save-guidance',
+    params: { id, medication_guidance },
+    showSuccessMessage: true
+  })
+}
