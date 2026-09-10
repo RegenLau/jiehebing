@@ -1,6 +1,11 @@
+export function withAdverseMembership(record, db) {
+ const patient = db.patients.find(p => p.id === record.user_id);
+ return { ...record, project_id: patient?.project_id ?? null, project_name: patient?.project_name || '', group_id: patient?.group_id ?? null, group_name: patient?.group_name || '' };
+}
+
 export function registerAdverseManagement({core,db,assert,find,clean,timestamp}) {
  const text=(v,label,required=false)=>{const s=clean(v);assert(s.length<=2000&&(!required||s),`请填写有效的${label}`);return s;};
- core('GET','adverse-reaction/assessment',({query:q})=>find(db.adverse,q.id,'不良反应上报'));
+ core('GET','adverse-reaction/assessment',({query:q})=>withAdverseMembership(find(db.adverse,q.id,'不良反应上报'),db));
  core('POST','adverse-reaction/assess',({body:b,admin})=>{const r=find(db.adverse,b.id,'不良反应上报');assert(b.revision===(r.assessment_revision||0),'评估已更新，请刷新');assert(['待处理','处理中','已处理'].includes(b.processing_status),'处理状态不合法');const owner=find(db.admins,b.owner_id,'负责人员');assert(owner.status===1,'负责账号已停用');assert(['一般症状','AE'].includes(b.category),'请填写事件分类');assert([1,2,3].includes(b.assessed_severity),'请选择评估严重程度');assert(typeof b.serious==='boolean'&&typeof b.special_interest==='boolean','请确认严重性与特别关注属性');const event_name=text(b.event_name,'事件名称',true),reason=text(b.reason,'评估/处置记录',true),outcome=text(b.outcome,'结局',b.processing_status==='已处理');const before=structuredClone(r.assessment||{});const assessment={event_name,category:b.category,assessed_severity:b.assessed_severity,serious:b.serious,special_interest:b.special_interest,relatedness:text(b.relatedness,'相关性',true),measures:text(b.measures,'采取措施',true),outcome,owner_id:owner.id,owner_name:owner.realname||owner.username,ended_at:text(b.ended_at,'结束时间')};assert(!assessment.ended_at||/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(assessment.ended_at)&&assessment.ended_at>=r.occurred_at,'结束时间不能早于发生时间');r.assessment=assessment;r.processing_status=b.processing_status;r.assessment_revision=(r.assessment_revision||0)+1;r.processing_history||=[];r.processing_history.unshift({time:timestamp(),operator:admin.realname||admin.username,reason,before,after:structuredClone(assessment)});return r;});
  core('POST','adverse-reaction/contact',({body:b,admin})=>{const r=find(db.adverse,b.id,'不良反应上报');const channel=text(b.channel,'实际联系渠道',true),result=text(b.result,'联系结果',true),next_action=text(b.next_action,'后续安排',true);r.contacts||=[];r.contacts.unshift({time:timestamp(),operator:admin.realname||admin.username,channel,result,next_action});return r;});
 }

@@ -90,7 +90,7 @@
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="入组基准日" required>
+            <ElFormItem label="入组日期" required>
               <ElDatePicker v-model="form.enroll_date" type="date" value-format="YYYY-MM-DD" />
             </ElFormItem>
           </div>
@@ -171,7 +171,7 @@
             form.project_name
           }}</ElDescriptionsItem>
           <ElDescriptionsItem label="研究分组">{{ form.group_name }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="入组基准日">{{ form.enroll_date }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="入组日期">{{ form.enroll_date }}</ElDescriptionsItem>
           <ElDescriptionsItem label="负责人员">{{ form.owner_name || '-' }}</ElDescriptionsItem>
           <ElDescriptionsItem label="患者端登录">
             <ElTag :type="form.login_enabled ? 'success' : 'info'">{{

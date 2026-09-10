@@ -41,9 +41,15 @@ test('group drug cards preserve dose, daily reminders and calculate earliest pic
   const treatment=await api.ok('patient/treatment',{user_id:patient.id,start_date:'2026-09-10',reason:'采用分组方案'});
   assert.deepEqual(treatment.drugs[0].times,['07:00','12:00','19:00']);
   assert.deepEqual(treatment.drugs[0].reminders,drugs[0].reminders);
+  const adjustedTimes=['07:30','12:30','19:30','21:30'];
+  const adjusted=await api.ok('patient/treatment',{user_id:patient.id,start_date:'2026-09-10',treatment_days:90,reason:'调整当前患者提醒时间',adjusted:true,
+    drugs:treatment.drugs.map((drug,index)=>({...drug,times:index?drug.times:adjustedTimes}))});
+  assert.deepEqual(adjusted.drugs[0].times,adjustedTimes);
+  assert.deepEqual(adjusted.drugs[0].reminders.map(item=>item.timing),[...drugs[0].reminders.map(item=>item.timing),'餐后'],'修改每日次数后按槽位沿用分组服药时机，新时点默认餐后');
   const plans=await api.ok(`medication-plan/index?user_id=${patient.id}&scope=today&current=1&size=100`);
-  assert.equal(plans.list.length,drugs.length*3);
-  assert.ok(plans.list.every(p=>p.medication_timing===drugs[0].reminders.find(r=>r.time===p.plan_time).timing));
+  const activePlans=plans.list.filter(plan=>plan.status===0);
+  assert.equal(activePlans.length,adjusted.drugs.reduce((sum,drug)=>sum+drug.times.length,0));
+  assert.ok(activePlans.every(p=>p.medication_timing===adjusted.drugs.find(d=>d.drug_id===p.common_medicine_id).reminders.find(r=>r.time===p.plan_time).timing));
 });
 
 test('prescription mock requires a local image and custom group cards can be saved without a reusable scheme',async t=>{
@@ -69,11 +75,16 @@ test('scheme page cards persist recognition and reminder settings while group sn
   assert.equal(rifampicin.specification,'0.3g×50粒/瓶');
   assert.equal(rifampicin.unit,'粒');
   const drugs=source.drugs.map(d=>card(d,30));
+  drugs[0]={...drugs[0],name:'自定义药品名称',specification:'自定义药品规格'};
   const body={...source,name:'卡片通用方案',treatment_days:90,pickup_days:99,pickup_mode:'quantity',advance_days:7,reason:'更新药品卡片',drugs};
   assert.notEqual((await api.call('medication-scheme/save',{...body,drugs:drugs.map(d=>({...d,confirmed:false}))})).code,200);
+  assert.notEqual((await api.call('medication-scheme/save',{...body,drugs:drugs.map((d,index)=>index?d:{...d,name:' '})})).code,200);
+  assert.notEqual((await api.call('medication-scheme/save',{...body,drugs:drugs.map((d,index)=>index?d:{...d,specification:' '})})).code,200);
   const saved=await api.ok('medication-scheme/save',body);
   assert.equal(saved.pickup_days,5);
   assert.equal(saved.treatment_days,90);
+  assert.equal(saved.drugs[0].name,'自定义药品名称');
+  assert.equal(saved.drugs[0].specification,'自定义药品规格');
   assert.deepEqual(saved.drugs[0].reminders,drugs[0].reminders);
   assert.deepEqual((await api.ok(`medication-scheme/detail?id=${saved.id}`)).drugs,saved.drugs);
   assert.deepEqual((await api.ok('project/group-detail?project_id=1&id=1')).medication,original.medication);

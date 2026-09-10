@@ -315,6 +315,33 @@ test("patient mini-program login only accepts mobile numbers added by the admin"
   );
 });
 
+test("seeded pending-start patient stays confirmed before the first medication time", async (t) => {
+  const api = await start(t);
+  const login = await api.json("/app/login", {
+    auth: "",
+    body: { mobile: "13910001029" },
+  });
+  assert.equal(login.code, 0);
+  const patientToken = login.data.token.access_token;
+  const bootstrap = await api.json("/app/patient/bootstrap", {
+    auth: patientToken,
+  });
+  assert.equal(bootstrap.code, 0);
+  assert.equal(bootstrap.data.stage, "pending_start");
+  assert.equal(bootstrap.data.patient.identity_confirmed, true);
+  assert.equal(bootstrap.data.patient.medicine_confirmed, true);
+  assert.deepEqual(bootstrap.data.medication_start, {
+    date: "2026-09-09",
+    time: "08:00",
+    start_at: "2026-09-09 08:00",
+  });
+  const blocked = await api.json("/app/patient/home", {
+    auth: patientToken,
+  });
+  assert.notEqual(blocked.code, 0);
+  assert.match(blocked.message, /用药计划尚未开始/);
+});
+
 test("patient self-confirmation follows identity then current treatment and reopens after doctor changes", async (t) => {
   const api = await start(t);
   await api.login();
@@ -886,6 +913,76 @@ test("patient self-confirmation follows identity then current treatment and reop
     (await api.json("/app/patient/bootstrap", { auth: patientToken })).data
       .stage,
     "medication",
+  );
+});
+
+test("confirmed patient waits for the first medication time before home becomes available", async (t) => {
+  let currentNow = "2026-09-08T23:30:00.000Z";
+  const api = await start(t, () => currentNow);
+  await api.login();
+  const group = (await api.ok(P + "project/detail", { query: { id: 1 } }))
+    .groups[0];
+  const startDate = "2026-09-09";
+  const created = await api.ok(P + "patient/onboard", {
+    body: {
+      patient: {
+        name: "待开始服药患者",
+        mobile: "13910009997",
+        gender: 1,
+        birth_date: "1988-05-12",
+        project_id: 1,
+        group_id: group.id,
+        owner_id: 1,
+        enroll_date: TODAY,
+        offline_confirmed: true,
+        consent_confirmed: true,
+      },
+      treatment: {
+        start_date: startDate,
+        reason: "次日开始服药",
+        adjusted: false,
+      },
+    },
+  });
+  const login = await api.json("/app/login", {
+    auth: "",
+    body: { mobile: created.patient.mobile },
+  });
+  const patientToken = login.data.token.access_token;
+  let bootstrap = await api.json("/app/patient/confirm-identity", {
+    auth: patientToken,
+    body: { confirmed: true },
+  });
+  bootstrap = await api.json("/app/patient/confirm-medication", {
+    auth: patientToken,
+    body: {
+      confirmed: true,
+      treatment_id: bootstrap.data.treatment.id,
+    },
+  });
+
+  assert.equal(bootstrap.data.stage, "pending_start");
+  assert.deepEqual(bootstrap.data.medication_start, {
+    date: startDate,
+    time: "08:00",
+    start_at: `${startDate} 08:00`,
+  });
+  for (const path of [
+    "/app/patient/home",
+    "/app/patient/medication",
+    "/app/patient/tasks",
+  ]) {
+    const blocked = await api.json(path, { auth: patientToken });
+    assert.notEqual(blocked.code, 0);
+    assert.match(blocked.message, /用药计划尚未开始/);
+  }
+
+  currentNow = "2026-09-09T00:00:01.000Z";
+  bootstrap = await api.json("/app/patient/bootstrap", { auth: patientToken });
+  assert.equal(bootstrap.data.stage, "home");
+  assert.equal(
+    (await api.json("/app/patient/home", { auth: patientToken })).code,
+    0,
   );
 });
 
@@ -1598,14 +1695,16 @@ test("survey nested structure, per-patient answers, deletion protection and XLSX
     /application\/vnd.openxmlformats-officedocument.spreadsheetml.sheet/,
   );
   const rows = workbookRows(Buffer.from(await response.arrayBuffer()));
-  assert.deepEqual(rows[0].slice(0, 4), [
+  assert.deepEqual(rows[0].slice(0, 6), [
     "患者ID",
     "患者姓名",
     "手机号",
+    "参与项目",
+    "参与分组",
     "提交时间",
   ]);
   assert.equal(rows.length - 1, participants.length);
-  assert.equal(rows[0].length, 4 + detail.questions.length);
+  assert.equal(rows[0].length, 6 + detail.questions.length);
   for (const { patient, response: answers } of participants) {
     const row = rows.find(
       (values, index) => index > 0 && Number(values[0]) === patient.id,
@@ -1613,7 +1712,9 @@ test("survey nested structure, per-patient answers, deletion protection and XLSX
     assert.ok(row);
     assert.equal(row[1], patient.name);
     assert.equal(row[2], patient.mobile);
-    assert.equal(row[3], answers.submitted_at);
+    assert.equal(row[3], patient.project_name || "未参与项目");
+    assert.equal(row[4], patient.group_name || "未入组");
+    assert.equal(row[5], answers.submitted_at);
     for (let index = 0; index < detail.questions.length; index++) {
       const answer = answers.questions.find(
         (question) => question.question_id === detail.questions[index].id,
@@ -1632,9 +1733,78 @@ test("survey nested structure, per-patient answers, deletion protection and XLSX
                 return option.label + (fields ? `（${fields}）` : "");
               })
               .join("、");
-      assert.equal(row[index + 4] ?? "", exportSummary || "-");
+      assert.equal(row[index + 6] ?? "", exportSummary || "-");
     }
   }
+  const scoped = participants.find(
+    ({ patient }) => patient.project_id && patient.group_id,
+  );
+  assert.ok(scoped);
+  const scopedResponse = await api.raw(P + "survey/export", {
+    query: {
+      id: answered.id,
+      project_id: scoped.patient.project_id,
+      group_id: scoped.patient.group_id,
+    },
+  });
+  const scopedRows = workbookRows(Buffer.from(await scopedResponse.arrayBuffer()));
+  const expectedScoped = participants.filter(
+    ({ patient }) =>
+      patient.project_id === scoped.patient.project_id &&
+      patient.group_id === scoped.patient.group_id,
+  );
+  assert.equal(scopedRows.length - 1, expectedScoped.length);
+  assert.ok(
+    scopedRows.slice(1).every(
+      (row) =>
+        row[3] === scoped.patient.project_name &&
+        row[4] === scoped.patient.group_name,
+    ),
+  );
+  const submittedDate = scoped.response.submitted_at.slice(0, 10);
+  const dateResponse = await api.raw(P + "survey/export", {
+    query: {
+      id: answered.id,
+      start_date: submittedDate,
+      end_date: submittedDate,
+    },
+  });
+  const dateRows = workbookRows(Buffer.from(await dateResponse.arrayBuffer()));
+  assert.equal(
+    dateRows.length - 1,
+    participants.filter(
+      ({ response: answers }) =>
+        answers.submitted_at.slice(0, 10) === submittedDate,
+    ).length,
+  );
+  const anotherProject = (
+    await api.all(P + "project/index")
+  ).find((project) => project.id !== scoped.patient.project_id);
+  assert.ok(anotherProject);
+  assert.equal(
+    (
+      await api.json(P + "survey/export", {
+        query: {
+          id: answered.id,
+          project_id: anotherProject.id,
+          group_id: scoped.patient.group_id,
+        },
+      })
+    ).code,
+    422,
+  );
+  assert.equal(
+    (
+      await api.json(P + "survey/export", {
+        query: {
+          id: answered.id,
+          start_date: "2026-09-09",
+          end_date: "2026-09-08",
+        },
+      })
+    ).code,
+    422,
+  );
   assert.equal(
     (await api.json(P + "survey/delete", { body: { id: answered.id } })).code,
     422,
@@ -1658,7 +1828,28 @@ test("survey nested structure, per-patient answers, deletion protection and XLSX
   assert.equal((await missing.json()).code, 404);
 });
 
-test("adverse reaction XLSX uses all filtered records with original Chinese headers", async (t) => {
+test("adverse reaction list and assessment include each patient's project and group", async (t) => {
+  const api = await start(t);
+  await api.login();
+  const patients = await api.all(P + "patient/index");
+  const reactions = await api.all(P + "adverse-reaction/index");
+  assert.ok(reactions.some(r => r.project_id));
+  for (const reaction of reactions) {
+    const patient = patients.find(p => p.id === reaction.user_id);
+    assert.ok(patient);
+    const detail = await api.ok(P + "adverse-reaction/assessment", {
+      query: { id: reaction.id },
+    });
+    for (const row of [reaction, detail]) {
+      assert.equal(row.project_id, patient.project_id ?? null);
+      assert.equal(row.project_name, patient.project_name || "");
+      assert.equal(row.group_id, patient.group_id ?? null);
+      assert.equal(row.group_name, patient.group_name || "");
+    }
+  }
+});
+
+test("adverse reaction XLSX includes project and group for all filtered records", async (t) => {
   const api = await start(t);
   await api.login();
   const expected = await api.all(P + "adverse-reaction/index", { severity: 2 });
@@ -1675,6 +1866,8 @@ test("adverse reaction XLSX uses all filtered records with original Chinese head
     "ID",
     "患者姓名",
     "手机号",
+    "参与项目",
+    "入组名称",
     "发生时间",
     "主要症状",
     "症状描述",
@@ -1692,6 +1885,8 @@ test("adverse reaction XLSX uses all filtered records with original Chinese head
       String(reaction.id),
       reaction.patient_name,
       reaction.patient_mobile,
+      reaction.project_name || "未参与项目",
+      reaction.group_name || "未入组",
       reaction.occurred_at,
       reaction.symptom_summary,
       reaction.symptom_description,
@@ -3134,6 +3329,30 @@ test("report supplementation preserves originals and completes only its matching
     ).code,
     200,
   );
+});
+
+test("report list starts with representative mock records for every research group", async (t) => {
+  const api = await start(t);
+  await api.login();
+  const reports = await api.all(P + "report/index");
+  assert.equal(reports.length, 36);
+  assert.deepEqual(
+    [...new Set(reports.map((row) => row.status))].sort(),
+    ["已核对", "待核对", "需补充"].sort(),
+  );
+  assert.deepEqual(
+    [...new Set(reports.map((row) => row.type))].sort(),
+    ["血常规", "肝功能", "肾功能", "胸部CT", "痰涂片", "痰培养"].sort(),
+  );
+  for (let groupId = 1; groupId <= 6; groupId += 1) {
+    const rows = await api.all(P + "report/index", { group_id: groupId });
+    assert.ok(rows.length > 0, `group ${groupId} has mock reports`);
+  }
+  const detail = await api.ok(P + "report/detail", {
+    query: { id: reports[0].id },
+  });
+  assert.ok(detail.versions[0].files[0].url.startsWith("/api/mock-files/"));
+  assert.ok(detail.metrics.length > 0);
 });
 
 test("adverse assessment separates severity from seriousness and records manual contacts", async (t) => {

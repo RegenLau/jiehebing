@@ -145,46 +145,68 @@
     <ElEmpty v-if="readonly && !cards.length" description="尚未配置分组药品" :image-size="64" />
     <section v-for="(drug, index) in cards" :key="drug.drug_id" class="drug-card">
       <header class="drug-card-heading">
-        <div
+        <div class="drug-card-title"
           ><h3>药品 {{ index + 1 }}</h3
           ><ElTag :type="drug.confirmed ? 'success' : 'warning'" effect="light">{{
             drug.confirmed ? '已确认' : '待确认'
           }}</ElTag></div
         >
-        <div v-if="!readonly"
-          ><ElButton
-            type="primary"
-            :disabled="disabled || drug.confirmed"
-            @click="confirm(drug, index)"
-            >{{ drug.confirmed ? '已确认药品' : '确认药品' }}</ElButton
-          ><ElButton type="danger" plain :disabled="disabled" @click="remove(index)"
-            >删除</ElButton
-          ></div
-        >
+        <div class="drug-card-heading-tools">
+          <div v-if="!readonly" class="drug-card-actions"
+            ><ElButton
+              type="primary"
+              :disabled="disabled || drug.confirmed"
+              @click="confirm(drug, index)"
+              >{{ drug.confirmed ? '已确认药品' : '确认药品' }}</ElButton
+            ><ElButton type="danger" plain :disabled="disabled" @click="remove(index)"
+              >删除</ElButton
+            ></div
+          >
+          <div class="card-supply"
+            ><span>预计可用</span><strong>{{ supplyText(drug) }}</strong></div
+          >
+        </div>
       </header>
       <div class="drug-card-body">
         <div class="drug-identity">
           <ElFormItem label="药品名称"
-            ><ElInput :model-value="drug.name" readonly :aria-label="`药品${index + 1}名称`"
+            ><ElInput
+              v-model="drug.name"
+              maxlength="100"
+              :disabled="readonly || disabled"
+              :aria-label="`药品${index + 1}名称`"
+              @input="changeDrug(drug)"
           /></ElFormItem>
           <ElFormItem label="规格"
             ><ElInput
-              :model-value="drug.specification"
-              readonly
-              :aria-label="`药品${index + 1}规格`"
-          /></ElFormItem>
-          <ElFormItem label="药品量"
-            ><ElInputNumber
-              v-model="drug.quantity"
-              :controls="false"
-              :min="1"
-              :max="100000"
-              :precision="0"
+              v-model="drug.specification"
+              maxlength="100"
               :disabled="readonly || disabled"
-              :aria-label="`药品${index + 1}药品量`"
-              @change="changeDrug(drug)"
-            /><span class="unit-suffix">{{ drug.unit }}</span></ElFormItem
-          >
+              :aria-label="`药品${index + 1}规格`"
+              @input="changeDrug(drug)"
+          /></ElFormItem>
+          <ElFormItem label="药品量">
+            <div class="quantity-input">
+              <ElInputNumber
+                v-model="drug.quantity"
+                :controls="false"
+                :min="1"
+                :max="100000"
+                :precision="0"
+                :disabled="readonly || disabled"
+                :aria-label="`药品${index + 1}药品量`"
+                @change="changeDrug(drug)"
+              />
+              <ElInput
+                v-model="drug.unit"
+                maxlength="20"
+                placeholder="单位"
+                :disabled="readonly || disabled"
+                :aria-label="`药品${index + 1}药品量剂量单位`"
+                @input="changeDrug(drug)"
+              />
+            </div>
+          </ElFormItem>
         </div>
         <div class="dose-line">
           <ElFormItem label="每次剂量"
@@ -203,10 +225,6 @@
               @input="changeDrug(drug)"
               ><template #append>/次</template></ElInput
             ></ElFormItem
-          >
-          <div class="supply-estimate"
-            ><span>预计可用</span><strong>{{ supplyText(drug) }}</strong
-            ><small>药品量按默认首次发药量保存</small></div
           >
         </div>
         <ElFormItem label="每日次数" class="frequency-field">
@@ -406,6 +424,9 @@
     changeDrug(drug)
   }
   function errorFor(drug: Card) {
+    if (!drug.name.trim() || drug.name.trim().length > 100) return '请填写有效的药品名称'
+    if (!drug.specification.trim() || drug.specification.trim().length > 100)
+      return '请填写有效的药品规格'
     if (!/^\d+(\.\d{1,3})?$/.test(String(drug.dose)) || Number(drug.dose) <= 0)
       return '请填写大于0的每次剂量，最多3位小数'
     if (!drug.unit.trim()) return '请填写剂量单位'
@@ -557,303 +578,388 @@
   .medication-editor {
     color: var(--el-text-color-primary);
   }
+
   h3,
   p {
     margin: 0;
   }
+
   h3 {
     font-size: 18px;
     font-weight: 600;
   }
+
   .course-panel,
   .add-panel,
   .drug-card {
+    margin-bottom: 22px;
+    overflow: hidden;
     border: 1px solid var(--el-border-color);
     border-radius: 6px;
-    overflow: hidden;
-    margin-bottom: 22px;
   }
+
   .course-panel,
   .add-panel {
     padding: 22px;
   }
+
   .course-title p,
   .quantity-note {
     margin-top: 10px;
-    color: var(--el-text-color-secondary);
     font-size: 13px;
     line-height: 1.7;
+    color: var(--el-text-color-secondary);
   }
+
   .course-fields {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 24px;
     margin-top: 22px;
   }
+
   .unit-suffix {
     margin-left: 8px;
     color: var(--el-text-color-regular);
   }
+
   .calculated-cycle span,
   .calculated-cycle small {
     display: block;
-    color: var(--el-text-color-secondary);
     font-size: 13px;
+    color: var(--el-text-color-secondary);
   }
+
   .calculated-cycle strong {
     display: inline-block;
-    font-size: 24px;
     margin: 8px 0;
+    font-size: 24px;
     color: var(--el-color-primary);
   }
+
   .template-select {
     margin-bottom: 0;
   }
+
   .template-select :deep(.el-select) {
     width: 100%;
   }
+
   .add-tabs {
     margin-top: 18px;
   }
+
   .prescription-content {
     display: flex;
     flex-direction: column;
     align-items: center;
-    text-align: center;
     padding: 14px 12px 0;
+    text-align: center;
   }
+
   .upload-icon {
-    color: var(--el-text-color-regular);
     margin: 6px 0 20px;
+    color: var(--el-text-color-regular);
   }
+
   .upload-title {
-    font-size: 18px;
     margin-bottom: 12px;
+    font-size: 18px;
     overflow-wrap: anywhere;
   }
+
   .upload-description {
-    color: var(--el-text-color-secondary);
-    line-height: 1.7;
     margin-bottom: 24px;
+    line-height: 1.7;
+    color: var(--el-text-color-secondary);
   }
+
   .select-image,
   .recognize-button {
     width: 220px;
     height: 42px;
     font-size: 16px;
   }
+
   .select-image {
     background: var(--el-fill-color-light);
     border-color: transparent;
   }
+
   .recognize-button {
     margin: 10px 0 0;
   }
+
   .mock-note {
     margin-top: 16px;
-    color: var(--el-text-color-secondary);
     line-height: 1.6;
+    color: var(--el-text-color-secondary);
   }
+
   .prescription-preview {
     width: 150px;
     height: 100px;
-    object-fit: contain;
     margin-bottom: 12px;
+    object-fit: contain;
   }
+
   .search-toolbar {
     display: flex;
     gap: 12px;
     margin: 12px 0;
   }
+
   .search-results {
     min-height: 100px;
   }
+
   .empty-tip {
     padding: 30px 0;
     color: var(--el-text-color-secondary);
     text-align: center;
   }
+
   .search-result {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
     gap: 12px;
+    align-items: center;
+    justify-content: space-between;
     padding: 14px 0;
     border-bottom: 1px solid var(--el-border-color-lighter);
   }
+
   .search-result p {
-    color: var(--el-text-color-secondary);
     margin-top: 6px;
     font-size: 12px;
+    color: var(--el-text-color-secondary);
   }
+
   .cards-summary {
     display: flex;
     justify-content: space-between;
-    color: var(--el-text-color-secondary);
-    font-size: 13px;
     margin: 20px 0 12px;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
   }
+
   .drug-card-heading {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
     gap: 16px;
+    align-items: center;
+    justify-content: space-between;
     padding: 16px 22px;
     background: var(--el-fill-color-lighter);
     border-bottom: 1px solid var(--el-border-color);
   }
-  .drug-card-heading > div {
+
+  .drug-card-title,
+  .drug-card-heading-tools,
+  .drug-card-actions {
     display: flex;
-    align-items: center;
     gap: 10px;
+    align-items: center;
   }
+
+  .drug-card-heading-tools {
+    margin-left: auto;
+  }
+
   .drug-card-heading .el-button + .el-button {
     margin-left: 0;
   }
+
+  .card-supply {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    margin-left: 10px;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+    white-space: nowrap;
+  }
+
+  .card-supply strong {
+    font-size: 18px;
+    color: var(--el-color-primary);
+  }
+
   .drug-card-body {
     padding: 24px 22px;
   }
+
   .drug-identity {
     display: grid;
     grid-template-columns: 2fr 1fr 1fr;
     gap: 20px;
   }
-  .drug-identity :deep(.el-input-number) {
-    width: calc(100% - 34px);
+
+  .quantity-input {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 72px;
+    gap: 8px;
+    width: 100%;
   }
+
+  .quantity-input :deep(.el-input-number) {
+    width: 100%;
+  }
+
   .dose-line {
     display: grid;
-    grid-template-columns: 1fr 1fr 2fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 20px;
     align-items: center;
+    max-width: calc(50% - 10px);
     margin-top: 14px;
   }
-  .supply-estimate {
-    padding-left: 16px;
-    color: var(--el-text-color-secondary);
-    font-size: 13px;
-  }
-  .supply-estimate strong {
-    font-size: 18px;
-    color: var(--el-color-primary);
-    margin-left: 12px;
-  }
-  .supply-estimate small {
-    display: block;
-    margin-top: 8px;
-  }
+
   .frequency-field {
     margin-top: 16px;
   }
+
   .segmented {
     display: flex;
-    width: 100%;
     flex-wrap: nowrap;
+    width: 100%;
     padding: 4px;
     background: var(--el-fill-color-light);
     border-radius: 5px;
   }
+
   .segmented :deep(.el-radio-button) {
     flex: 1;
     min-width: 0;
   }
+
   .segmented :deep(.el-radio-button__inner) {
     display: block;
     padding: 10px 4px;
+    font-size: 15px;
+    color: var(--el-text-color-regular);
+    background: transparent;
     border: 0 !important;
     border-radius: 4px !important;
-    background: transparent;
     box-shadow: none !important;
-    color: var(--el-text-color-regular);
-    font-size: 15px;
   }
+
   .segmented :deep(.is-active .el-radio-button__inner) {
-    background: var(--el-bg-color) !important;
     color: var(--el-color-primary) !important;
+    background: var(--el-bg-color) !important;
   }
+
   .segmented :deep(.el-radio-button__original-radio:focus-visible + .el-radio-button__inner) {
     outline: 2px solid var(--el-color-primary);
   }
+
   .reminder-heading {
     display: flex;
-    justify-content: space-between;
     gap: 12px;
-    color: var(--el-text-color-regular);
+    justify-content: space-between;
     margin: 28px 0 18px;
+    color: var(--el-text-color-regular);
   }
+
   .reminder-heading small {
     color: var(--el-text-color-secondary);
   }
+
   .reminder-row {
     display: grid;
     grid-template-columns: 0.8fr 1fr 2fr;
-    align-items: center;
     gap: 20px;
+    align-items: center;
     margin-top: 12px;
   }
+
   .reminder-row > strong {
     color: var(--el-text-color-regular);
   }
+
   .precautions-field {
     margin-top: 24px;
     margin-bottom: 0;
   }
+
   .reminder-row :deep(.el-date-editor) {
     width: 100%;
   }
+
   .drug-card :deep(.el-input__wrapper) {
+    min-height: 38px;
     background: var(--el-fill-color-light);
     box-shadow: none;
-    min-height: 38px;
   }
+
   .drug-card :deep(.el-input__wrapper.is-focus) {
     box-shadow: 0 0 0 1px var(--el-color-primary) inset;
   }
+
   .drug-card :deep(.el-input.is-disabled .el-input__inner) {
     -webkit-text-fill-color: var(--el-text-color-regular);
   }
+
   .drug-card :deep(.el-input-group__append) {
     box-shadow: none;
   }
+
   .drug-card :deep(.el-form-item__label) {
-    font-size: 15px;
     margin-bottom: 12px;
+    font-size: 15px;
   }
-  @media (max-width: 900px) {
+
+  @media (width <= 900px) {
     .drug-identity {
       grid-template-columns: 1fr 1fr;
     }
+
     .drug-identity > :first-child {
       grid-column: 1 / -1;
     }
+
     .reminder-row {
       grid-template-columns: 0.5fr 1fr;
     }
+
     .timing {
       grid-column: 1 / -1;
     }
+
+    .dose-line {
+      max-width: none;
+    }
   }
-  @media (max-width: 600px) {
+
+  @media (width <= 600px) {
     .course-panel,
     .add-panel,
     .drug-card-body {
       padding: 16px;
     }
+
     .drug-card-heading {
-      padding: 14px;
       flex-wrap: wrap;
+      padding: 14px;
     }
+
+    .drug-card-heading-tools {
+      flex-wrap: wrap;
+      justify-content: space-between;
+      width: 100%;
+    }
+
+    .card-supply {
+      margin-left: auto;
+    }
+
     .course-fields,
     .dose-line {
       grid-template-columns: 1fr 1fr;
     }
-    .supply-estimate {
-      grid-column: 1 / -1;
-      padding: 0 0 14px;
-    }
+
     .reminder-heading {
       flex-direction: column;
     }
+
     .search-toolbar {
       flex-direction: column;
     }

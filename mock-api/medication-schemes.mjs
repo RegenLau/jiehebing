@@ -25,10 +25,11 @@ export function registerMedicationSchemes({core,db,assert,find,page,clean,timest
       integer(d.drug_id,'药品编号',1,99999999);
       const medicine=find(db.commonMedicines,d.drug_id,'药品');
       assert(medicine.status===1||old?.drugs.some(r=>r.drug_id===d.drug_id),'停用药品不能新增到方案');
+      const drugName=text(d.name,'药品名称',100,true),specification=text(d.specification,'药品规格',100,true);
       const dose=text(d.dose,'单次用量',20,true); assert(/^\d+(\.\d{1,3})?$/.test(dose)&&Number(dose)>0,'单次用量必须大于0');
       const times=text(d.times,'服药时间',100,true).split(/[，,]/).map(s=>s.trim());
       assert(times.every(t=>/^([01]\d|2[0-3]):[0-5]\d$/.test(t))&&new Set(times).size===times.length,'请填写有效且不重复的服药时间，多个时间用逗号分隔');
-      return {drug_id:medicine.id,name:medicine.common_name,specification:medicine.specification,dose,unit:text(d.unit,'用量单位',20,true),frequency:text(d.frequency,'用药频次',60,true),times:times.join(','),precautions:text(d.precautions,'注意事项',1000),quantity:integer(d.quantity,'默认发药数量',1,100000)};
+      return {drug_id:medicine.id,name:drugName,specification,dose,unit:text(d.unit,'用量单位',20,true),frequency:text(d.frequency,'用药频次',60,true),times:times.join(','),precautions:text(d.precautions,'注意事项',1000),quantity:integer(d.quantity,'默认发药数量',1,100000)};
     });
     const pickup_days=byQuantity?Math.min(treatment_days,Math.max(1,Math.floor(Math.min(...drugs.map(d=>d.quantity/Number(d.dose)/d.daily_count))))):integer(b.pickup_days,'取药周期',1,3650);
     const advance_days=integer(b.advance_days,'提前提醒天数',0,byQuantity?3650:pickup_days);

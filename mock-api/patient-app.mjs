@@ -53,6 +53,18 @@ export function registerPatientApp({
   };
   const latestTreatment = (patient) =>
     latestActualTreatment(patient) || legacyTreatment(patient);
+  const medicationStart = (treatment) => {
+    if (!treatment?.start_date) return null;
+    const time = treatment.drugs
+      .flatMap((drug) => (Array.isArray(drug.times) ? drug.times : []))
+      .filter((value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value))
+      .sort()[0] || "00:00";
+    return {
+      date: treatment.start_date,
+      time,
+      start_at: `${treatment.start_date} ${time}`,
+    };
+  };
   const quantityFor = (patient, treatment, drugId) => {
     const dispense = db.dispensings
       .filter(
@@ -83,6 +95,7 @@ export function registerPatientApp({
     );
   const bootstrap = (patient) => {
     const treatment = latestTreatment(patient);
+    const start = medicationStart(treatment);
     const medicationCurrent = matchesTreatment(
       patient.medication_confirmation,
       treatment,
@@ -96,7 +109,10 @@ export function registerPatientApp({
         medicationCurrent
       )
         stage = "medication_issue";
-      else if (patient.medicine_confirmed && medicationCurrent) stage = "home";
+      else if (patient.medicine_confirmed && medicationCurrent)
+        stage = start && start.start_at > timestamp().slice(0, 16)
+          ? "pending_start"
+          : "home";
       else stage = "medication";
     }
     return {
@@ -124,11 +140,22 @@ export function registerPatientApp({
             })),
           }
         : null,
+      medication_start: start,
       identity_confirmation: patient.identity_confirmation || null,
       medication_confirmation: medicationCurrent
         ? patient.medication_confirmation
         : null,
     };
+  };
+  const requireHome = (patient) => {
+    const state = bootstrap(patient);
+    assert(
+      state.stage === "home",
+      state.stage === "pending_start"
+        ? "用药计划尚未开始，请在开始服药时间后进入"
+        : "请先完成身份与用药确认",
+    );
+    return state;
   };
   const addIssue = (patient, type, note, treatmentId = null) => {
     const issue = {
@@ -251,6 +278,9 @@ export function registerPatientApp({
         id: key,
         date,
         time,
+        timing:
+          plans.find((row) => clean(row.medication_timing))
+            ?.medication_timing || "",
         recordable: dateTime(date, time) <= timestamp().slice(0, 16),
         status: plans.every((row) => row.status === 1)
           ? "completed"
@@ -455,7 +485,7 @@ export function registerPatientApp({
       date: today(),
       slots: slots.filter((row) => row.date === today()),
       next_slot:
-        slots.find((row) => row.status === "pending" && row.date >= today()) ||
+        slots.find((row) => row.status === "pending" && row.date === today()) ||
         null,
       history: slots
         .filter((row) => row.date <= today() && row.status !== "pending")
@@ -589,18 +619,15 @@ export function registerPatientApp({
     bootstrap(patient),
   );
   patientRoute("GET", "/app/patient/home", ({ patient }) => {
-    const state = bootstrap(patient);
-    assert(state.stage === "home", "请先完成身份与用药确认");
+    requireHome(patient);
     return home(patient);
   });
   patientRoute("GET", "/app/patient/medication", ({ patient }) => {
-    const state = bootstrap(patient);
-    assert(state.stage === "home", "请先完成身份与用药确认");
+    requireHome(patient);
     return medication(patient);
   });
   patientRoute("GET", "/app/patient/tasks", ({ patient }) => {
-    const state = bootstrap(patient);
-    assert(state.stage === "home", "请先完成身份与用药确认");
+    requireHome(patient);
     return {
       date: today(),
       tasks: taskSummary(patient, latestTreatment(patient)),
@@ -789,12 +816,18 @@ export function registerPatientApp({
     "POST",
     "/app/patient/medication-checkin",
     ({ patient, body }) => {
-      const state = bootstrap(patient);
-      assert(state.stage === "home", "请先完成身份与用药确认");
+      requireHome(patient);
       const plan = db.plans.find((row) => row.id === Number(body.id));
       assert(plan && plan.user_id === patient.id, "服药计划不存在", 404);
       assert(plan.status !== 3, "该服药计划已取消");
-      assert(plan.plan_date <= today(), "未到服药日期，暂不能打卡");
+      assert(
+        patient.study_state !== "暂停用药",
+        "当前用药已暂停，请按医生最新安排执行",
+      );
+      assert(
+        dateTime(plan.plan_date, plan.plan_time) <= timestamp().slice(0, 16),
+        "未到服药时间，暂不能打卡",
+      );
       if (plan.status === 1) return medication(patient);
       const before = { status: plan.status, checked_at: plan.checked_at };
       plan.status = 1;
@@ -823,8 +856,7 @@ export function registerPatientApp({
     },
   );
   patientRoute("POST", "/app/patient/medication-slot", ({ patient, body }) => {
-    const state = bootstrap(patient);
-    assert(state.stage === "home", "请先完成身份与用药确认");
+    requireHome(patient);
     assert(
       patient.study_state !== "暂停用药",
       "当前用药已暂停，请按医生最新安排执行",
@@ -972,8 +1004,7 @@ export function registerPatientApp({
     };
   });
   patientRoute("POST", "/app/patient/adverse-report", ({ patient, body }) => {
-    const state = bootstrap(patient);
-    assert(state.stage === "home", "请先完成身份与用药确认");
+    requireHome(patient);
     const symptomOptions = [
       "皮肤瘙痒",
       "皮疹",

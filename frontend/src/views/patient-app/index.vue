@@ -33,11 +33,14 @@
         <button class="demo-button" type="button" @click="mobile = '13910001019'">
           填入演示手机号 13910001019
         </button>
+        <button class="demo-button" type="button" @click="mobile = '13910001029'">
+          填入待开始患者 13910001029
+        </button>
       </form>
     </section>
 
     <template v-else-if="data">
-      <header v-if="stage !== 'home'" class="page-header">
+      <header v-if="stage !== 'home' && stage !== 'pending_start'" class="page-header">
         <button class="icon-button" type="button" aria-label="退出登录" @click="logout">
           <ArtSvgIcon icon="ri:arrow-left-s-line" />
         </button>
@@ -129,6 +132,41 @@
           <h2>用药安排待配置</h2>
           <p>医生完成用药安排后，您即可在这里核对。</p>
         </article>
+      </section>
+
+      <section v-else-if="stage === 'pending_start'" class="pending-start-page">
+        <header class="pending-start-header">
+          <h1>确认完成</h1>
+        </header>
+
+        <div class="pending-start-status" aria-live="polite">
+          <img :src="pendingStartImage" alt="用药计划已确认，等待开始" />
+          <h2>信息与药品已确认</h2>
+          <p>您的用药计划尚未开始</p>
+        </div>
+
+        <article class="pending-start-time-card">
+          <span class="pending-start-label">开始服药时间</span>
+          <div class="pending-start-date-row">
+            <strong>{{ medicationStartDateText }}</strong>
+            <span>尚未开始</span>
+          </div>
+          <time :datetime="data.medication_start?.start_at">{{ medicationStartTimeText }}</time>
+        </article>
+
+        <article class="pending-start-guidance">
+          <span class="pending-start-info" aria-hidden="true">
+            <ArtSvgIcon icon="ri:information-line" />
+          </span>
+          <div>
+            <h2>请按计划开始服药</h2>
+            <p
+              >到达开始时间后，重新进入小程序即可查看首页和服药安排。期间如有疑问，请联系随访医生。</p
+            >
+          </div>
+        </article>
+
+        <p class="pending-start-note">开始时间以医生确认的用药方案为准</p>
       </section>
 
       <section v-else class="main-shell">
@@ -322,10 +360,10 @@
             <article v-else class="empty-card">当前没有待办任务</article>
           </section>
 
-          <section v-else-if="activeTab === 'medication'" class="tab-page">
+          <section v-else-if="activeTab === 'medication'" class="tab-page medication-view">
             <header class="section-heading">
               <h1>用药方案</h1>
-              <p>查看今日安排与服药进度</p>
+              <p>查看并记录今日服药情况</p>
             </header>
             <div class="segment-control" aria-label="用药页面切换">
               <button
@@ -343,128 +381,85 @@
             </div>
 
             <template v-if="medicationData && medicationPanel === 'checkin'">
-              <article class="summary-card">
-                <span class="round-icon blue"><ArtSvgIcon icon="ri:timer-line" /></span>
-                <div>
-                  <small>今日服药时段</small>
-                  <strong
-                    >{{ homeData.medication_today.completed_slots }} /
-                    {{ homeData.medication_today.total_slots }}</strong
-                  >
+              <article class="summary-card medication-summary-card">
+                <span class="medication-clock" aria-hidden="true">
+                  <ArtSvgIcon icon="ri:time-line" />
+                </span>
+                <div class="next-medication-summary">
+                  <small>下次服药时间</small>
+                  <strong>{{ medicationData.next_slot?.time || '--:--' }}</strong>
                 </div>
-                <div>
-                  <small>仍待完成</small>
-                  <strong>{{ homeData.medication_today.pending_slots }} 次</strong>
-                </div>
-              </article>
-              <article v-for="slot in medicationData.slots" :key="slot.id" class="plan-card">
-                <div class="plan-card-heading">
-                  <div>
-                    <span>{{ slotDateLabel(slot.date) }}</span>
-                    <h2>{{ slot.time }}</h2>
-                  </div>
-                  <span class="status-pill" :class="slot.status">{{ slotStatus(slot) }}</span>
-                </div>
-                <div
-                  v-for="drug in slot.drugs"
-                  :key="drug.plan_id"
-                  class="drug-row"
-                  :class="{ 'with-result': slot.status !== 'pending' }"
-                >
-                  <span class="round-icon blue"><ArtSvgIcon icon="ri:capsule-line" /></span>
-                  <div
-                    ><strong>{{ drug.name }}</strong
-                    ><small
-                      >每次 {{ drug.dose }} {{ drug.unit }} · {{ drug.specification }}</small
-                    ></div
+                <span class="medication-progress-ring" aria-hidden="true">
+                  <ElProgress
+                    type="circle"
+                    :percentage="medicationCompletionPercentage"
+                    :width="40"
+                    :stroke-width="8"
+                    :show-text="false"
+                    color="#2167ff"
+                  />
+                </span>
+                <div class="today-medication-summary">
+                  <span
+                    >今日共 <strong>{{ homeData.medication_today.total_slots }}</strong> 次</span
                   >
                   <span
-                    v-if="slot.status !== 'pending'"
-                    class="drug-result"
-                    :class="{ missed: drug.status === 2 }"
+                    >已完成
+                    <strong>{{ homeData.medication_today.completed_slots }}</strong> 次</span
                   >
-                    {{ drug.status === 1 ? '已服' : '未服' }}
-                  </span>
-                </div>
-                <div v-if="editingSlotId === slot.id" class="slot-editor">
-                  <p>请选择本次实际服用的药品，未选中的药品将记录为未服。</p>
-                  <label
-                    v-for="drug in slot.drugs"
-                    :key="`edit-${drug.plan_id}`"
-                    class="drug-toggle"
-                  >
-                    <input v-model="slotTakenPlanIds" type="checkbox" :value="drug.plan_id" />
-                    <span>{{ drug.name }}</span>
-                    <strong>{{ slotTakenPlanIds.includes(drug.plan_id) ? '已服' : '未服' }}</strong>
-                  </label>
-                  <label class="slot-note">
-                    情况说明
-                    <textarea
-                      v-model.trim="slotNote"
-                      rows="3"
-                      maxlength="1000"
-                      placeholder="部分未服、本次未服或更正记录时必填"
-                    ></textarea>
-                  </label>
-                  <div class="slot-editor-actions">
-                    <button class="secondary-button" type="button" @click="closeSlotEditor"
-                      >取消</button
-                    >
-                    <button
-                      class="primary-button"
-                      type="button"
-                      :disabled="slotSubmitting"
-                      @click="submitSlotEditor(slot)"
-                      >{{ slotSubmitting ? '提交中…' : '保存本次记录' }}</button
-                    >
-                  </div>
-                </div>
-                <div v-else class="slot-actions">
-                  <template v-if="slot.status === 'pending'">
-                    <button
-                      class="primary-button"
-                      type="button"
-                      :disabled="slotSubmitting || !slot.recordable"
-                      @click="recordWholeSlot(slot)"
-                      >{{
-                        !slot.recordable
-                          ? '未到服药时间'
-                          : slotSubmitting
-                            ? '提交中…'
-                            : '确认本次全部已服'
-                      }}</button
-                    >
-                    <button
-                      class="secondary-button"
-                      type="button"
-                      :disabled="!slot.recordable"
-                      @click="openSlotEditor(slot)"
-                      >部分未服 / 本次未服</button
-                    >
-                  </template>
-                  <button
-                    v-else
-                    class="secondary-button"
-                    type="button"
-                    @click="openSlotEditor(slot)"
-                  >
-                    更正本次记录
-                  </button>
                 </div>
               </article>
-              <article v-if="!medicationData.slots.length" class="empty-card">{{
-                homeData.patient.study_state === '暂停用药' ? '当前用药已暂停' : '今天没有服药安排'
+              <div v-if="pendingMedicationSlots.length" class="medication-schedule">
+                <section
+                  v-for="slot in pendingMedicationSlots"
+                  :key="slot.id"
+                  class="medication-slot"
+                >
+                  <header class="medication-slot-heading">
+                    <h2>
+                      <span>{{ medicationPeriodLabel(slot.time) }}</span>
+                      {{ slot.time }}
+                    </h2>
+                    <span class="timing-pill">{{ medicationTimingLabel(slot) }}</span>
+                    <span class="status-pill pending">待服药</span>
+                  </header>
+                  <div class="medication-drug-list">
+                    <article
+                      v-for="drug in pendingDrugs(slot)"
+                      :key="drug.plan_id"
+                      class="medication-drug-card"
+                    >
+                      <span class="timeline-dot" aria-hidden="true">
+                        <ArtSvgIcon icon="ri:checkbox-blank-circle-line" />
+                      </span>
+                      <img :src="medicinePackageImage" alt="药品包装示意图" />
+                      <div class="medication-drug-copy">
+                        <h3>{{ drug.name }}</h3>
+                        <p>每次 {{ drug.dose }} {{ drug.unit }} · {{ drug.specification }}</p>
+                      </div>
+                      <button
+                        class="drug-checkin-button"
+                        type="button"
+                        :disabled="medicationSubmittingPlanId !== null || !slot.recordable"
+                        @click="recordMedicationDrug(drug.plan_id)"
+                      >
+                        {{
+                          !slot.recordable
+                            ? '未到时间'
+                            : medicationSubmittingPlanId === drug.plan_id
+                              ? '打卡中…'
+                              : '打卡'
+                        }}
+                      </button>
+                    </article>
+                  </div>
+                </section>
+              </div>
+              <article v-else class="empty-card medication-empty">{{
+                homeData.patient.study_state === '暂停用药'
+                  ? '当前用药已暂停'
+                  : '今天没有待服药安排'
               }}</article>
-              <section v-if="medicationData.history.length" class="medication-history">
-                <div class="section-title"><h2>近期服药记录</h2><span>最近 14 个时点</span></div>
-                <article v-for="slot in medicationData.history" :key="`history-${slot.id}`">
-                  <div
-                    ><strong>{{ slot.date.slice(5) }} {{ slot.time }}</strong
-                    ><small>{{ slot.total_count }} 种药</small></div
-                  >
-                  <span class="status-pill" :class="slot.status">{{ slotStatus(slot) }}</span>
-                </article>
-              </section>
             </template>
 
             <div v-else-if="medicationData" class="medicine-list">
@@ -1188,7 +1183,6 @@
             v-if="
               !adverseOpen &&
               !selectedTask &&
-              !editingSlotId &&
               !['upload', 'confirm', 'report-detail'].includes(profileMode)
             "
             class="bottom-nav"
@@ -1258,6 +1252,8 @@
 
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+  import medicinePackageImage from '@/assets/images/patient/medicine-package.png'
+  import pendingStartImage from '@/assets/images/patient/pending-start.png'
 
   interface SpeechRecognitionResultLike {
     0: { transcript: string }
@@ -1293,7 +1289,13 @@
     quantity: number
   }
   interface BootstrapData {
-    stage: 'identity' | 'identity_issue' | 'medication' | 'medication_issue' | 'home'
+    stage:
+      | 'identity'
+      | 'identity_issue'
+      | 'medication'
+      | 'medication_issue'
+      | 'pending_start'
+      | 'home'
     patient: {
       id: number
       patient_code: string
@@ -1306,6 +1308,7 @@
       enroll_date: string
     }
     treatment: null | { id: number | string; drugs: PatientDrug[] }
+    medication_start: null | { date: string; time: string; start_at: string }
     identity_confirmation: null | { note: string }
     medication_confirmation: null | { note: string }
   }
@@ -1313,6 +1316,7 @@
     id: string
     date: string
     time: string
+    timing: string
     recordable: boolean
     status: 'pending' | 'completed' | 'partial' | 'missed'
     status_text: string
@@ -1479,10 +1483,7 @@
   const medicationData = ref<MedicationData | null>(null)
   const medicationPanel = ref<'checkin' | 'medicines'>('checkin')
   const medicationError = ref('')
-  const editingSlotId = ref<string | null>(null)
-  const slotTakenPlanIds = ref<number[]>([])
-  const slotNote = ref('')
-  const slotSubmitting = ref(false)
+  const medicationSubmittingPlanId = ref<number | null>(null)
   const taskData = ref<TaskData | null>(null)
   const selectedTask = ref<PatientTask | null>(null)
   const scheduleTask = ref<PatientTask | null>(null)
@@ -1594,6 +1595,19 @@
       data.value.treatment.drugs.every((drug) => confirmedDrugs.value.includes(drug.drug_id))
     )
   )
+  const medicationStartDateText = computed(() => {
+    const date = data.value?.medication_start?.date
+    if (!date) return '--'
+    const [year, month, day] = date.split('-').map(Number)
+    return `${year}年${month}月${day}日`
+  })
+  const medicationStartTimeText = computed(() => {
+    const time = data.value?.medication_start?.time
+    if (!time) return '--:--'
+    const hour = Number(time.slice(0, 2))
+    const period = hour < 6 ? '凌晨' : hour < 12 ? '上午' : hour < 18 ? '下午' : '晚上'
+    return `${period} ${time}`
+  })
   const filteredReports = computed(() =>
     reports.value.filter((report) => {
       if (!reportFilter.value) return true
@@ -1601,6 +1615,16 @@
       return report.status === reportFilter.value
     })
   )
+  const pendingMedicationSlots = computed(() =>
+    (medicationData.value?.slots || []).filter(
+      (slot) => slot.status === 'pending' && slot.drugs.some((drug) => drug.status === 0)
+    )
+  )
+  const medicationCompletionPercentage = computed(() => {
+    const total = homeData.value?.medication_today.total_slots || 0
+    if (!total) return 0
+    return Math.round(((homeData.value?.medication_today.completed_slots || 0) / total) * 100)
+  })
   const reportTasks = computed(() =>
     (taskData.value?.tasks || []).filter((task) => ['检查', '报告提交'].includes(task.type))
   )
@@ -1789,7 +1813,6 @@
     taskData.value = null
     selectedTask.value = null
     scheduleTask.value = null
-    closeSlotEditor()
     adverseOpen.value = false
     reports.value = []
     selectedReport.value = null
@@ -1858,64 +1881,40 @@
     if (date === homeData.value?.date) return '下一次服药时间'
     return `${date.slice(5).replace('-', '月')}日服药时间`
   }
-  function slotDateLabel(date: string) {
-    return date === medicationData.value?.date ? '今日服药' : `${date.slice(5)} 服药`
+  function pendingDrugs(slot: MedicationSlot) {
+    return slot.drugs.filter((drug) => drug.status === 0)
   }
-  function slotStatus(slot: MedicationSlot) {
-    if (slot.status === 'completed') return '已完成'
-    if (slot.status === 'partial') return '部分未服'
-    if (slot.status === 'missed') return '未服药'
-    return '待服药'
+  function medicationPeriodLabel(time: string) {
+    const hour = Number(time.slice(0, 2))
+    if (hour < 10) return '早晨'
+    if (hour < 14) return '中午'
+    if (hour < 18) return '下午'
+    return '晚上'
+  }
+  function medicationTimingLabel(slot: MedicationSlot) {
+    if (!slot.timing || !['餐前', '餐后'].includes(slot.timing)) return slot.timing || '按医嘱'
+    const hour = Number(slot.time.slice(0, 2))
+    const meal = hour < 10 ? '早餐' : hour < 15 ? '午餐' : '晚餐'
+    return `${meal}${slot.timing.slice(1)}`
   }
   function drugStock(drugId: number) {
     return medicationData.value?.stock.find((row) => row.drug_id === drugId)
   }
-  async function submitMedicationSlot(slot: MedicationSlot, takenPlanIds: number[], note = '') {
-    slotSubmitting.value = true
+  async function recordMedicationDrug(planId: number) {
+    medicationSubmittingPlanId.value = planId
     medicationError.value = ''
     try {
-      medicationData.value = await api<MedicationData>('/app/patient/medication-slot', {
+      medicationData.value = await api<MedicationData>('/app/patient/medication-checkin', {
         method: 'POST',
-        body: JSON.stringify({ id: slot.id, taken_plan_ids: takenPlanIds, note })
+        body: JSON.stringify({ id: planId })
       })
       homeData.value = await api<HomeData>('/app/patient/home')
-      closeSlotEditor()
     } catch (error) {
       medicationError.value =
         error instanceof Error ? error.message : '服药记录提交失败，请稍后重试'
     } finally {
-      slotSubmitting.value = false
+      medicationSubmittingPlanId.value = null
     }
-  }
-  function recordWholeSlot(slot: MedicationSlot) {
-    void submitMedicationSlot(
-      slot,
-      slot.drugs.map((drug) => drug.plan_id)
-    )
-  }
-  function openSlotEditor(slot: MedicationSlot) {
-    editingSlotId.value = slot.id
-    slotTakenPlanIds.value =
-      slot.status === 'pending'
-        ? slot.drugs.map((drug) => drug.plan_id)
-        : slot.drugs.filter((drug) => drug.status === 1).map((drug) => drug.plan_id)
-    slotNote.value = ''
-    medicationError.value = ''
-  }
-  function closeSlotEditor() {
-    editingSlotId.value = null
-    slotTakenPlanIds.value = []
-    slotNote.value = ''
-  }
-  function submitSlotEditor(slot: MedicationSlot) {
-    if (
-      (slotTakenPlanIds.value.length !== slot.drugs.length || slot.status !== 'pending') &&
-      !slotNote.value
-    ) {
-      medicationError.value = '部分未服、本次未服或更正记录时，请填写情况说明'
-      return
-    }
-    void submitMedicationSlot(slot, slotTakenPlanIds.value, slotNote.value)
   }
   function taskTimeText(task: PatientTask) {
     if (task.due_date === homeData.value?.date) return '今日完成'
@@ -2723,6 +2722,162 @@
     background: #35b76f;
   }
 
+  .pending-start-page {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+    padding: max(14px, env(safe-area-inset-top)) 18px max(28px, env(safe-area-inset-bottom));
+    background: #f1f5fb;
+  }
+
+  .pending-start-header {
+    display: grid;
+    place-items: center;
+    min-height: 44px;
+  }
+
+  .pending-start-header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 650;
+  }
+
+  .pending-start-status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .pending-start-status img {
+    width: 176px;
+    height: 176px;
+    margin: 32px 0 12px;
+    object-fit: contain;
+  }
+
+  .pending-start-status h2 {
+    margin: 0;
+    font-size: 27px;
+    font-weight: 700;
+    line-height: 1.35;
+    letter-spacing: -0.4px;
+  }
+
+  .pending-start-status p {
+    margin: 8px 0 0;
+    font-size: 17px;
+    color: #687180;
+  }
+
+  .pending-start-time-card {
+    padding: 18px 17px 17px;
+    margin-top: 24px;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 8px 28px rgb(62 86 126 / 5%);
+  }
+
+  .pending-start-label {
+    display: block;
+    margin-bottom: 9px;
+    font-size: 16px;
+    font-weight: 650;
+  }
+
+  .pending-start-date-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .pending-start-date-row strong {
+    min-width: 0;
+    font-size: 29px;
+    font-weight: 500;
+    line-height: 1.25;
+    color: #2468ff;
+    letter-spacing: -0.8px;
+  }
+
+  .pending-start-date-row span {
+    flex: 0 0 auto;
+    padding: 7px 13px;
+    font-size: 13px;
+    color: #2468ff;
+    background: #eaf2ff;
+    border-radius: 99px;
+  }
+
+  .pending-start-time-card time {
+    display: block;
+    margin-top: 6px;
+    font-size: 18px;
+    color: #687180;
+  }
+
+  .pending-start-guidance {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 12px;
+    padding: 18px 16px;
+    margin-top: 16px;
+    background: #e9f3ff;
+    border-radius: 14px;
+  }
+
+  .pending-start-info {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    font-size: 24px;
+    color: #fff;
+    background: #2468ff;
+    border-radius: 50%;
+    box-shadow: 0 0 0 8px rgb(36 104 255 / 10%);
+  }
+
+  .pending-start-guidance h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 650;
+  }
+
+  .pending-start-guidance p {
+    margin: 7px 0 0;
+    font-size: 14px;
+    line-height: 1.65;
+    color: #667284;
+  }
+
+  .pending-start-note {
+    margin: auto 0 0;
+    padding-top: 24px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #929aa7;
+    text-align: center;
+  }
+
+  @media (max-width: 350px) {
+    .pending-start-status img {
+      width: 150px;
+      height: 150px;
+      margin-top: 22px;
+    }
+
+    .pending-start-status h2 {
+      font-size: 24px;
+    }
+
+    .pending-start-date-row strong {
+      font-size: 25px;
+    }
+  }
+
   .login-page {
     min-height: 100dvh;
     padding: max(72px, calc(env(safe-area-inset-top) + 52px)) 22px 30px;
@@ -3099,15 +3254,6 @@
     padding: 12px 5px 24px;
   }
 
-  .summary-card {
-    display: grid;
-    grid-template-columns: 46px 1fr 1fr;
-    gap: 10px;
-    align-items: center;
-    min-height: 72px;
-    padding: 12px 14px;
-  }
-
   .segment-control {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -3121,7 +3267,7 @@
   .segment-control button {
     color: #2468ff;
     cursor: pointer;
-    background: #fff;
+    background: transparent;
     border: 0;
   }
 
@@ -3130,171 +3276,241 @@
     background: #2468ff;
   }
 
-  .summary-card > div {
+  .medication-view {
+    padding-top: max(72px, calc(env(safe-area-inset-top) + 28px));
+    background: #f4f7fd;
+  }
+
+  .medication-view .section-heading {
+    padding: 0 6px 22px;
+  }
+
+  .medication-view .section-heading h1 {
+    font-size: 28px;
+    line-height: 1.2;
+  }
+
+  .medication-view .section-heading p {
+    margin-top: 6px;
+    font-size: 15px;
+    color: #252a33;
+  }
+
+  .medication-view .segment-control {
+    height: 36px;
+    margin-bottom: 16px;
+  }
+
+  .medication-view .segment-control button {
+    min-height: 36px;
+    font-size: 16px;
+  }
+
+  .medication-summary-card {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 55px minmax(0, 1fr);
+    gap: 9px;
+    align-items: center;
+    min-height: 72px;
+    padding: 10px 15px;
+    border-radius: 14px;
+    box-shadow: none;
+  }
+
+  .medication-clock {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    font-size: 23px;
+    color: #2167ff;
+    background: #ddecff;
+    border-radius: 50%;
+  }
+
+  .next-medication-summary,
+  .today-medication-summary {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
   }
 
-  .summary-card > div + div {
-    padding-left: 14px;
-    border-left: 1px solid #edf0f4;
+  .next-medication-summary small {
+    font-size: 14px;
+    color: #1f252f;
   }
 
-  .summary-card small {
-    color: #747d8a;
+  .next-medication-summary strong {
+    font-size: 25px;
+    font-weight: 500;
+    line-height: 1.15;
+    color: #2a70ff;
   }
 
-  .summary-card strong {
-    font-size: 18px;
+  .today-medication-summary {
+    gap: 5px;
+    font-size: 14px;
   }
 
-  .plan-card {
-    padding: 16px;
-    margin-top: 14px;
-  }
-
-  .plan-card-heading {
+  .medication-progress-ring {
+    box-sizing: border-box;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding-bottom: 10px;
+    justify-content: flex-end;
+    width: 55px;
+    padding-left: 14px;
+    border-left: 1px solid #e7ebf2;
   }
 
-  .plan-card-heading span:first-child {
-    font-size: 13px;
-    color: #626c7b;
+  .medication-progress-ring :deep(.el-progress-circle__track) {
+    stroke: #ddecff;
   }
 
-  .plan-card-heading h2 {
-    margin: 4px 0 0;
-    font-size: 28px;
+  .today-medication-summary strong {
+    font-size: 18px;
     font-weight: 500;
-    color: #2468ff;
+    color: #2167ff;
   }
 
-  .drug-row {
-    display: grid;
-    grid-template-columns: 40px minmax(0, 1fr);
+  .medication-schedule {
+    margin-top: 26px;
+  }
+
+  .medication-slot + .medication-slot {
+    margin-top: 34px;
+  }
+
+  .medication-slot-heading {
+    display: flex;
     gap: 10px;
     align-items: center;
-    min-height: 62px;
-    border-top: 1px solid #f0f2f6;
+    min-height: 34px;
+    padding: 0 1px;
   }
 
-  .drug-row.with-result {
-    grid-template-columns: 40px minmax(0, 1fr) auto;
+  .medication-slot-heading h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1.2;
+    color: #11151b;
   }
 
-  .drug-result {
-    font-size: 13px;
-    font-weight: 600;
-    color: #148255;
+  .medication-slot-heading h2 span {
+    margin-right: 3px;
+    font-weight: 650;
   }
 
-  .drug-result.missed {
-    color: #d84b45;
+  .timing-pill {
+    padding: 4px 9px;
+    font-size: 12px;
+    color: #276efa;
+    background: #eaf3ff;
+    border-radius: 99px;
   }
 
-  .slot-actions {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 9px;
-    padding-top: 14px;
-    border-top: 1px solid #f0f2f6;
+  .medication-slot-heading .status-pill {
+    margin-left: 0;
   }
 
-  .slot-actions .primary-button,
-  .slot-actions .secondary-button {
-    width: 100%;
-  }
-
-  .slot-editor {
-    padding: 14px;
-    margin-top: 8px;
-    background: #f5f8fd;
-    border-radius: 12px;
-  }
-
-  .slot-editor > p {
-    margin: 0 0 10px;
-    font-size: 13px;
-    line-height: 1.5;
-    color: #687587;
-  }
-
-  .drug-toggle {
-    display: grid;
-    grid-template-columns: 24px minmax(0, 1fr) auto;
-    align-items: center;
-    min-height: 48px;
-    border-bottom: 1px solid #e6ebf3;
-  }
-
-  .drug-toggle input {
-    width: 18px;
-    height: 18px;
-    accent-color: #2468ff;
-  }
-
-  .drug-toggle strong {
-    font-size: 13px;
-    color: #2468ff;
-  }
-
-  .slot-note {
-    display: block;
-    margin-top: 12px;
-    font-size: 13px;
-    font-weight: 600;
-  }
-
-  .slot-note textarea {
-    box-sizing: border-box;
-    width: 100%;
-    padding: 10px 12px;
-    margin-top: 7px;
-    resize: vertical;
-    background: #fff;
-    border: 1px solid #dce2ea;
-    border-radius: 9px;
-    outline: 0;
-  }
-
-  .slot-note textarea:focus {
-    border-color: #4f8bff;
-  }
-
-  .slot-editor-actions {
-    display: grid;
-    grid-template-columns: 104px 1fr;
-    gap: 9px;
-    margin-top: 10px;
-  }
-
-  .medication-history {
-    margin-top: 22px;
-  }
-
-  .medication-history > article {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    min-height: 58px;
-    padding: 0 14px;
-    margin-top: 9px;
-    background: #fff;
-    border-radius: 12px;
-  }
-
-  .medication-history > article > div {
+  .medication-drug-list {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 16px;
+    padding: 13px 10px 0 41px;
   }
 
-  .medication-history small {
-    color: #8490a0;
+  .medication-drug-list::before {
+    position: absolute;
+    top: 36px;
+    bottom: 28px;
+    left: 15px;
+    width: 1px;
+    content: '';
+    background: #d4dce8;
+  }
+
+  .medication-drug-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr) 58px;
+    gap: 10px;
+    align-items: center;
+    min-height: 64px;
+    padding: 11px 12px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 7px 18px rgb(61 81 117 / 9%);
+  }
+
+  .timeline-dot {
+    position: absolute;
+    top: 50%;
+    left: -35px;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    color: #2167ff;
+    background: #f4f7fd;
+    transform: translateY(-50%);
+  }
+
+  .timeline-dot :deep(svg) {
+    width: 100%;
+    height: 100%;
+  }
+
+  .medication-drug-card img {
+    width: 52px;
+    height: 46px;
+    object-fit: contain;
+    border-radius: 8px;
+  }
+
+  .medication-drug-copy {
+    min-width: 0;
+  }
+
+  .medication-drug-copy h3 {
+    margin: 0 0 5px;
+    overflow: hidden;
+    font-size: 16px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .medication-drug-copy p {
+    margin: 0;
+    overflow: hidden;
+    font-size: 13px;
+    color: #8b96a5;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .drug-checkin-button {
+    min-width: 58px;
+    min-height: 44px;
+    padding: 0 10px;
+    font-size: 16px;
+    color: #fff;
+    cursor: pointer;
+    background: #2167ff;
+    border: 0;
+    border-radius: 7px;
+  }
+
+  .drug-checkin-button:disabled {
+    color: #8b94a2;
+    cursor: not-allowed;
+    background: #e8ecf2;
+  }
+
+  .medication-empty {
+    margin-top: 26px;
   }
 
   .medicine-list {

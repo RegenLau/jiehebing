@@ -1,7 +1,7 @@
 import { registerResearchExport } from './research-export.mjs';
 import { registerFeedback } from './feedback.mjs';
 import { registerMedicationRecords } from './medication-records.mjs';
-import { registerAdverseManagement } from './adverse-management.mjs';
+import { registerAdverseManagement, withAdverseMembership } from './adverse-management.mjs';
 import { registerReports } from './reports.mjs';
 import { registerFollowup } from './followup.mjs';
 import { registerPatientManagement } from './patient-management.mjs';
@@ -50,10 +50,10 @@ function sendPatientJson(res, data, message = '成功') {
   res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ code: 0, message, data }));
 }
-function spreadsheet(res, name, headers, rows) {
+function spreadsheet(res, name, headers, rows, columnWidths = []) {
   const book = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-  sheet['!cols'] = headers.map(() => ({ wch: 24 }));
+  sheet['!cols'] = headers.map((_, index) => ({ wch: columnWidths[index] || 24 }));
   XLSX.utils.book_append_sheet(book, sheet, '数据明细');
   const buffer = XLSX.write(book, { type: 'buffer', bookType: 'xlsx' });
   res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
@@ -94,7 +94,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
           answer_summary: q.type === 'TEXT' ? value?.text_value || '-' : selected.map(o => o.label).join('、') || '-' };
       }) };
   };
-  const adverseRows = q => db.adverse.filter(r => (q.pending!=='1'||(r.processing_status||'待处理')!=='已处理') && (!q.processing_status || (r.processing_status||'待处理')===q.processing_status) && (!q.patient_name || r.patient_name.includes(q.patient_name)) && (!integer(q.user_id) || r.user_id === integer(q.user_id)) && (![1, 2, 3].includes(integer(q.severity)) || r.severity === integer(q.severity))).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id - a.id);
+  const adverseRows = q => db.adverse.filter(r => (q.pending!=='1'||(r.processing_status||'待处理')!=='已处理') && (!q.processing_status || (r.processing_status||'待处理')===q.processing_status) && (!q.patient_name || r.patient_name.includes(q.patient_name)) && (!integer(q.user_id) || r.user_id === integer(q.user_id)) && (![1, 2, 3].includes(integer(q.severity)) || r.severity === integer(q.severity))).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id - a.id).map(r => withAdverseMembership(r, db));
   const routes = new Map();
   const patientRoutes = new Map();
   const route = (method, path, handler) => routes.set(`${method} ${path}`, handler);
@@ -164,7 +164,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
     return { ...page(filtered.sort((a, b) => b.plan_date.localeCompare(a.plan_date) || a.plan_time.localeCompare(b.plan_time) || b.id - a.id), q), scope };
   });
   core('GET', 'adverse-reaction/index', ({ query }) => page(adverseRows(query), query));
-  core('GET', 'adverse-reaction/export', ({ query, res }) => spreadsheet(res, 'adverse_reaction.xlsx', ['ID', '患者姓名', '手机号', '发生时间', '主要症状', '症状描述', '严重程度', '处理建议', '状态', '上报时间'], adverseRows(query).map(r => [r.id, r.patient_name, r.patient_mobile, r.occurred_at, r.symptom_summary, r.symptom_description, r.severity_text, r.advice_text, r.status_text, r.created_at])));
+  core('GET', 'adverse-reaction/export', ({ query, res }) => spreadsheet(res, 'adverse_reaction.xlsx', ['ID', '患者姓名', '手机号', '参与项目', '入组名称', '发生时间', '主要症状', '症状描述', '严重程度', '处理建议', '状态', '上报时间'], adverseRows(query).map(r => [r.id, r.patient_name, r.patient_mobile, r.project_name || '未参与项目', r.group_name || '未入组', r.occurred_at, r.symptom_summary, r.symptom_description, r.severity_text, r.advice_text, r.status_text, r.created_at])));
   core('GET','dashboard/research',({query:q})=>{const patients=db.patients.filter(p=>(!integer(q.project_id)||p.project_id===integer(q.project_id))&&(!integer(q.group_id)||p.group_id===integer(q.group_id))),ids=new Set(patients.map(p=>p.id)),tasks=db.followupTasks.filter(t=>ids.has(t.user_id)),reports=db.reports.filter(r=>ids.has(r.user_id)),events=db.adverse.filter(a=>ids.has(a.user_id));return{patients:patients.length,treating:patients.filter(p=>p.study_state==='治疗中').length,completed:patients.filter(p=>p.study_state==='已完成').length,withdrawn:patients.filter(p=>p.study_state==='提前退出').length,reports_pending:reports.filter(r=>r.status==='待核对').length,events_pending:events.filter(a=>(a.processing_status||'待处理')!=='已处理').length,tasks_overdue:tasks.filter(t=>t.due_date<today()&&!['已完成','已取消'].includes(t.status)).length,tasks_completed:tasks.filter(t=>t.status==='已完成').length,tasks_total:tasks.length};});
   core('GET', 'dashboard/overview', ({ query: q }) => {
     const range = ['today', '7d', '30d'].includes(q.range) ? q.range : 'today';
@@ -248,11 +248,31 @@ export function createMockServer({ now = () => new Date() } = {}) {
   core('GET', 'survey/export', ({ query, res }) => {
     const current = find(db.surveys, query.id, '问卷模板');
     const s = db.answers.find(a=>a.template_id===current.id)?.template_snapshot || current;
-    const rows = db.answers.filter(a => a.template_id === s.id).map(a => {
+    const projectId = integer(query.project_id);
+    const groupId = integer(query.group_id);
+    const startDate = clean(query.start_date);
+    const endDate = clean(query.end_date);
+    if (query.project_id !== undefined && query.project_id !== '') find(db.projects, projectId, '项目');
+    if (query.group_id !== undefined && query.group_id !== '') {
+      const group = find(db.projectGroups, groupId, '分组');
+      assert(!projectId || group.project_id === projectId, '分组不属于当前项目');
+    }
+    assert(!startDate || isDate(startDate), '开始日期不合法');
+    assert(!endDate || isDate(endDate), '结束日期不合法');
+    assert(!startDate || !endDate || startDate <= endDate, '开始日期不能晚于结束日期');
+    const rows = db.answers.filter(a => {
+      if (a.template_id !== s.id) return false;
+      const p = find(db.patients, a.user_id, '患者');
+      const submittedDate = a.submitted_at.slice(0, 10);
+      return (!projectId || p.project_id === projectId)
+        && (!groupId || p.group_id === groupId)
+        && (!startDate || submittedDate >= startDate)
+        && (!endDate || submittedDate <= endDate);
+    }).map(a => {
       const p = find(db.patients, a.user_id, '患者'); const detail = answerDetail(p.id, s.id);
-      return [p.id, p.name, p.mobile, a.submitted_at, ...detail.questions.map(q => q.type === 'TEXT' ? q.text_value : q.selected_options.map(o => o.label + (o.input_fields.length ? `（${o.input_fields.map(f => `${f.field_label}：${f.value}`).join('；')}）` : '')).join('、'))];
+      return [p.id, p.name, p.mobile, p.project_name || '未参与项目', p.group_name || '未入组', a.submitted_at, ...detail.questions.map(q => q.type === 'TEXT' ? q.text_value : q.selected_options.map(o => o.label + (o.input_fields.length ? `（${o.input_fields.map(f => `${f.field_label}：${f.value}`).join('；')}）` : '')).join('、'))];
     });
-    spreadsheet(res, 'survey_answers.xlsx', ['患者ID', '患者姓名', '手机号', '提交时间', ...s.questions.map(q => `第${q.questionNo}题 ${q.title}`)], rows);
+    spreadsheet(res, 'survey_answers.xlsx', ['患者ID', '患者姓名', '手机号', '参与项目', '参与分组', '提交时间', ...s.questions.map(q => `第${q.questionNo}题 ${q.title}`)], rows, [12, 14, 16, 24, 24, 20, ...s.questions.map(() => 52)]);
   });
   core('POST', 'file/upload-file', async ({ body, res }) => {
     const file = body.get?.('file');

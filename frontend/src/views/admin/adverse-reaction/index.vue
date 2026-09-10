@@ -32,11 +32,18 @@
       </div>
     </div>
 
-    <Assessment ref="assessment" @saved="loadList" /><ElCard shadow="never">
+    <Assessment ref="assessment" @saved="loadList" />
+    <ElCard shadow="never">
       <ElTable :data="list" v-loading="loading" border>
         <ElTableColumn prop="id" label="ID" width="80" />
-        <ElTableColumn prop="patient_name" label="患者姓名" min-width="120" />
+        <ElTableColumn prop="patient_name" label="患者姓名" min-width="120" fixed="left" />
         <ElTableColumn prop="patient_mobile" label="手机号" min-width="140" />
+        <ElTableColumn prop="project_name" label="参与项目" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.project_name || '未参与项目' }}</template>
+        </ElTableColumn>
+        <ElTableColumn prop="group_name" label="入组名称" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.group_name || '未入组' }}</template>
+        </ElTableColumn>
         <ElTableColumn prop="occurred_at" label="发生时间" min-width="160" />
         <ElTableColumn
           prop="symptom_summary"
@@ -84,6 +91,8 @@
         <div class="detail-grid">
           <div><span>患者姓名：</span>{{ currentRecord.patient_name || '-' }}</div>
           <div><span>手机号：</span>{{ currentRecord.patient_mobile || '-' }}</div>
+          <div><span>参与项目：</span>{{ currentRecord.project_name || '未参与项目' }}</div>
+          <div><span>入组名称：</span>{{ currentRecord.group_name || '未入组' }}</div>
           <div><span>发生时间：</span>{{ currentRecord.occurred_at || '-' }}</div>
           <div>
             <span>严重程度：</span>

@@ -2,7 +2,7 @@
   <div class="survey-page">
     <div class="toolbar">
       <div>
-        <h2>问卷管理</h2><ElButton type="primary" @click="editor?.open()">新增问卷</ElButton>
+        <h2>问卷管理</h2>
       </div>
       <div class="actions">
         <ElInput
@@ -25,6 +25,7 @@
         </ElSelect>
         <ElButton type="primary" @click="handleSearch">查询</ElButton>
         <ElButton @click="loadList" :loading="loading">刷新</ElButton>
+        <ElButton type="primary" @click="openCreate">新增问卷</ElButton>
       </div>
     </div>
 
@@ -57,7 +58,7 @@
               link
               type="primary"
               :loading="exportingId === (row as SurveyRecord).id"
-              @click="handleExport(row as SurveyRecord)"
+              @click="openExport(row as SurveyRecord)"
             >
               数据导出
             </ElButton>
@@ -124,14 +125,69 @@
         </div>
       </div>
     </ElDialog>
+
+    <ElDialog
+      v-model="exportVisible"
+      title="选择数据导出范围"
+      width="620px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!exportingId"
+      :show-close="!exportingId"
+    >
+      <p class="export-tip">
+        以下条件均为选填；不选择时，将导出“{{ exportTarget?.name }}”的全部答卷。
+      </p>
+      <ElForm label-position="top">
+        <ElFormItem label="项目和分组（可选）">
+          <ResearchScopeFilter
+            v-model:project-id="exportForm.project_id"
+            v-model:group-id="exportForm.group_id"
+            :show-date="false"
+          />
+        </ElFormItem>
+        <ElFormItem label="提交时间（可选）">
+          <div class="export-time-filter">
+            <ElRadioGroup v-model="exportForm.time_preset" @change="applyTimePreset">
+              <ElRadioButton value="all">全部</ElRadioButton>
+              <ElRadioButton value="today">今日</ElRadioButton>
+              <ElRadioButton value="7d">近 7 天</ElRadioButton>
+              <ElRadioButton value="30d">近 30 天</ElRadioButton>
+              <ElRadioButton value="custom">自定义</ElRadioButton>
+            </ElRadioGroup>
+            <ElDatePicker
+              v-if="exportForm.time_preset === 'custom'"
+              v-model="exportForm.date_range"
+              type="daterange"
+              value-format="YYYY-MM-DD"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              clearable
+            />
+          </div>
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton :disabled="Boolean(exportingId)" @click="exportVisible = false">取消</ElButton>
+        <ElButton type="primary" :loading="Boolean(exportingId)" @click="handleExport">
+          导出 Excel
+        </ElButton>
+      </template>
+    </ElDialog>
   </div>
 </template>
 
 <script setup lang="ts">
   import Editor from './modules/editor.vue'
+  import ResearchScopeFilter from '@/components/business/research-scope-filter/index.vue'
+  import { useRouter } from 'vue-router'
   import { toggleSurveyStatus } from '@/api/survey'
   import { ElMessageBox } from 'element-plus'
+  const router = useRouter()
   const editor = ref<InstanceType<typeof Editor>>()
+  function openCreate() {
+    void router.push('/survey/create')
+  }
   async function toggleStatus(row: SurveyRecord) {
     try {
       await ElMessageBox.confirm(
@@ -159,9 +215,18 @@
   const loading = ref(false)
   const detailLoading = ref(false)
   const detailVisible = ref(false)
+  const exportVisible = ref(false)
   const exportingId = ref<number | null>(null)
   const list = ref<SurveyRecord[]>([])
   const detailData = ref<SurveyDetail>()
+  const exportTarget = ref<SurveyRecord>()
+  type ExportTimePreset = 'all' | 'today' | '7d' | '30d' | 'custom'
+  const exportForm = reactive({
+    project_id: undefined as number | undefined,
+    group_id: undefined as number | undefined,
+    time_preset: 'all' as ExportTimePreset,
+    date_range: [] as string[]
+  })
   const searchForm = reactive({
     keyword: '',
     status: undefined as number | undefined
@@ -232,10 +297,53 @@
     window.URL.revokeObjectURL(url)
   }
 
-  const handleExport = async (record: SurveyRecord) => {
+  const openExport = (record: SurveyRecord) => {
+    exportTarget.value = record
+    exportForm.project_id = undefined
+    exportForm.group_id = undefined
+    exportForm.time_preset = 'all'
+    exportForm.date_range = []
+    exportVisible.value = true
+  }
+
+  const formatLocalDate = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const applyTimePreset = () => {
+    if (exportForm.time_preset === 'all' || exportForm.time_preset === 'custom') {
+      exportForm.date_range = []
+      return
+    }
+
+    const end = new Date()
+    const start = new Date(end)
+    const days = exportForm.time_preset === 'today' ? 1 : exportForm.time_preset === '7d' ? 7 : 30
+    start.setDate(start.getDate() - (days - 1))
+    exportForm.date_range = [formatLocalDate(start), formatLocalDate(end)]
+  }
+
+  const handleExport = async () => {
+    const record = exportTarget.value
+
+    if (!record) return
+    if (exportForm.time_preset === 'custom' && exportForm.date_range.length !== 2) {
+      ElMessage.warning('请选择自定义时间段')
+      return
+    }
+
     exportingId.value = record.id
     try {
-      const blob = await exportSurveyAnswers(record.id)
+      const blob = await exportSurveyAnswers({
+        id: record.id,
+        project_id: exportForm.project_id,
+        group_id: exportForm.group_id,
+        start_date: exportForm.date_range[0],
+        end_date: exportForm.date_range[1]
+      })
 
       if (blob.type.includes('application/json')) {
         ElMessage.error(await readBlobMessage(blob))
@@ -244,6 +352,7 @@
 
       const fileName = `问卷答题数据_${record.code}_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.xlsx`
       downloadBlob(blob, fileName)
+      exportVisible.value = false
       ElMessage.success('导出成功')
     } catch (error: any) {
       ElMessage.error(error?.message || '导出失败')
@@ -287,6 +396,18 @@
     display: flex;
     justify-content: flex-end;
     margin-top: 16px;
+  }
+
+  .export-tip {
+    margin: 0 0 16px;
+    color: var(--el-text-color-secondary);
+    line-height: 1.6;
+  }
+
+  .export-time-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
 
   .detail-content {

@@ -28,7 +28,7 @@ export function registerResearchExport({
         "研究",
         "研究分组",
         "研究状态",
-        "入组基准日",
+        "入组日期",
         "患者端登录",
       ];
       rows = db.patients

@@ -24,7 +24,7 @@
         <div><span>研究项目：</span>{{ patient.project_name || '-' }}</div>
         <div><span>研究分组：</span>{{ patient.group_name || '-' }}</div>
         <div><span>用药方案：</span>{{ patient.medication_scheme_name || '-' }}</div>
-        <div><span>建档日期：</span>{{ patient.enroll_date || '-' }}</div>
+        <div><span>入组日期：</span>{{ patient.enroll_date || '-' }}</div>
       </div>
     </ElCard>
 

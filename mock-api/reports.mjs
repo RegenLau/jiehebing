@@ -9,7 +9,7 @@ export function registerReports({
   timestamp,
   nextId,
 }) {
-  db.reports = [];
+  db.reports ||= [];
   const text = (v, label, required = true) => {
     const s = clean(v);
     assert(s.length <= 2000 && (!required || s), `请填写有效的${label}`);

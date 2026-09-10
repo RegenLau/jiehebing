@@ -57,6 +57,14 @@ export interface SurveyListResponse {
   size: number
 }
 
+export interface SurveyExportParams {
+  id: number
+  project_id?: number
+  group_id?: number
+  start_date?: string
+  end_date?: string
+}
+
 export function fetchSurveyList(params: SurveyListParams) {
   return request.get<SurveyListResponse>({
     url: '/app/core/survey/index',
@@ -71,11 +79,11 @@ export function fetchSurveyDetail(id: number) {
   })
 }
 
-export function exportSurveyAnswers(id: number) {
+export function exportSurveyAnswers(params: SurveyExportParams) {
   return request.request<Blob>({
     url: '/app/core/survey/export',
     method: 'GET',
-    params: { id },
+    params,
     responseType: 'blob',
     showErrorMessage: false
   })

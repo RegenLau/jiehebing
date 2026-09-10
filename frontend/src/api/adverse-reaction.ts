@@ -5,6 +5,10 @@ export interface AdverseReactionRecord {
   user_id: number
   patient_name: string
   patient_mobile: string
+  project_id?: number | null
+  project_name?: string
+  group_id?: number | null
+  group_name?: string
   occurred_at: string
   symptoms: string[]
   symptom_summary: string
@@ -15,6 +19,7 @@ export interface AdverseReactionRecord {
   status: number
   status_text: string
   created_at: string
+  processing_status?: string
 }
 
 export interface AdverseReactionListParams {

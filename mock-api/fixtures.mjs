@@ -17,6 +17,8 @@ export function ageOnDate(birthDate, date) {
 export function createFixtures(now) {
   const today = shanghaiDate(now);
   const time = `${today} 09:00:00`;
+  const demoPatientMobile = '13910001019';
+  const pendingStartPatientMobile = '13910001029';
   const projects = [0, 1, 2].map((status, i) => ({
     id: i + 1, code: `TB-RESEARCH-00${i + 1}`, name: ['结核病院外随访研究', '结核病规范用药随访研究', '结核病随访试点'][i],
     center: '结核病研究中心', investigator: '项目负责人', phone: '010-00000000',
@@ -38,17 +40,25 @@ export function createFixtures(now) {
     ['施婉宁', '13910001021', 2, '1986-04-18'], ['张怀瑾', '13910001022', 1, '1970-10-27'],
     ['孔思齐', '13910001023', 1, '1995-02-15'], ['曹静姝', '13910001024', 2, '1981-06-06'],
     ['严嘉树', '13910001025', 1, '1989-09-12'], ['华安琪', '13910001026', 2, '1973-01-25'],
-    ['金予安', '13910001027', 1, '1997-11-08'], ['魏清越', '13910001028', 2, '1984-05-31']
+    ['金予安', '13910001027', 1, '1997-11-08'], ['魏清越', '13910001028', 2, '1984-05-31'],
+    ['待开始服药患者', '13910001029', 1, '1988-05-12']
   ];
   const patients = patientProfiles.map(([name, mobile, gender, birth_date], i) => {
-    const offset = i < 12 ? -(40 + i) : i < 16 ? -(i - 11) : -(i + 3);
+    const isPendingStartPatient = mobile === pendingStartPatientMobile;
+    const offset = isPendingStartPatient ? 1 : i < 12 ? -(40 + i) : i < 16 ? -(i - 11) : -(i + 3);
     const enroll_date = shiftDate(today, offset);
+    const isDemoPatient = mobile === demoPatientMobile;
+    const isConfirmedPatient = isDemoPatient || isPendingStartPatient;
     return {
       id: i + 1, patient_code: `TB-P-${String(i + 1).padStart(3, '0')}`, name, mobile, gender,
       gender_text: gender === 1 ? '男' : '女', birth_date, age: ageOnDate(birth_date, today),
-      is_archived: 1, login_enabled: true, created_via: 'admin', study_state: '待启用',
+      is_archived: 1, login_enabled: true, created_via: 'admin', study_state: isDemoPatient ? '治疗中' : '待启用',
       enroll_date, offline_confirmed: true, consent_confirmed: true,
-      identity_confirmed: false, medicine_confirmed: false, status: 1,
+      identity_confirmed: isConfirmedPatient, medicine_confirmed: isConfirmedPatient, status: 1,
+      ...(isConfirmedPatient ? {
+        identity_confirmation: { status: 'confirmed', confirmed: true, note: '', confirmed_at: time },
+        medication_confirmation: { status: 'confirmed', confirmed: true, treatment_id: `legacy-${i + 1}`, note: '', confirmed_at: time }
+      } : {}),
       created_at: `${enroll_date} 06:00:00`, updated_at: time
     };
   });
@@ -118,7 +128,17 @@ export function createFixtures(now) {
   }));
   const admins = [{ id: 1, username: 'admin', password: 'Mock123456', realname: '管理员', gender: '1', email: 'admin@example.invalid', phone: '13800000000', avatar: '/api/mock-files/admin-avatar', status: 1, created_at: time, updated_at: time }];
   const files = new Map();
-  for (const [id, title, color] of [['article-cover', '随访健康科普', '#2b76b7'], ['medicine-cover', '药品资料', '#269b88'], ['admin-avatar', '管理', '#557cc4']]) {
+  for (const [id, title, color] of [
+    ['article-cover', '随访健康科普', '#2b76b7'],
+    ['medicine-cover', '药品资料', '#269b88'],
+    ['admin-avatar', '管理', '#557cc4'],
+    ['report-blood', '血常规检验报告', '#4f7ecf'],
+    ['report-liver', '肝功能检验报告', '#d48a45'],
+    ['report-kidney', '肾功能检验报告', '#3f9a83'],
+    ['report-ct', '胸部 CT 检查报告', '#69758f'],
+    ['report-smear', '痰涂片检验报告', '#7b69b4'],
+    ['report-culture', '痰培养检验报告', '#4b8d9d']
+  ]) {
     const buffer = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" rx="24" fill="${color}"/><text x="320" y="190" text-anchor="middle" font-size="36" fill="white">${title}</text></svg>`);
     files.set(id, { buffer, type: 'image/svg+xml', name: `${id}.svg`, created_at: time });
   }
@@ -227,15 +247,77 @@ export function createFixtures(now) {
       Object.assign(patient, { project_id: project.id, project_name: project.name, group_id: group.id, group_name: group.name, medication_scheme_id: group.medication.id, medication_scheme_name: group.medication.snapshot.name, owner_id: admins[0].id, owner_name: admins[0].realname });
     }
   }
+  const reportTemplates = [
+    {
+      type: '血常规', file_id: 'report-blood',
+      metrics: [
+        { name: '白细胞计数', value: '5.8', unit: '10^9/L', reference: '3.5-9.5', flag: '' },
+        { name: '血红蛋白', value: '112', unit: 'g/L', reference: '115-150', flag: '偏低' }
+      ]
+    },
+    {
+      type: '肝功能', file_id: 'report-liver',
+      metrics: [
+        { name: '丙氨酸氨基转移酶', value: '68', unit: 'U/L', reference: '7-40', flag: '偏高' },
+        { name: '天门冬氨酸氨基转移酶', value: '54', unit: 'U/L', reference: '13-35', flag: '偏高' }
+      ]
+    },
+    {
+      type: '肾功能', file_id: 'report-kidney',
+      metrics: [
+        { name: '血清肌酐', value: '76', unit: 'μmol/L', reference: '41-81', flag: '' },
+        { name: '尿素', value: '5.1', unit: 'mmol/L', reference: '2.6-7.5', flag: '' }
+      ]
+    },
+    {
+      type: '胸部CT', file_id: 'report-ct',
+      metrics: [{ name: '影像结论', value: '右上肺病灶较前吸收', unit: '', reference: '', flag: '' }]
+    },
+    {
+      type: '痰涂片', file_id: 'report-smear',
+      metrics: [{ name: '抗酸杆菌涂片', value: '阴性', unit: '', reference: '阴性', flag: '' }]
+    },
+    {
+      type: '痰培养', file_id: 'report-culture',
+      metrics: [{ name: '结核分枝杆菌培养', value: '未检出', unit: '', reference: '未检出', flag: '' }]
+    }
+  ];
+  const reportStatuses = ['待核对', '需补充', '已核对'];
+  const reports = Array.from({ length: 36 }, (_, i) => {
+    const patient = patients[(i * 5) % patients.length];
+    const template = reportTemplates[i % reportTemplates.length];
+    const status = reportStatuses[i % reportStatuses.length];
+    const proposedDate = shiftDate(today, -(i % 35));
+    const exam_date = proposedDate < patient.enroll_date ? patient.enroll_date : proposedDate;
+    const reviewTime = `${exam_date} 16:${String((i * 7) % 60).padStart(2, '0')}:00`;
+    const sourceFile = files.get(template.file_id);
+    const metrics = structuredClone(template.metrics);
+    return {
+      id: i + 1, user_id: patient.id, patient_name: patient.name, type: template.type, exam_date,
+      task_id: null, status, ocr_status: '未接入，人工录入', metrics,
+      versions: [{
+        files: [{ url: `/api/mock-files/${template.file_id}`, name: sourceFile.name, type: sourceFile.type }],
+        note: '模拟报告资料，仅用于功能演示，具体结果以检验机构出具的报告为准。',
+        time: `${exam_date} 14:${String((i * 3) % 60).padStart(2, '0')}:00`,
+        operator: '管理员'
+      }],
+      history: status === '待核对' ? [] : [{
+        time: reviewTime, operator: '管理员',
+        reason: status === '已核对' ? '报告信息完整，已完成核对。' : '请补充清晰、完整的报告原图。',
+        before: { status: '待核对', metrics: [] }, after: { status, metrics: structuredClone(metrics) }
+      }]
+    };
+  });
   const medicines = [];
   const plans = [];
   let nextMedicine = 1;
   let nextPlan = 1;
   for (const patient of patients) {
     const group = projectGroups.find(item => item.id === patient.group_id);
+    const isDemoPatient = patient.mobile === demoPatientMobile;
     for (const [sort, drug] of group.medication.snapshot.drugs.entries()) {
       const source = commonMedicines.find(item => item.id === drug.drug_id);
-      const times = drug.times.split(',').map(value => value.trim());
+      const times = isDemoPatient ? ['07:00', '12:00', '19:00'] : drug.times.split(',').map(value => value.trim());
       const quantity = group.medication.quantities.find(item => item.drug_id === drug.drug_id)?.quantity || 0;
       const medicine = {
         ...source, id: nextMedicine++, user_id: patient.id, common_medicine_id: source.id, name: source.common_name,
@@ -251,18 +333,22 @@ export function createFixtures(now) {
         const plan_date = shiftDate(today, day);
         if (plan_date < patient.enroll_date) continue;
         for (const [planIndex, planTime] of times.entries()) {
-          const status = day > 0 ? 0 : (medicine.id + day + planIndex + 100) % 5 === 0 ? 0 : 1;
+          const status = day > 0
+            ? 0
+            : isDemoPatient && day === 0
+              ? planTime === '07:00' ? 1 : 0
+              : (medicine.id + day + planIndex + 100) % 5 === 0 ? 0 : 1;
           plans.push({
             ...medicine, id: nextPlan++, medicine_id: medicine.id, patient_name: patient.name, patient_mobile: patient.mobile,
             plan_date, day_number: Math.round((Date.parse(plan_date) - Date.parse(patient.enroll_date)) / 86400000) + 1,
-            plan_time: planTime, plan_index: planIndex + 1, status, status_text: status ? '已打卡' : '待打卡',
+            plan_time: planTime, medication_timing: '餐后', plan_index: planIndex + 1, status, status_text: status ? '已打卡' : '待打卡',
             checked_at: status ? `${plan_date} ${planTime}:00` : '', created_at: medicine.created_at
           });
         }
       }
     }
   }
-  return { projects, projectGroups, medicationSchemes, reminderSchemes, taskTemplates, patients, medicines, plans, adverse, commonMedicines, surveys, answers, articles, admins, files, loginLogs: [], operationLogs: [] };
+  return { projects, projectGroups, medicationSchemes, reminderSchemes, taskTemplates, patients, medicines, plans, adverse, reports, commonMedicines, surveys, answers, articles, admins, files, loginLogs: [], operationLogs: [] };
 }
 
 export function createMenu() {
@@ -283,6 +369,8 @@ export function createMenu() {
   result[0].children.push({ path: 'user-center', name: 'UserCenter', component: '/dashboard/user-center', meta: { title: '个人中心', isHide: true, keepAlive: false } });
   result[1].children.push({ path: 'detail', name: 'PatientDetail', component: '/admin/patient-detail', meta: { title: 'menus.patient.detail', isHide: true, activePath: '/patient/index', keepAlive: false } });
   result[1].children.push({ path: 'management', name: 'PatientManagement', component: '/admin/patient-management', meta: { title: '患者研究管理', isHide: true, activePath: '/patient/index', keepAlive: false } });
+  const survey = result.find(r => r.name === 'Survey');
+  survey.children.push({ path: 'create', name: 'SurveyCreate', component: '/admin/survey-create', meta: { title: '新增问卷', isHide: true, activePath: '/survey/index', keepAlive: false } });
   result.splice(1, 0, { path: '/project', name: 'Project', component: '/index/index', meta: { title: 'menus.project.title', icon: 'ri:folder-chart-line' },
     children: [
       { path: 'index', name: 'ProjectIndex', component: '/admin/project', meta: { title: 'menus.project.list', keepAlive: true } },
