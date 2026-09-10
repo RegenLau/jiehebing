@@ -10,16 +10,22 @@ pnpm --dir mock-api test
 
 服务只监听 `127.0.0.1:3010`。前端通过 Vite `/api` 代理访问，代理需去掉 `/api` 前缀。健康检查 `GET /health`。演示账号 `admin` / `Mock123456`，验证码固定为 `1234`，每次登录仍须先取新的验证码 `uuid`（5 分钟有效）；登录会话 8 小时有效，停用账号、修改密码会使其已有会话失效。退出接口 `POST /app/core/logout` 幂等，只销毁当前会话。
 
-患者端本地登录使用 `POST /app/login`，请求体为 `{ "mobile": "后台患者手机号" }`。只有已经由管理后台创建、且允许登录的患者档案会返回患者令牌；未知手机号返回 `code = 407`，不会自动创建患者。令牌可用于 `GET /app/patient/archive-detail`，`POST /app/logout` 退出。该接口只模拟“后台先建档、患者后登录”的业务门槛，不连接微信授权服务。
+患者端本地登录使用 `POST /app/login`，请求体为 `{ "mobile": "后台患者手机号" }`。只有已经由管理后台创建、且允许登录的患者档案会返回患者令牌；未知手机号返回 `code = 407`，不会自动创建患者。患者令牌可访问档案、首页、用药、任务、报告、提醒和服务信息，并提交双确认、服药时点记录、每日反馈、随访问卷、报告、不良反应和提醒偏好。每日反馈校验包含体重下降，只保存患者确认后的转写文字；报告指标保存名称、检测值、单位、参考范围和可选异常标识，标识仅允许空值、偏低、偏高或异常。患者先确认基础信息，再按当前治疗方案 ID 确认药品；医生修改基础资料或生成新方案后，相应旧确认失效。该流程不连接微信授权或订阅消息服务。
 
-提供全部 30 个原 `/app/core` 接口、登录别名 `/app/admin/captcha` 与 `/app/admin/login`，另补个人中心资料、密码、登录/操作日志、图库和清缓存兼容接口。未知路径返回 HTTP 404，绝不转发。JSON 包装沿用 `{code,message,data}`，业务错误使用包装内错误码；列表分页使用 `current/size` 和 `{list,total,current,size}`。个人中心/图库的旧分页使用 `page/limit` 和 `{data,total,current_page,per_page,last_page}`。
+提供当前管理端使用的 `/app/core` 接口、登录别名 `/app/admin/captcha` 与 `/app/admin/login`，另补研究分组、提醒方案、个人中心资料、密码、登录/操作日志、图库和清缓存兼容接口。未知路径返回 HTTP 404，绝不转发。JSON 包装沿用 `{code,message,data}`，业务错误使用包装内错误码；列表分页使用 `current/size` 和 `{list,total,current,size}`。个人中心/图库的旧分页使用 `page/limit` 和 `{data,total,current_page,per_page,last_page}`。
 
-上传 `POST /app/core/file/upload-file` 使用 multipart 字段 `file`，支持 JPG、PNG、GIF、PDF，最大 10 MB。返回 `/api/mock-files/:id` 同源 URL，原始字节在内存保存；图片出现在图库，文件可直接预览。导出问卷和不良反应生成真实 `.xlsx`，采用前端同版本 `xlsx ^0.18.5`；导出仅写入当前模拟数据。
+上传 `POST /app/core/file/upload-file` 使用 multipart 字段 `file`，支持 JPG、PNG、GIF、PDF，最大 10 MB。返回 `/api/mock-files/:id` 同源 URL，原始字节在内存保存；图片出现在图库，文件可直接预览。问卷、不良反应、患者、随访任务、检查报告、每日反馈和用药计划导出为真实 `.xlsx`，应用当前全部筛选条件，不受列表分页限制。
 
-种子包含 28 名全新的、明确标识的后台建档模拟患者，均有出生日期、独立的 11 位模拟手机号、患者端登录资格和有效研究分组；6 个研究分组覆盖 3 个模拟项目，每个项目各 2 个分组，所有患者分布在这 6 个分组中且不会重复归组。每名患者均按所属分组的用药方案生成患者药品与用药计划，药品、疗程、剂量、频次和提醒时间均与分组方案保持一致。另有当天/历史/未来计划、36 条不良反应、16 条常用药、13 篇文章、2 份问卷。保留部分近期建档患者用于未到填写日期状态，同时长期患者覆盖超过 30 天的未打卡计划；不会生成建档之前的计划。问卷 1 有 8 份模拟答卷，每份 6 题，问卷 2 为未作答草稿。问卷列表 `answerCount` 沿用后台 `COUNT(*)`，统计答案题目条数（初始 48），导出按答题患者每人一行。
+种子包含 28 名全新的、明确标识的后台建档模拟患者，均有出生日期、独立的 11 位模拟手机号、患者端登录资格和有效研究分组；6 个研究分组覆盖 3 个模拟项目，每个项目各 2 个分组，所有患者分布在这 6 个分组中且不会重复归组。每名患者均按所属分组的用药方案和提醒方案生成患者药品、用药计划及随访任务。另有 3 套提醒方案、当天/历史/未来计划、36 条不良反应、16 条常用药、13 篇文章、2 份问卷。保留部分近期建档患者用于未到填写日期状态，同时长期患者覆盖超过 30 天的未打卡计划；不会生成建档之前的计划。问卷 1 有 8 份模拟答卷，每份 6 题，问卷 2 为未作答草稿。问卷列表 `answerCount` 是答卷份数（初始 8），`participantCount` 是去重患者数（初始 8），`answerRowCount` 是单题答案行数（初始 48）；导出按每份答卷一行。
+
+提醒方案接口包括 `reminder-scheme/index`、`detail`、`save` 和 `status`。方案集中维护服药提前分钟数、任务开始/到期/逾期阶段、任务提醒时间、取药提前天数和取药提醒时间；研究分组保存关联快照。来源方案修改或停用不会自动改变已有小组，小组明确选择更新后才采用新版本。
+
+患者新增主流程使用 `POST /app/core/patient/onboard`，一次提交患者资料、研究分组、个人用药方案和可选的首次发药；任一步校验失败都会整体回滚。个人方案默认复制分组方案，`adjusted=true` 时仅允许调整组内药品的疗程、启停、单次用量和服药时间，并记录差异、原因、生效日期和来源版本。`patient/save`、`patient/treatment`、`patient/dispense` 继续供已建档患者的分步维护使用。
 
 所有日期以启动时上海日期生成；工作台指标、趋势及待办均从同一份明细计算。患者建档后创建药品与计划，用药天数以药品创建日期为第 1 天；上报不早于建档，答卷不早于问卷创建与允许填写日期。患者姓名、手机号、医院和资源均为虚构。代码中的示例用药内容仅为界面演示。
 
 `GET /app/core/medication-plan/index` 额外支持可选 `as_of=YYYY-MM-DD`：在 `overdue=true` 时，逾期截止日和 `overdue_range` 起点以该日计算，保证历史工作台待办下钻与统计一致。缺省或非法日期仍使用上海当天；该参数不改变常规列表的 `scope=today` 行为，待办下钻应传 `scope=all,status=0,overdue=true`。
+
+`GET /app/core/patient/index`、`followup/index`、`feedback/index`、`reports/index`、`medication-plan/index` 和 `dashboard/overview` 支持 `project_id`/`group_id`；明细列表支持对应日期范围。`GET /app/core/research-export` 支持 `patients|tasks|reports|feedback|medications`，任务导出含轮次和来源。
 
 测试可以 `import { createMockServer } from './server.mjs'`，再调用 `createMockServer({now: '2026-09-08T04:00:00Z'})`；返回未监听的 `node:http.Server`，可用 `listen(0, '127.0.0.1')` 随机端口。`now` 也接受 Date 或返回 Date 的函数，便于验证过期和上海日期边界。每次创建实例都有独立数据，无外部副作用。

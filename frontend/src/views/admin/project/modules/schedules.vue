@@ -1,5 +1,16 @@
 <template>
   <div>
+    <ElAlert
+      :title="
+        props.reminderName
+          ? `提醒统一采用“${props.reminderName}”`
+          : '尚未关联提醒方案；任务会正常生成并显示在患者待办中'
+      "
+      :type="props.reminderName ? 'info' : 'warning'"
+      :closable="false"
+      show-icon
+      class="reminder-tip"
+    />
     <div class="add-row">
       <ElSelect v-model="selected" :placeholder="`选择${label}`" filterable style="width: 340px">
         <ElOption
@@ -55,16 +66,13 @@
           ><ElInputNumber v-model="row.deadline_days" :min="1" :max="3650" :precision="0"
         /></ElFormItem>
       </div>
-      <ElCheckbox v-model="row.reminders.start">开始提醒</ElCheckbox
-      ><ElCheckbox v-model="row.reminders.due">到期提醒</ElCheckbox
-      ><ElCheckbox v-model="row.reminders.overdue">逾期提醒</ElCheckbox>
     </div>
   </div>
 </template>
 <script setup lang="ts">
   import { ref } from 'vue'
   import type { Schedule, Source } from '@/api/project'
-  const props = defineProps<{ sources: Source[]; label: string }>()
+  const props = defineProps<{ sources: Source[]; label: string; reminderName?: string }>()
   const model = defineModel<Schedule[]>({ required: true })
   const selected = ref<number>()
   function add() {
@@ -97,6 +105,9 @@
     gap: 12px;
     align-items: center;
     margin-bottom: 12px;
+  }
+  .reminder-tip {
+    margin-bottom: 16px;
   }
   .row-title strong {
     flex: 1;

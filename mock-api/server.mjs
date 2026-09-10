@@ -7,7 +7,9 @@ import { registerFollowup } from './followup.mjs';
 import { registerPatientManagement } from './patient-management.mjs';
 import { registerTaskTemplates } from './task-templates.mjs';
 import { registerMedicationSchemes } from './medication-schemes.mjs';
+import { registerReminderSchemes } from './reminder-schemes.mjs';
 import { registerProjects } from './projects.mjs';
+import { registerPatientApp } from './patient-app.mjs';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
@@ -72,7 +74,10 @@ export function createMockServer({ now = () => new Date() } = {}) {
   const nextId = rows => Math.max(0, ...rows.map(r => r.id)) + 1;
   const invalidateSessions = id => { for (const [token, session] of sessions) if (session.id === id) sessions.delete(token); };
   const userInfo = admin => ({ ...safeAdmin(admin), realname: admin.realname || admin.username, roles: ['R_ADMIN'], buttons: ['*'], dashboard: '/dashboard/console', department: { id: 1, name: '模拟管理团队' } });
-  const answerCount = id => db.answers.filter(a => a.template_id === id).reduce((sum, a) => sum + a.values.length, 0);
+  const surveyAnswers = id => db.answers.filter(answer => answer.template_id === id);
+  const submissionCount = id => surveyAnswers(id).length;
+  const participantCount = id => new Set(surveyAnswers(id).map(answer => answer.user_id)).size;
+  const answerRowCount = id => surveyAnswers(id).reduce((sum, answer) => sum + answer.values.length, 0);
   const answerDetail = (userId, templateId) => {
     find(db.patients, userId, '患者');
     let s = find(db.surveys, templateId, '问卷');
@@ -91,13 +96,16 @@ export function createMockServer({ now = () => new Date() } = {}) {
   };
   const adverseRows = q => db.adverse.filter(r => (q.pending!=='1'||(r.processing_status||'待处理')!=='已处理') && (!q.processing_status || (r.processing_status||'待处理')===q.processing_status) && (!q.patient_name || r.patient_name.includes(q.patient_name)) && (!integer(q.user_id) || r.user_id === integer(q.user_id)) && (![1, 2, 3].includes(integer(q.severity)) || r.severity === integer(q.severity))).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id - a.id);
   const routes = new Map();
+  const patientRoutes = new Map();
   const route = (method, path, handler) => routes.set(`${method} ${path}`, handler);
   const core = (method, path, handler) => route(method, `/app/core/${path}`, handler);
+  const patientRoute = (method, path, handler) => patientRoutes.set(`${method} ${path}`, handler);
   core('GET', 'system/user', ({ admin }) => userInfo(admin));
   core('GET', 'system/menu', () => createMenu());
   core('GET', 'system/dictAll', () => ({ gender: [{ label: '男', value: '1' }, { label: '女', value: '2' }] }));
   registerTaskTemplates({ core, db, assert, find, page, clean, timestamp, nextId });
   registerMedicationSchemes({ core, db, assert, find, page, clean, timestamp, nextId });
+  registerReminderSchemes({ core, db, assert, find, page, clean, timestamp, nextId });
   registerProjects({ core, db, assert, find, page, clean, isDate, timestamp, nextId });
   registerResearchExport({core,db,assert,clean,today,spreadsheet});
   core('GET', 'admin/index', () => descId(db.admins).map(safeAdmin));
@@ -125,7 +133,12 @@ export function createMockServer({ now = () => new Date() } = {}) {
   registerReports({core,db,assert,find,page,clean,isDate,timestamp,nextId});
   registerMedicationRecords({core,db,assert,find,clean,isDate,timestamp,nextId,today});
   registerPatientManagement({core,db,assert,find,page,clean,isDate,timestamp,nextId,today,shiftDate});
-  core('GET', 'patient/detail', ({ query }) => find(db.patients, query.user_id, '患者'));
+  registerPatientApp({patientRoute,db,assert,clean,isDate,timestamp,nextId,today,shiftDate,randomUUID});
+  core('GET', 'patient/detail', ({ query }) => {
+    const patient = find(db.patients, query.user_id, '患者');
+    const treatment = db.patientTreatments.filter(row => row.user_id === patient.id).at(-1);
+    return { ...patient, arrangement_ready: Boolean(treatment), arrangement_type: treatment ? (treatment.adjusted ? '个体调整' : '分组方案') : '待确认方案' };
+  });
   core('GET', 'patient/medicine-list', ({ query }) => { find(db.patients, query.user_id, '患者'); return page(descId(db.medicines.filter(m => m.user_id === integer(query.user_id))), query); });
   core('GET', 'patient/survey-status', ({ query }) => {
     const p = find(db.patients, query.user_id, '患者');
@@ -144,26 +157,29 @@ export function createMockServer({ now = () => new Date() } = {}) {
     const overdueRange = ['7d', '30d'].includes(q.overdue_range) ? q.overdue_range : '';
     const start = shiftDate(asOf, -(overdueRange === '7d' ? 6 : 29));
     const rows = db.plans.filter(r => (!q.patient_name || r.patient_name.includes(q.patient_name)) && (!integer(q.user_id) || r.user_id === integer(q.user_id))
-      && (scope !== 'today' || r.plan_date === today()) && (!q.plan_date || r.plan_date === q.plan_date)
+      && (!integer(q.project_id) || r.project_id === integer(q.project_id)) && (!integer(q.group_id) || r.group_id === integer(q.group_id))
+      && (scope !== 'today' || r.plan_date === today()) && (!q.plan_date || r.plan_date === q.plan_date) && (!q.start_date || r.plan_date >= q.start_date) && (!q.end_date || r.plan_date <= q.end_date)
       && (!overdue || r.plan_date < asOf) && (!overdue || !overdueRange || r.plan_date >= start));
     const filtered = ['0', '1', '2', '3'].includes(q.status) ? statusFilter(rows, q) : rows;
     return { ...page(filtered.sort((a, b) => b.plan_date.localeCompare(a.plan_date) || a.plan_time.localeCompare(b.plan_time) || b.id - a.id), q), scope };
   });
   core('GET', 'adverse-reaction/index', ({ query }) => page(adverseRows(query), query));
   core('GET', 'adverse-reaction/export', ({ query, res }) => spreadsheet(res, 'adverse_reaction_mock.xlsx', ['ID', '患者姓名', '手机号', '发生时间', '主要症状', '症状描述', '严重程度', '处理建议', '状态', '上报时间'], adverseRows(query).map(r => [r.id, r.patient_name, r.patient_mobile, r.occurred_at, r.symptom_summary, r.symptom_description, r.severity_text, r.advice_text, r.status_text, r.created_at])));
-  core('GET','dashboard/research',()=>({patients:db.patients.length,treating:db.patients.filter(p=>p.study_state==='治疗中').length,completed:db.patients.filter(p=>p.study_state==='已完成').length,withdrawn:db.patients.filter(p=>p.study_state==='提前退出').length,reports_pending:db.reports.filter(r=>r.status==='待核对').length,events_pending:db.adverse.filter(a=>(a.processing_status||'待处理')!=='已处理').length,tasks_overdue:db.followupTasks.filter(t=>t.due_date<today()&&!['已完成','已取消'].includes(t.status)).length,tasks_completed:db.followupTasks.filter(t=>t.status==='已完成').length,tasks_total:db.followupTasks.length}));
+  core('GET','dashboard/research',({query:q})=>{const patients=db.patients.filter(p=>(!integer(q.project_id)||p.project_id===integer(q.project_id))&&(!integer(q.group_id)||p.group_id===integer(q.group_id))),ids=new Set(patients.map(p=>p.id)),tasks=db.followupTasks.filter(t=>ids.has(t.user_id)),reports=db.reports.filter(r=>ids.has(r.user_id)),events=db.adverse.filter(a=>ids.has(a.user_id));return{patients:patients.length,treating:patients.filter(p=>p.study_state==='治疗中').length,completed:patients.filter(p=>p.study_state==='已完成').length,withdrawn:patients.filter(p=>p.study_state==='提前退出').length,reports_pending:reports.filter(r=>r.status==='待核对').length,events_pending:events.filter(a=>(a.processing_status||'待处理')!=='已处理').length,tasks_overdue:tasks.filter(t=>t.due_date<today()&&!['已完成','已取消'].includes(t.status)).length,tasks_completed:tasks.filter(t=>t.status==='已完成').length,tasks_total:tasks.length};});
   core('GET', 'dashboard/overview', ({ query: q }) => {
     const range = ['today', '7d', '30d'].includes(q.range) ? q.range : 'today';
     const date = /^\d{4}-\d{2}-\d{2}$/.test(q.date || '') && !Number.isNaN(Date.parse(q.date)) ? q.date : today();
     const days = range === '7d' ? 7 : range === '30d' ? 30 : 1;
     const start = shiftDate(date, -(days - 1));
     const dates = Array.from({ length: days }, (_, i) => shiftDate(start, i));
-    const plans = db.plans.filter(p => p.plan_date >= start && p.plan_date <= date);
-    const adverse = db.adverse.filter(a => a.occurred_at.slice(0, 10) >= start && a.occurred_at.slice(0, 10) <= date);
-    const archived = db.patients.filter(p => p.is_archived).length;
-    return { range, date, metrics: { patient_total: db.patients.length, archived_total: archived, expected_total: plans.length, completed_total: plans.filter(p => p.status === 1).length, new_adverse_total: adverse.length },
-      archive: { archived, unarchived: db.patients.length - archived }, resources: { survey_total: db.surveys.length, article_total: db.articles.length, medicine_total: db.commonMedicines.length },
-      todos: { overdue_total: db.plans.filter(p => p.status === 0 && p.plan_date < date && (range === 'today' || p.plan_date >= start)).length, pending_review_total: adverse.length },
+    const patients = db.patients.filter(p => (!integer(q.project_id) || p.project_id === integer(q.project_id)) && (!integer(q.group_id) || p.group_id === integer(q.group_id)));
+    const patientIds = new Set(patients.map(p => p.id));
+    const plans = db.plans.filter(p => patientIds.has(p.user_id) && p.plan_date >= start && p.plan_date <= date);
+    const adverse = db.adverse.filter(a => patientIds.has(a.user_id) && a.occurred_at.slice(0, 10) >= start && a.occurred_at.slice(0, 10) <= date);
+    const archived = patients.filter(p => p.is_archived).length;
+    return { range, date, metrics: { patient_total: patients.length, archived_total: archived, expected_total: plans.length, completed_total: plans.filter(p => p.status === 1).length, new_adverse_total: adverse.length },
+      archive: { archived, unarchived: patients.length - archived }, resources: { survey_total: db.surveys.length, article_total: db.articles.length, medicine_total: db.commonMedicines.length },
+      todos: { overdue_total: db.plans.filter(p => patientIds.has(p.user_id) && p.status === 0 && p.plan_date < date && (range === 'today' || p.plan_date >= start)).length, pending_review_total: adverse.length },
       trend: { labels: dates.map(d => d.slice(5)), expected: dates.map(d => plans.filter(p => p.plan_date === d).length), completed: dates.map(d => plans.filter(p => p.plan_date === d && p.status === 1).length) },
       adverse_severity: { mild: adverse.filter(a => a.severity === 1).length, moderate: adverse.filter(a => a.severity === 2).length, severe: adverse.filter(a => a.severity === 3).length } };
   });
@@ -182,10 +198,10 @@ export function createMockServer({ now = () => new Date() } = {}) {
     if (!integer(b.id)) db.articles.push(a);
     return a;
   });
-  core('GET', 'survey/index', ({ query: q }) => page(descId(statusFilter(db.surveys.filter(s => !q.keyword || s.name.includes(q.keyword) || s.code.includes(q.keyword)), q)).map(({ questions, updatedAt, ...s }) => ({ ...s, questionCount: questions.length, answerCount: answerCount(s.id) })), q));
+  core('GET', 'survey/index', ({ query: q }) => page(descId(statusFilter(db.surveys.filter(s => !q.keyword || s.name.includes(q.keyword) || s.code.includes(q.keyword)), q)).map(({ questions, updatedAt, ...s }) => ({ ...s, questionCount: questions.length, answerCount: submissionCount(s.id), participantCount: participantCount(s.id), answerRowCount: answerRowCount(s.id) })), q));
   core('GET', 'survey/detail', ({ query }) => find(db.surveys, query.id, '问卷模板'));
   core('POST', 'survey/toggle-status', toggle(db.surveys, '问卷模板'));
-  core('POST', 'survey/delete', ({ body: b }) => { const s = find(db.surveys, b.id, '问卷模板'); assert(!db.projectGroups.some(g => g.surveys.some(r => r.id === s.id)), '问卷已被研究分组引用，无法删除，请改为停用'); assert(!answerCount(s.id), '该问卷已有作答记录，无法删除，请改为停用'); db.surveys.splice(db.surveys.indexOf(s), 1); return { id: s.id }; });
+  core('POST', 'survey/delete', ({ body: b }) => { const s = find(db.surveys, b.id, '问卷模板'); assert(!db.projectGroups.some(g => g.surveys.some(r => r.id === s.id)), '问卷已被研究分组引用，无法删除，请改为停用'); assert(!submissionCount(s.id), '该问卷已有作答记录，无法删除，请改为停用'); db.surveys.splice(db.surveys.indexOf(s), 1); return { id: s.id }; });
   core('POST', 'survey/save', ({ body: b, admin }) => {
     const old = integer(b.id) ? find(db.surveys, b.id, '问卷模板') : null;
     if (old && b.version !== undefined) assert(b.version === (old.version || 1), '问卷已更新，请刷新后编辑');
@@ -204,7 +220,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
       const q = { id: id || nextQuestion++, questionNo: Number(raw.questionNo ?? raw.question_no), title: clean(raw.title), type: clean(raw.type), required: Number(raw.required ?? 1), sortOrder: Number(raw.sortOrder ?? raw.sort_order ?? 0), placeholder: clean(raw.placeholder), options: [] };
       assert(Number.isInteger(q.questionNo) && q.questionNo > 0, '题号不合法'); assert(q.title && q.title.length <= 512, '题干必填且不超过512字符');
       assert(['RADIO', 'CHECKBOX', 'TEXT'].includes(q.type), '题型不合法'); assert([0, 1].includes(q.required), '必填标记不合法'); assert(q.sortOrder >= 0 && Number.isInteger(q.sortOrder), '题目排序不合法'); assert(q.placeholder.length <= 256, '占位提示不超过256字符');
-      if (previous && answerCount(old.id)) assert(previous.type === q.type, '该问卷已有作答记录，无法修改题型，请停用后新建');
+      if (previous && submissionCount(old.id)) assert(previous.type === q.type, '该问卷已有作答记录，无法修改题型，请停用后新建');
       if (q.type !== 'TEXT') {
         assert(Array.isArray(raw.options) && raw.options.length, '选择题至少需要一个选项');
         q.options = raw.options.map(o => {
@@ -216,13 +232,13 @@ export function createMockServer({ now = () => new Date() } = {}) {
           return option;
         });
       }
-      if (previous && answerCount(old.id)) assert(previous.options.every(o => q.options.some(n => n.id === o.id)), '该问卷已有作答记录，无法删除选项，请停用后新建');
+      if (previous && submissionCount(old.id)) assert(previous.options.every(o => q.options.some(n => n.id === o.id)), '该问卷已有作答记录，无法删除选项，请停用后新建');
       assert(new Set(q.options.map(o => o.id)).size === q.options.length, '选项ID重复');
       return q;
     });
     assert(new Set(questions.map(q => q.questionNo)).size === questions.length, '题号不能重复');
     assert(new Set(questions.map(q => q.id)).size === questions.length, '题目ID重复');
-    if (old && answerCount(old.id)) assert(old.questions.every(q => questions.some(n => n.id === q.id)), '该问卷已有作答记录，无法删除题目，请停用后新建');
+    if (old && submissionCount(old.id)) assert(old.questions.every(q => questions.some(n => n.id === q.id)), '该问卷已有作答记录，无法删除题目，请停用后新建');
     const s = old || { id: nextId(db.surveys), createdAt: timestamp() };
     Object.assign(s, { code, name, description, fillableDay, status, questions, version:(old?.version||0)+1, updatedAt: timestamp() });
     s.history ||= []; s.history.unshift({time:timestamp(),operator:admin.realname||admin.username,before,after:structuredClone({name,description,questions,version:s.version})});
@@ -281,13 +297,6 @@ export function createMockServer({ now = () => new Date() } = {}) {
         if (!file) throw new ApiError('模拟文件不存在（服务重启后上传文件会清空）', 404, 404);
         res.writeHead(200, { 'Content-Type': file.type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); return res.end(file.buffer);
       }
-      if (req.method === 'GET' && path === '/app/patient/archive-detail') {
-        const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
-        const session = patientSessions.get(token);
-        const patient = db.patients.find(p => p.id === session?.id && p.login_enabled && p.created_via === 'admin');
-        assert(session && session.expires > clock().getTime() && patient, '登录已过期，请重新登录', 402);
-        return sendPatientJson(res, patient, '获取成功');
-      }
       const publicCaptcha = req.method === 'GET' && ['/app/core/captcha', '/app/admin/captcha'].includes(path);
       const publicAdminLogin = req.method === 'POST' && ['/app/core/login', '/app/admin/login'].includes(path);
       const publicPatientLogin = req.method === 'POST' && path === '/app/login';
@@ -298,9 +307,16 @@ export function createMockServer({ now = () => new Date() } = {}) {
         return sendJson(res, { result: 1, uuid, image: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}` });
       }
       const handler = routes.get(`${req.method} ${path}`);
-      if (!publicAdminLogin && !publicPatientLogin && !handler) throw new ApiError('该接口未实现本地 Mock', 404, 404);
+      const patientHandler = patientRoutes.get(`${req.method} ${path}`);
+      if (!publicAdminLogin && !publicPatientLogin && !handler && !patientHandler) throw new ApiError('该接口未实现本地 Mock', 404, 404);
       let admin;
-      if (!publicAdminLogin && !publicPatientLogin) {
+      let patient;
+      if (patientHandler) {
+        const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+        const session = patientSessions.get(token);
+        patient = db.patients.find(p => p.id === session?.id && p.login_enabled && p.created_via === 'admin');
+        assert(session && session.expires > clock().getTime() && patient, '登录已过期，请重新登录', 402);
+      } else if (!publicAdminLogin && !publicPatientLogin) {
         const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
         const session = sessions.get(token);
         admin = db.admins.find(a => a.id === session?.id);
@@ -337,9 +353,13 @@ export function createMockServer({ now = () => new Date() } = {}) {
         db.loginLogs.push({ id: nextId(db.loginLogs), admin_id: admin.id, login_time: timestamp(), ip_location: '本地模拟环境', os: '浏览器', ip: '127.0.0.1' });
         return sendJson(res, { token_type: 'Bearer', expires_in: 28800, access_token: token, refresh_token: '' });
       }
-      const result = await handler({ req, res, body, query: Object.fromEntries(url.searchParams), admin });
-      if (req.method === 'POST') db.operationLogs.push({ id: nextId(db.operationLogs), admin_id: admin.id, create_time: timestamp(), service_name: '模拟数据操作', router: path, ip_location: '本地模拟环境' });
-      if (!res.writableEnded) sendJson(res, result ?? [], req.method === 'POST' ? '操作成功' : 'success');
+      const context = { req, res, body, query: Object.fromEntries(url.searchParams), admin, patient };
+      const result = await (patientHandler || handler)(context);
+      if (req.method === 'POST' && admin) db.operationLogs.push({ id: nextId(db.operationLogs), admin_id: admin.id, create_time: timestamp(), service_name: '模拟数据操作', router: path, ip_location: '本地模拟环境' });
+      if (!res.writableEnded) {
+        if (patientHandler) sendPatientJson(res, result ?? [], req.method === 'POST' ? '提交成功' : '获取成功');
+        else sendJson(res, result ?? [], req.method === 'POST' ? '操作成功' : 'success');
+      }
     } catch (error) {
       if (!res.writableEnded) {
         res.writeHead(error.httpStatus || 200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });

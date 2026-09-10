@@ -17,6 +17,9 @@ export interface PatientRecord {
   group_name?: string
   medication_scheme_id?: number
   medication_scheme_name?: string
+  study_state?: string
+  arrangement_ready?: boolean
+  arrangement_type?: '待确认方案' | '分组方案' | '个体调整'
   enroll_date: string
   status: number
   created_at: string
@@ -26,6 +29,10 @@ export interface PatientRecord {
 export interface PatientListParams {
   keyword?: string
   study_state?: string
+  project_id?: number
+  group_id?: number
+  start_date?: string
+  end_date?: string
   current: number
   size: number
 }

@@ -4,10 +4,24 @@
       ><h2 v-if="!embedded">每日反馈记录</h2
       ><ResearchExport
         kind="feedback"
-        :params="{ keyword, date, user_id: effectiveUserId || undefined }"
+        :params="{
+          keyword,
+          date,
+          user_id: effectiveUserId || undefined,
+          project_id: projectId,
+          group_id: groupId,
+          start_date: dateRange[0],
+          end_date: dateRange[1]
+        }"
       /><ElButton type="primary" @click="create">代录反馈</ElButton></div
-    ><ElCard shadow="never"
-      ><div class="toolbar"
+    ><ElCard shadow="never">
+      <ResearchScopeFilter
+        v-if="!embedded"
+        v-model:project-id="projectId"
+        v-model:group-id="groupId"
+        v-model:date-range="dateRange"
+        @change="search" />
+      <div class="toolbar"
         ><ElInput
           v-if="!embedded"
           v-model="keyword"
@@ -77,6 +91,7 @@
 </template>
 <script setup lang="ts">
   import ResearchExport from '@/components/business/research-export/index.vue'
+  import ResearchScopeFilter from '@/components/business/research-scope-filter/index.vue'
 
   import { computed, ref, onMounted, watch } from 'vue'
   import { useRoute } from 'vue-router'
@@ -102,7 +117,7 @@
     route = useRoute(),
     embedded = computed(() => props.embedded),
     effectiveUserId = computed(() => props.userId || Number(route.query.user_id) || 0),
-    names = ['咳嗽', '咳痰', '发热', '盗汗', '乏力', '食欲下降', '胸闷气短', '其他'],
+    names = ['咳嗽', '咳痰', '发热', '盗汗', '乏力', '食欲下降', '体重下降', '胸闷气短', '其他'],
     changes = ['首次记录', '减轻', '无变化', '加重', '新出现', '消失'],
     blank = (): Feedback => ({
       date: '',
@@ -115,6 +130,9 @@
     patients = ref<PatientRecord[]>([]),
     keyword = ref(''),
     date = ref(''),
+    projectId = ref<number | undefined>(Number(route.query.project_id) || undefined),
+    groupId = ref<number | undefined>(Number(route.query.group_id) || undefined),
+    dateRange = ref<string[]>([]),
     current = ref(1),
     total = ref(0),
     loading = ref(false),
@@ -129,6 +147,10 @@
           keyword: keyword.value,
           date: date.value,
           user_id: effectiveUserId.value || undefined,
+          project_id: projectId.value,
+          group_id: groupId.value,
+          start_date: dateRange.value[0],
+          end_date: dateRange.value[1],
           current: current.value,
           size: 10
         }
@@ -186,28 +208,35 @@
   .page {
     padding: 20px;
   }
+
   .page.embedded {
     padding: 0;
   }
+
   .page.embedded > .toolbar {
     justify-content: flex-end;
     margin-top: 0;
   }
+
   .toolbar {
     display: flex;
-    align-items: center;
     gap: 16px;
+    align-items: center;
     margin: 16px 0;
   }
+
   .toolbar h2 {
     flex: 1;
   }
+
   .toolbar .el-input {
     max-width: 240px;
   }
+
   .toolbar .el-select {
     width: 180px;
   }
+
   .el-pagination {
     margin-top: 20px;
   }

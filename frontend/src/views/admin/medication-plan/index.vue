@@ -45,6 +45,27 @@
       </div>
     </div>
 
+    <div class="scope-toolbar">
+      <ResearchScopeFilter
+        v-model:project-id="searchForm.project_id"
+        v-model:group-id="searchForm.group_id"
+        v-model:date-range="searchForm.date_range"
+        @change="handleScopeFilter"
+      />
+      <ResearchExport
+        kind="medications"
+        :params="{
+          keyword: searchForm.patient_name,
+          status: searchForm.status,
+          user_id: searchForm.user_id,
+          project_id: searchForm.project_id,
+          group_id: searchForm.group_id,
+          start_date: searchForm.date_range[0],
+          end_date: searchForm.date_range[1]
+        }"
+      />
+    </div>
+
     <ElCard shadow="never">
       <ElTable :data="list" v-loading="loading" border>
         <ElTableColumn prop="id" label="ID" width="80" />
@@ -94,6 +115,8 @@
 </template>
 
 <script setup lang="ts">
+  import ResearchExport from '@/components/business/research-export/index.vue'
+  import ResearchScopeFilter from '@/components/business/research-scope-filter/index.vue'
   import request from '@/utils/http'
   import { ElMessageBox } from 'element-plus'
   async function recordResult(id: number, status: number) {
@@ -130,7 +153,10 @@
     status: undefined as 0 | 1 | 2 | 3 | undefined,
     overdue: false,
     as_of: undefined as string | undefined,
-    overdue_range: undefined as '7d' | '30d' | undefined
+    overdue_range: undefined as '7d' | '30d' | undefined,
+    project_id: undefined as number | undefined,
+    group_id: undefined as number | undefined,
+    date_range: [] as string[]
   })
   const pagination = reactive({
     current: 1,
@@ -151,7 +177,11 @@
         status: searchForm.status,
         overdue: searchForm.overdue || undefined,
         overdue_range: searchForm.overdue_range,
-        as_of: searchForm.as_of
+        as_of: searchForm.as_of,
+        project_id: searchForm.project_id,
+        group_id: searchForm.group_id,
+        start_date: searchForm.date_range[0],
+        end_date: searchForm.date_range[1]
       })
       list.value = res.list
       pagination.total = res.total
@@ -189,6 +219,14 @@
     handleSearch()
   }
 
+  const handleScopeFilter = () => {
+    if (searchForm.date_range.length) {
+      searchForm.scope = 'all'
+      searchForm.plan_date = ''
+    }
+    handleSearch()
+  }
+
   const syncFromRoute = () => {
     searchForm.patient_name =
       typeof route.query.patient_name === 'string' ? route.query.patient_name : ''
@@ -198,13 +236,19 @@
         : undefined
     searchForm.scope = route.query.scope === 'all' ? 'all' : 'today'
     searchForm.plan_date = typeof route.query.plan_date === 'string' ? route.query.plan_date : ''
-    searchForm.status = route.query.status === '0' ? 0 : route.query.status === '1' ? 1 : undefined
+    const routeStatus = Number(route.query.status)
+    searchForm.status =
+      routeStatus === 0 || routeStatus === 1 || routeStatus === 2 || routeStatus === 3
+        ? routeStatus
+        : undefined
     searchForm.overdue = route.query.overdue === '1'
     searchForm.as_of = typeof route.query.as_of === 'string' ? route.query.as_of : undefined
     searchForm.overdue_range =
       route.query.overdue_range === '7d' || route.query.overdue_range === '30d'
         ? route.query.overdue_range
         : undefined
+    searchForm.project_id = route.query.project_id ? Number(route.query.project_id) : undefined
+    searchForm.group_id = route.query.group_id ? Number(route.query.group_id) : undefined
     if (searchForm.overdue) {
       searchForm.scope = 'all'
       searchForm.plan_date = ''
@@ -232,20 +276,33 @@
 
   .toolbar {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
 
     h2 {
-      margin: 0 0 6px;
+      margin: 0;
       font-size: 22px;
       font-weight: 700;
     }
   }
 
+  .scope-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+  }
+
   .actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 12px;
+    width: 100%;
   }
 
   .pagination {

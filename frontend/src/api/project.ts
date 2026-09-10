@@ -35,6 +35,18 @@ export interface Source {
   questions?: { id: number; title: string; options: { label: string }[] }[]
   requirements?: string
 }
+export interface ReminderSource extends Source {
+  name: string
+  medication_enabled: boolean
+  medication_advance_minutes: number
+  task_start_enabled: boolean
+  task_due_enabled: boolean
+  task_overdue_enabled: boolean
+  task_remind_time: string
+  pickup_enabled: boolean
+  pickup_advance_days: number
+  pickup_remind_time: string
+}
 export interface Binding {
   id: number
   snapshot: Source
@@ -60,6 +72,7 @@ export interface GroupRecord {
   name: string
   description: string
   medication: Medication | null
+  reminder: { id: number; snapshot: ReminderSource } | null
   surveys: Schedule[]
   tasks: Schedule[]
   participant_ids: number[]
@@ -78,6 +91,7 @@ export interface GroupRecord {
 }
 export interface Catalog {
   medication_schemes: Source[]
+  reminder_schemes: ReminderSource[]
   surveys: Source[]
   task_templates: Source[]
 }
@@ -134,6 +148,7 @@ export const saveGroup = (group: GroupRecord) =>
       name: group.name,
       description: group.description,
       medication: group.medication,
+      reminder: group.reminder,
       surveys: group.surveys,
       tasks: group.tasks,
       participant_ids: group.participant_ids

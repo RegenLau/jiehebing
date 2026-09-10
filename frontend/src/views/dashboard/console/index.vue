@@ -36,7 +36,17 @@
       </div>
     </header>
 
-    <ResearchSummary />
+    <div class="dashboard-scope">
+      <ResearchScopeFilter
+        v-model:project-id="projectId"
+        v-model:group-id="groupId"
+        :show-date="false"
+        @change="loadDashboard"
+      />
+      <span>当前统计范围：{{ projectId ? (groupId ? '所选分组' : '所选研究') : '全部研究' }}</span>
+    </div>
+
+    <ResearchSummary :project-id="projectId" :group-id="groupId" />
     <div class="metric-grid">
       <article v-for="item in metrics" :key="item.title" class="metric-card">
         <div class="metric-icon" :class="item.tone">
@@ -123,6 +133,7 @@
 
 <script setup lang="ts">
   import ResearchSummary from './research-summary.vue'
+  import ResearchScopeFilter from '@/components/business/research-scope-filter/index.vue'
 
   import { Icon } from '@iconify/vue'
   import type { EChartsOption } from '@/plugins/echarts'
@@ -157,6 +168,8 @@
   ]
   const activePeriod = ref<DashboardRange>('today')
   const selectedDate = ref('')
+  const projectId = ref<number>()
+  const groupId = ref<number>()
   const datePickerVisible = ref(false)
   const router = useRouter()
   const dashboardData = ref<DashboardOverview>({
@@ -264,7 +277,7 @@
       value: dashboardData.value.todos.overdue_total,
       icon: AlarmClock,
       tone: 'red',
-      path: `/medication-plan/index?scope=all&status=0&overdue=1${activePeriod.value === 'today' ? '' : `&overdue_range=${activePeriod.value}`}${selectedDate.value ? `&as_of=${selectedDate.value}` : ''}`
+      path: `/medication-plan/index?scope=all&status=0&overdue=1${activePeriod.value === 'today' ? '' : `&overdue_range=${activePeriod.value}`}${selectedDate.value ? `&as_of=${selectedDate.value}` : ''}${projectId.value ? `&project_id=${projectId.value}` : ''}${groupId.value ? `&group_id=${groupId.value}` : ''}`
     },
     {
       label: '数据待复核',
@@ -463,7 +476,8 @@
     try {
       dashboardData.value = await fetchDashboardOverview(
         activePeriod.value,
-        selectedDate.value || undefined
+        selectedDate.value || undefined,
+        { project_id: projectId.value, group_id: groupId.value }
       )
     } catch (error) {
       console.error('加载工作台统计失败:', error)
@@ -512,6 +526,18 @@
   .cockpit-header {
     justify-content: space-between;
     margin: 2px 0 22px;
+  }
+  .dashboard-scope {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px;
+    margin-bottom: 18px;
+    color: var(--el-text-color-secondary);
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
   }
   h1,
   h2,

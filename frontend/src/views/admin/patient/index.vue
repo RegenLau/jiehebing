@@ -11,28 +11,71 @@
           placeholder="姓名、手机号、患者编号"
           clearable
           @keyup.enter="search"
-        /><ElButton @click="search">查询</ElButton
+        /><ElSelect v-model="studyState" placeholder="全部研究状态" clearable @change="search">
+          <ElOption v-for="state in studyStates" :key="state" :label="state" :value="state" />
+        </ElSelect>
+        <ElButton @click="search">查询</ElButton
         ><ElButton type="primary" @click="goPatientManagement()">新增患者</ElButton>
-        <ElButton @click="loadList" :loading="loading">刷新</ElButton>
       </div>
+    </div>
+
+    <div class="scope-toolbar">
+      <ResearchScopeFilter
+        v-model:project-id="projectId"
+        v-model:group-id="groupId"
+        v-model:date-range="dateRange"
+        @change="search"
+      />
+      <ResearchExport
+        kind="patients"
+        :params="{
+          keyword,
+          study_state: studyState,
+          project_id: projectId,
+          group_id: groupId,
+          start_date: dateRange[0],
+          end_date: dateRange[1]
+        }"
+      />
     </div>
 
     <ElCard shadow="never">
       <ElTable :data="list" v-loading="loading" border>
-        <ElTableColumn prop="id" label="ID" width="80" /><ElTableColumn
-          prop="patient_code"
-          label="患者编号"
-          width="120"
-        /><ElTableColumn prop="group_name" label="研究分组" width="120" /><ElTableColumn
-          prop="study_state"
-          label="研究状态"
-          width="100"
-        />
-        <ElTableColumn prop="name" label="患者姓名" min-width="140" />
-        <ElTableColumn prop="mobile" label="手机号" min-width="150" />
-        <ElTableColumn prop="gender_text" label="性别" width="90" />
-        <ElTableColumn prop="birth_date" label="出生日期" width="120" />
-        <ElTableColumn prop="age" label="年龄" width="80" />
+        <ElTableColumn label="患者" min-width="210" fixed="left">
+          <template #default="{ row }">
+            <strong>{{ row.name }}</strong>
+            <p class="cell-note">{{ row.patient_code }} · {{ row.mobile }}</p>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="研究 / 分组" min-width="220">
+          <template #default="{ row }">
+            <span>{{ row.project_name || '-' }}</span>
+            <p class="cell-note">{{ row.group_name || '未分组' }}</p>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="个人用药" min-width="190">
+          <template #default="{ row }">
+            <ElTag
+              :type="
+                row.arrangement_type === '个体调整'
+                  ? 'warning'
+                  : row.arrangement_ready
+                    ? 'success'
+                    : 'info'
+              "
+            >
+              {{ row.arrangement_type || '待确认方案' }}
+            </ElTag>
+            <p class="cell-note">{{ row.medication_scheme_name || '尚未关联用药方案' }}</p>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="研究状态" width="110">
+          <template #default="{ row }"
+            ><ElTag :type="stateTag(row.study_state)">{{
+              row.study_state || '待启用'
+            }}</ElTag></template
+          >
+        </ElTableColumn>
         <ElTableColumn label="患者端登录" width="120">
           <template #default="{ row }">
             <ElTag :type="row.login_enabled ? 'success' : 'info'">
@@ -40,12 +83,11 @@
             </ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn prop="enroll_date" label="建档日期" min-width="120" />
-        <ElTableColumn prop="created_at" label="创建时间" min-width="180" />
-        <ElTableColumn label="操作" width="180" fixed="right">
+        <ElTableColumn prop="enroll_date" label="入组日期" width="120" />
+        <ElTableColumn label="操作" width="190" fixed="right">
           <template #default="{ row }">
-            <ElButton link type="primary" @click="goPatientDetail(row)">详情</ElButton
-            ><ElButton link type="primary" @click="goPatientManagement(row)">研究管理</ElButton>
+            <ElButton link type="primary" @click="goPatientManagement(row)">管理安排</ElButton>
+            <ElButton link @click="goPatientDetail(row)">查看记录</ElButton>
           </template>
         </ElTableColumn>
       </ElTable>
@@ -67,7 +109,15 @@
 </template>
 
 <script setup lang="ts">
+  import ResearchExport from '@/components/business/research-export/index.vue'
+  import ResearchScopeFilter from '@/components/business/research-scope-filter/index.vue'
+
   const keyword = ref('')
+  const route = useRoute()
+  const projectId = ref<number | undefined>(Number(route.query.project_id) || undefined)
+  const groupId = ref<number | undefined>(Number(route.query.group_id) || undefined)
+  const dateRange = ref<string[]>([])
+  const studyStates = ['待启用', '治疗中', '暂停用药', '已完成', '提前退出', '失访']
   function search() {
     pagination.current = 1
     void loadList()
@@ -79,10 +129,11 @@
   defineOptions({ name: 'AdminPatient' })
 
   const router = useRouter()
-  const route = useRoute()
+  const studyState = ref(typeof route.query.study_state === 'string' ? route.query.study_state : '')
   watch(
     () => route.query.study_state,
     () => {
+      studyState.value = typeof route.query.study_state === 'string' ? route.query.study_state : ''
       pagination.current = 1
       void loadList()
     }
@@ -100,8 +151,11 @@
     try {
       const res = await fetchPatientList({
         keyword: keyword.value,
-        study_state:
-          typeof route.query.study_state === 'string' ? route.query.study_state : undefined,
+        study_state: studyState.value || undefined,
+        project_id: projectId.value,
+        group_id: groupId.value,
+        start_date: dateRange.value[0],
+        end_date: dateRange.value[1],
         current: pagination.current,
         size: pagination.size
       })
@@ -137,6 +191,13 @@
     })
   }
 
+  const stateTag = (state?: string): 'success' | 'warning' | 'danger' | 'info' => {
+    if (state === '治疗中') return 'success'
+    if (state === '暂停用药' || state === '提前退出') return 'warning'
+    if (state === '失访') return 'danger'
+    return 'info'
+  }
+
   onMounted(() => {
     loadList()
   })
@@ -169,12 +230,45 @@
 
   .actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 12px;
+
+    .el-input {
+      width: 240px;
+    }
+
+    .el-select {
+      width: 150px;
+    }
+  }
+
+  .scope-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+  }
+
+  .cell-note {
+    margin: 4px 0 0;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
   }
 
   .pagination {
     display: flex;
     justify-content: flex-end;
     margin-top: 16px;
+  }
+
+  @media (max-width: 900px) {
+    .toolbar {
+      align-items: flex-start;
+      flex-direction: column;
+    }
   }
 </style>

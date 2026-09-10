@@ -7,11 +7,21 @@
         :params="{
           keyword,
           status: status || route.query.status,
-          user_id: effectiveUserId || undefined
+          user_id: effectiveUserId || undefined,
+          project_id: projectId,
+          group_id: groupId,
+          start_date: dateRange[0],
+          end_date: dateRange[1]
         }"
       /><ElButton type="primary" @click="create">代录报告</ElButton></div
-    ><ElCard shadow="never"
-      ><div class="toolbar"
+    ><ElCard shadow="never">
+      <ResearchScopeFilter
+        v-if="!embedded"
+        v-model:project-id="projectId"
+        v-model:group-id="groupId"
+        v-model:date-range="dateRange"
+        @change="search" />
+      <div class="toolbar"
         ><ElInput
           v-if="!embedded"
           v-model="keyword"
@@ -133,10 +143,18 @@
               ><template #default="{ row }"
                 ><ElInput
                   v-model="row.reference"
-                  :disabled="form.status !== '待核对'" /></template></ElTableColumn></ElTable
+                  :disabled="form.status !== '待核对'" /></template></ElTableColumn
+            ><ElTableColumn label="异常标识" width="130"
+              ><template #default="{ row }"
+                ><ElSelect v-model="row.flag" :disabled="form.status !== '待核对'"
+                  ><ElOption label="未标记" value="" /><ElOption
+                    label="偏低"
+                    value="偏低" /><ElOption label="偏高" value="偏高" /><ElOption
+                    label="异常"
+                    value="异常" /></ElSelect></template></ElTableColumn></ElTable
           ><ElButton
             v-if="form.status === '待核对'"
-            @click="form.metrics.push({ name: '', value: '', unit: '', reference: '' })"
+            @click="form.metrics.push({ name: '', value: '', unit: '', reference: '', flag: '' })"
             >添加指标</ElButton
           ><ElFormItem v-if="form.status === '待核对'" label="核对说明/补充原因"
             ><ElInput v-model="reason" type="textarea" /></ElFormItem
@@ -167,6 +185,7 @@
 </template>
 <script setup lang="ts">
   import ResearchExport from '@/components/business/research-export/index.vue'
+  import ResearchScopeFilter from '@/components/business/research-scope-filter/index.vue'
 
   import { computed, ref, onMounted, watch } from 'vue'
   import { useRoute } from 'vue-router'
@@ -180,7 +199,7 @@
     type: string
     exam_date: string
     status: string
-    metrics: { name: string; value: string; unit: string; reference: string }[]
+    metrics: { name: string; value: string; unit: string; reference: string; flag: string }[]
     versions: { time: string; note: string; files: { url: string; name: string; type: string }[] }[]
     history: { time: string; operator: string; reason: string }[]
   }
@@ -205,6 +224,9 @@
     tasks = ref<{ id: number; name: string; type: string; date: string; status: string }[]>([]),
     keyword = ref(''),
     status = ref(''),
+    projectId = ref<number | undefined>(Number(route.query.project_id) || undefined),
+    groupId = ref<number | undefined>(Number(route.query.group_id) || undefined),
+    dateRange = ref<string[]>([]),
     current = ref(1),
     total = ref(0),
     loading = ref(false),
@@ -222,6 +244,10 @@
           keyword: keyword.value,
           status: status.value || route.query.status,
           user_id: effectiveUserId.value || undefined,
+          project_id: projectId.value,
+          group_id: groupId.value,
+          start_date: dateRange.value[0],
+          end_date: dateRange.value[1],
           current: current.value,
           size: 10
         }
@@ -337,35 +363,44 @@
   .page {
     padding: 20px;
   }
+
   .page.embedded {
     padding: 0;
   }
+
   .page.embedded > .toolbar {
     justify-content: flex-end;
   }
+
   .toolbar {
     display: flex;
-    align-items: center;
     gap: 16px;
+    align-items: center;
     margin-bottom: 20px;
   }
+
   .toolbar h2 {
     flex: 1;
   }
+
   .toolbar .el-input {
     max-width: 260px;
   }
+
   .toolbar .el-select {
     width: 160px;
   }
+
   .el-pagination {
     margin-top: 20px;
   }
+
   .files {
     display: flex;
-    gap: 16px;
     flex-wrap: wrap;
+    gap: 16px;
   }
+
   .files .el-image {
     width: 160px;
     height: 160px;

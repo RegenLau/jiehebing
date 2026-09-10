@@ -35,6 +35,10 @@ export interface MedicationPlanListParams {
   overdue?: boolean
   overdue_range?: '7d' | '30d'
   as_of?: string
+  project_id?: number
+  group_id?: number
+  start_date?: string
+  end_date?: string
 }
 
 export interface MedicationPlanListResponse {

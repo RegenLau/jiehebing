@@ -28,12 +28,19 @@
               row.medication?.snapshot.name || '未配置'
             }}</template></ElTableColumn
           >
-          <ElTableColumn label="配置情况" min-width="240"
-            ><template #default="{ row }"
-              >随访任务 {{ row.surveys.length + row.tasks.length }} · 患者
-              {{ row.participant_ids?.length || 0 }}</template
-            ></ElTableColumn
-          >
+          <ElTableColumn label="配置情况" min-width="300">
+            <template #default="{ row }">
+              <div class="config-tags">
+                <ElTag effect="plain">随访 {{ row.surveys.length + row.tasks.length }} 项</ElTag>
+                <ElTag :type="row.reminder ? 'success' : 'warning'" effect="plain">
+                  {{ row.reminder?.snapshot.name || '未配置提醒' }}
+                </ElTag>
+                <ElTag type="info" effect="plain">
+                  患者 {{ row.participant_ids?.length || 0 }} 人
+                </ElTag>
+              </div>
+            </template>
+          </ElTableColumn>
           <ElTableColumn label="分组版本" width="100"
             ><template #default="{ row }">第 {{ row.revision }} 版</template></ElTableColumn
           >
@@ -258,5 +265,10 @@
   }
   .heading p {
     color: var(--el-text-color-secondary);
+  }
+  .config-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 </style>

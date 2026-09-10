@@ -36,7 +36,8 @@
         <ElTableColumn prop="code" label="模板编码" min-width="180" />
 
         <ElTableColumn prop="questionCount" label="题目数" width="90" />
-        <ElTableColumn prop="answerCount" label="题答案条数" width="90" />
+        <ElTableColumn prop="answerCount" label="答卷份数" width="100" />
+        <ElTableColumn prop="participantCount" label="参与患者" width="100" />
         <ElTableColumn label="状态" width="100">
           <template #default="{ row }">
             <ElTag :type="row.status === 1 ? 'success' : 'info'">

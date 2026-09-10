@@ -70,6 +70,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
   });
   core('GET', 'project/catalog', () => ({
     medication_schemes: db.medicationSchemes, task_templates: db.taskTemplates,
+    reminder_schemes: db.reminderSchemes,
     surveys: db.surveys.map(s => ({ id: s.id, name: s.name, description: s.description, status: s.status, version: s.updatedAt, questions: s.questions })),
   }));
   core('GET', 'project/participants', ({ query: q }) => {
@@ -84,7 +85,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     assert(Object.keys(b).every(k => ['project_id','name','description'].includes(k)), '创建分组只需基础信息，请创建后再设置方案和任务');
     const name = text(b.name,'分组名称',60,true), description = text(b.description,'分组说明',1000);
     assert(!db.projectGroups.some(g => g.project_id === p.id && g.name.toLowerCase() === name.toLowerCase()), '当前项目已有同名分组');
-    const record = { id:nextId(db.projectGroups), project_id:p.id, name, description, revision:1, medication:null, surveys:[],tasks:[],participant_ids:[],participants:[],created_at:timestamp(),updated_at:timestamp() };
+    const record = { id:nextId(db.projectGroups), project_id:p.id, name, description, revision:1, medication:null, reminder:null, surveys:[],tasks:[],participant_ids:[],participants:[],created_at:timestamp(),updated_at:timestamp() };
     db.projectGroups.push(record);
     log(p,admin,'新增分组',name, {group:{}}, {group:copy(record)});
     return record;
@@ -133,6 +134,19 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
       const amounts = quantities.map(q => { assert(drugs.some(d=>d.drug_id === q.drug_id), '发药药品不属于当前方案'); return { drug_id:q.drug_id, quantity:number(q.quantity,'首次发药数量',1,100000) }; });
       medication = { ...source, treatment_days:days, pickup_days:cycle, advance_days:advance, quantities:amounts };
     }
+    let reminder = null;
+    if (b.reminder !== null && b.reminder !== undefined) {
+      reminder = binding(db.reminderSchemes,b.reminder.id,'提醒方案',existing?.reminder);
+    }
+    if (medication && reminder) {
+      const pickupAdvance = reminder.snapshot.pickup_enabled ? reminder.snapshot.pickup_advance_days : 0;
+      assert(medication.advance_days === pickupAdvance, '取药提醒提前量应与所选提醒方案一致');
+    }
+    const reminderRules = reminder ? {
+      start: reminder.snapshot.task_start_enabled,
+      due: reminder.snapshot.task_due_enabled,
+      overdue: reminder.snapshot.task_overdue_enabled
+    } : { start:false, due:false, overdue:false };
     const schedules = (items, kind, rows) => {
       array(items,kind); unique(items.map(r=>r.id),kind);
       return items.map(item => {
@@ -144,8 +158,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
         const deadline_days = number(item.deadline_days,'完成期限',1);
         const date = item.anchor === 'date' ? clean(item.date) : '';
         if (item.anchor === 'date') assert(isDate(date) && interval_days === 0 && offset_days === 0, '指定日期任务必须设置有效日期，偏移和重复间隔为0');
-        assert(item.reminders && ['start','due','overdue'].every(k=>typeof item.reminders[k] === 'boolean'),'提醒规则不完整');
-        return { ...source, anchor:item.anchor, date, offset_days, interval_days, deadline_days, reminders:{ start:item.reminders.start, due:item.reminders.due, overdue:item.reminders.overdue } };
+        return { ...source, anchor:item.anchor, date, offset_days, interval_days, deadline_days, reminders:copy(reminderRules) };
       });
     };
     const surveys = schedules(b.surveys,'surveys',db.surveys);
@@ -161,7 +174,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     });
     unique(participant_ids,'患者');
     const participants = participant_ids.map(id => { const p = find(db.patients,id,'患者'); return {id:p.id,name:p.name,mobile:p.mobile}; });
-    const data = { name, description, medication, surveys, tasks, participant_ids, participants };
+    const data = { name, description, medication, reminder, surveys, tasks, participant_ids, participants };
     const record = existing || { id:nextId(db.projectGroups), project_id:p.id, revision:0, created_at:timestamp() };
     const before = existing ? copy(existing) : {};
     Object.assign(record,data,{revision:record.revision+1,updated_at:timestamp()});

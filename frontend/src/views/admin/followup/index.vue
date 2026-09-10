@@ -9,11 +9,20 @@
           type,
           status,
           overdue: overdue || route.query.overdue === '1' ? '1' : '',
-          user_id: route.query.user_id
+          user_id: route.query.user_id,
+          project_id: projectId,
+          group_id: groupId,
+          start_date: dateRange[0],
+          end_date: dateRange[1]
         }"
       /><ElButton type="primary" @click="openCreate">新增临时任务</ElButton></div
-    ><ElCard shadow="never"
-      ><div class="toolbar"
+    ><ElCard shadow="never">
+      <ResearchScopeFilter
+        v-model:project-id="projectId"
+        v-model:group-id="groupId"
+        v-model:date-range="dateRange"
+        @change="search" />
+      <div class="toolbar"
         ><ElInput
           v-model="keyword"
           placeholder="患者或任务名称"
@@ -117,6 +126,7 @@
 </template>
 <script setup lang="ts">
   import ResearchExport from '@/components/business/research-export/index.vue'
+  import ResearchScopeFilter from '@/components/business/research-scope-filter/index.vue'
 
   import { ref, onMounted, watch } from 'vue'
   import { useRoute } from 'vue-router'
@@ -149,6 +159,9 @@
   const rows = ref<Task[]>([]),
     form = ref(blank()),
     keyword = ref(''),
+    projectId = ref<number | undefined>(Number(route.query.project_id) || undefined),
+    groupId = ref<number | undefined>(Number(route.query.group_id) || undefined),
+    dateRange = ref<string[]>([]),
     type = ref(''),
     status = ref(''),
     overdue = ref(false),
@@ -171,6 +184,10 @@
           status: status.value,
           overdue: overdue.value || route.query.overdue === '1' ? '1' : '',
           user_id: route.query.user_id,
+          project_id: projectId.value,
+          group_id: groupId.value,
+          start_date: dateRange.value[0],
+          end_date: dateRange.value[1],
           current: current.value,
           size: 10
         }

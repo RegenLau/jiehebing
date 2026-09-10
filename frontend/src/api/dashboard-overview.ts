@@ -37,9 +37,13 @@ export interface DashboardOverview {
   }
 }
 
-export function fetchDashboardOverview(range: DashboardRange, date?: string) {
+export function fetchDashboardOverview(
+  range: DashboardRange,
+  date?: string,
+  scope: { project_id?: number; group_id?: number } = {}
+) {
   return request.get<DashboardOverview>({
     url: '/app/core/dashboard/overview',
-    params: { range, date }
+    params: { range, date, ...scope }
   })
 }

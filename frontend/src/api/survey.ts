@@ -36,10 +36,15 @@ export interface SurveyRecord {
   status: number
   questionCount: number
   answerCount: number
+  participantCount: number
+  answerRowCount: number
   createdAt: string
 }
 
-export interface SurveyDetail extends Omit<SurveyRecord, 'questionCount' | 'answerCount'> {
+export interface SurveyDetail extends Omit<
+  SurveyRecord,
+  'questionCount' | 'answerCount' | 'participantCount' | 'answerRowCount'
+> {
   version?: number
   updatedAt: string
   questions: SurveyQuestion[]

@@ -72,15 +72,36 @@ export function createFixtures(now) {
       status: i % 4 === 0 ? 2 : 1, status_text: i % 4 === 0 ? '已处理' : '已上报', created_at: occurred_at };
   });
   const titleList = ['您最近有无新增或减少药物？', '您最近服用药物的剂量和频次是否有变化？', '您最近有没有到医院复查？', '服药以后有没有出现不舒服（如头晕、皮疹、恶心等）？', '最近 2 周内，有没有以下情况？（可多选）', '您最想问药师或医生的用药问题是：'];
-  const questions = titleList.map((title, i) => ({
-    id: i + 1, questionNo: i + 1, title, type: i === 5 ? 'TEXT' : i === 4 ? 'CHECKBOX' : 'RADIO',
-    required: i === 5 ? 0 : 1, sortOrder: i + 1, placeholder: i === 5 ? '请输入您的问题' : '',
-    options: i === 5 ? [] : (i === 4 ? ['忘记吃药', '自己减量或停药', '自行增加剂量', '以上都没有'] : ['没有', '有，请补充说明']).map((label, j) => ({
-      id: (i + 1) * 10 + j + 1, label, sortOrder: j + 1, isExclusive: i === 4 && j === 3,
-      triggerInput: i < 4 && j === 1,
-      inputFields: i < 4 && j === 1 ? [{ field_key: `detail_${i + 1}`, field_label: '补充说明', field_type: 'text', required: true, placeholder: '请输入说明' }] : null
-    }))
-  }));
+  const questions = titleList.map((title, i) => {
+    const labels = i === 0
+      ? ['首次开始', '没有', '有']
+      : i === 4
+        ? ['忘记吃药', '自己减量或停药', '自行增加剂量', '以上都没有']
+        : ['没有', '有'];
+    return {
+      id: i + 1, questionNo: i + 1, title, type: i === 5 ? 'TEXT' : i === 4 ? 'CHECKBOX' : 'RADIO',
+      required: i === 5 ? 0 : 1, sortOrder: i + 1, placeholder: i === 5 ? '请输入您的问题' : '',
+      options: i === 5 ? [] : labels.map((label, j) => {
+        const triggerInput = i < 4 && label === '有';
+        const placeholder = i === 0
+          ? '请填写药名'
+          : i === 1
+            ? '例如：异烟肼片，一天三片'
+            : '请输入说明';
+        return {
+          id: (i + 1) * 10 + j + 1, label, sortOrder: j + 1, isExclusive: i === 4 && j === 3,
+          triggerInput,
+          inputFields: triggerInput ? [{
+            field_key: `detail_${i + 1}`,
+            field_label: i === 1 ? '药品名称和用药频次变化' : '补充说明',
+            field_type: 'text',
+            required: true,
+            placeholder
+          }] : null
+        };
+      })
+    };
+  });
   const surveys = [
     { id: 1, code: 'TB_FOLLOWUP_V1', name: '结核病随访问卷', description: '模拟问卷，用于演示随访管理。', fillableDay: 7, status: 1, createdAt: `${shiftDate(today, -60)} 06:00:00`, updatedAt: `${shiftDate(today, -60)} 06:00:00`, questions },
     { id: 2, code: 'MOCK_DRAFT', name: '模拟随访草稿', description: '暂无作答，可编辑或删除。', fillableDay: 30, status: 0, createdAt: time, updatedAt: time,
@@ -104,29 +125,93 @@ export function createFixtures(now) {
     drugs: commonMedicines.filter(m => m.status === 1).slice(id - 1, id + 1).map(m => ({ drug_id: m.id, name: m.common_name, specification: m.specification, dose: m.dosage_value, unit: m.dosage_unit, frequency: '每日1次（演示）', times: '08:00', precautions: m.medication_guidance }))
   }));
   const taskTemplates = ['检查', '复诊', '取药', '报告提交'].map((type,i) => ({ id:i+1, name:`${type}模板（演示）`, type, status:1, version:'V1.0', description:`按研究安排完成${type}`, requirements: i === 0 || i === 3 ? '提交检查日期及报告原图' : '提交完成日期和补充说明' }));
-  const groupDefinitions = [
-    { id: 1, project_id: 1, name: '筹备标准随访组', description: '筹备阶段的标准随访流程演示组。', scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(8, 13).map(p => p.id) },
-    { id: 2, project_id: 1, name: '筹备强化随访组', description: '筹备阶段的强化提醒与复查流程演示组。', scheme_id: 2, task_ids: [1, 3], participant_ids: patients.slice(13, 18).map(p => p.id) },
-    { id: 3, project_id: 2, name: '规范用药随访组', description: '用于演示规范用药、定期复查及随访问卷。', scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(18, 23).map(p => p.id) },
-    { id: 4, project_id: 2, name: '强化管理随访组', description: '用于演示加强提醒、取药和报告提交管理。', scheme_id: 2, task_ids: [1, 3, 4], participant_ids: patients.slice(23).map(p => p.id) },
-    { id: 5, project_id: 3, name: '历史完成随访组', description: '用于查看已结束项目的历史分组配置。', scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(0, 4).map(p => p.id) },
-    { id: 6, project_id: 3, name: '历史重点复核组', description: '用于查看已结束项目的重点复核配置。', scheme_id: 2, task_ids: [1, 4], participant_ids: patients.slice(4, 8).map(p => p.id) }
+  const reminderSchemes = [
+    {
+      id: 1,
+      name: '标准研究提醒',
+      description: '覆盖用药、随访任务和取药的常规提醒方案。',
+      status: 1,
+      revision: 1,
+      version: 'V1',
+      medication_enabled: true,
+      medication_advance_minutes: 0,
+      task_start_enabled: true,
+      task_due_enabled: true,
+      task_overdue_enabled: true,
+      task_remind_time: '09:00',
+      pickup_enabled: true,
+      pickup_advance_days: 5,
+      pickup_remind_time: '09:00',
+      created_at: time,
+      updated_at: time,
+      history: []
+    },
+    {
+      id: 2,
+      name: '轻量随访提醒',
+      description: '保留服药、任务开始与到期、取药提醒，不重复发送逾期提醒。',
+      status: 1,
+      revision: 1,
+      version: 'V1',
+      medication_enabled: true,
+      medication_advance_minutes: 10,
+      task_start_enabled: true,
+      task_due_enabled: true,
+      task_overdue_enabled: false,
+      task_remind_time: '10:00',
+      pickup_enabled: true,
+      pickup_advance_days: 3,
+      pickup_remind_time: '10:00',
+      created_at: time,
+      updated_at: time,
+      history: []
+    },
+    {
+      id: 3,
+      name: '历史提醒方案',
+      description: '停用示例，仅供已关联小组查看历史快照。',
+      status: 0,
+      revision: 1,
+      version: 'V1',
+      medication_enabled: true,
+      medication_advance_minutes: 0,
+      task_start_enabled: true,
+      task_due_enabled: false,
+      task_overdue_enabled: false,
+      task_remind_time: '09:00',
+      pickup_enabled: false,
+      pickup_advance_days: 0,
+      pickup_remind_time: '09:00',
+      created_at: time,
+      updated_at: time,
+      history: []
+    }
   ];
-  const schedule = (source, interval_days, offset_days = 0) => ({
+  const groupDefinitions = [
+    { id: 1, project_id: 1, name: '筹备标准随访组', description: '筹备阶段的标准随访流程演示组。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(8, 13).map(p => p.id) },
+    { id: 2, project_id: 1, name: '筹备强化随访组', description: '筹备阶段的强化提醒与复查流程演示组。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 3], participant_ids: patients.slice(13, 18).map(p => p.id) },
+    { id: 3, project_id: 2, name: '规范用药随访组', description: '用于演示规范用药、定期复查及随访问卷。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(18, 23).map(p => p.id) },
+    { id: 4, project_id: 2, name: '强化管理随访组', description: '用于演示加强提醒、取药和报告提交管理。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 3, 4], participant_ids: patients.slice(23).map(p => p.id) },
+    { id: 5, project_id: 3, name: '历史完成随访组', description: '用于查看已结束项目的历史分组配置。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(0, 4).map(p => p.id) },
+    { id: 6, project_id: 3, name: '历史重点复核组', description: '用于查看已结束项目的重点复核配置。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 4], participant_ids: patients.slice(4, 8).map(p => p.id) }
+  ];
+  const schedule = (source, reminder, interval_days, offset_days = 0) => ({
     id: source.id, snapshot: structuredClone(source), anchor: 'enrollment', date: '', offset_days, interval_days, deadline_days: 3,
-    reminders: { start: true, due: true, overdue: true }
+    reminders: { start: reminder.task_start_enabled, due: reminder.task_due_enabled, overdue: reminder.task_overdue_enabled }
   });
   const projectGroups = groupDefinitions.map(definition => {
     const scheme = medicationSchemes.find(item => item.id === definition.scheme_id);
+    const reminder = reminderSchemes.find(item => item.id === definition.reminder_scheme_id);
     const participants = definition.participant_ids.map(id => {
       const patient = patients.find(item => item.id === id);
       return { id: patient.id, name: patient.name, mobile: patient.mobile };
     });
     return {
       id: definition.id, project_id: definition.project_id, name: definition.name, description: definition.description, revision: 2,
-      medication: { id: scheme.id, snapshot: structuredClone(scheme), treatment_days: 180, pickup_days: 30, advance_days: 5, quantities: scheme.drugs.map(drug => ({ drug_id: drug.drug_id, quantity: 30 })) },
-      surveys: [schedule(surveys[0], definition.id % 2 ? 14 : 7)],
-      tasks: definition.task_ids.map((id, index) => schedule(taskTemplates.find(item => item.id === id), 30, index * 3)),
+      medication: { id: scheme.id, snapshot: structuredClone(scheme), treatment_days: 180, pickup_days: 30, advance_days: reminder.pickup_enabled ? reminder.pickup_advance_days : 0, quantities: scheme.drugs.map(drug => ({ drug_id: drug.drug_id, quantity: 30 })) },
+      reminder: { id: reminder.id, snapshot: structuredClone(reminder) },
+      surveys: [schedule(surveys[0], reminder, definition.id % 2 ? 14 : 7)],
+      tasks: definition.task_ids.map((id, index) => schedule(taskTemplates.find(item => item.id === id), reminder, 30, index * 3)),
       participant_ids: definition.participant_ids, participants, created_at: time, updated_at: time
     };
   });
@@ -172,7 +257,7 @@ export function createFixtures(now) {
       }
     }
   }
-  return { projects, projectGroups, medicationSchemes, taskTemplates, patients, medicines, plans, adverse, commonMedicines, surveys, answers, articles, admins, files, loginLogs: [], operationLogs: [] };
+  return { projects, projectGroups, medicationSchemes, reminderSchemes, taskTemplates, patients, medicines, plans, adverse, commonMedicines, surveys, answers, articles, admins, files, loginLogs: [], operationLogs: [] };
 }
 
 export function createMenu() {
@@ -202,7 +287,7 @@ export function createMenu() {
   const medication = result.find(r => r.name === 'MedicationPlan');
   medication.meta.title = '用药管理';
   medication.children.unshift({path:'schemes',name:'MedicationSchemes',component:'/admin/medication-schemes',meta:{title:'用药方案',keepAlive:false}});
-  result.splice(4,0,{path:'/followup',name:'Followup',component:'/index/index',meta:{title:'随访任务',icon:'ri:calendar-check-line'},children:[{path:'feedback',name:'FeedbackRecords',component:'/admin/feedback',meta:{title:'每日反馈记录',keepAlive:false}},{path:'index',name:'FollowupTasks',component:'/admin/followup',meta:{title:'任务列表',keepAlive:false}},{path:'templates',name:'TaskTemplates',component:'/admin/task-templates',meta:{title:'任务模板',keepAlive:false}}]});
+  result.splice(4,0,{path:'/followup',name:'Followup',component:'/index/index',meta:{title:'随访任务',icon:'ri:calendar-check-line'},children:[{path:'feedback',name:'FeedbackRecords',component:'/admin/feedback',meta:{title:'每日反馈记录',keepAlive:false}},{path:'index',name:'FollowupTasks',component:'/admin/followup',meta:{title:'任务列表',keepAlive:false}},{path:'templates',name:'TaskTemplates',component:'/admin/task-templates',meta:{title:'任务模板',keepAlive:false}},{path:'reminder-schemes',name:'ReminderSchemes',component:'/admin/reminder-schemes',meta:{title:'提醒方案',keepAlive:false}}]});
   result.splice(5,0,{path:'/reports',name:'Reports',component:'/index/index',meta:{title:'检查报告',icon:'ri:file-list-line'},children:[{path:'index',name:'ReportList',component:'/admin/reports',meta:{title:'报告列表',keepAlive:false}}]});
   return result;
 }
