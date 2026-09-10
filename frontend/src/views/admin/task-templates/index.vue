@@ -55,6 +55,8 @@
         ><ElFormItem label="任务类型"
           ><ElSelect v-model="form.type"
             ><ElOption v-for="t in types" :key="t" :value="t" :label="t" /></ElSelect></ElFormItem
+        ><p v-if="form.type === '检查'" class="type-note"
+          >检查任务已包含报告上传、患者确认和医护核对流程，无需另建报告提交任务。</p
         ><ElFormItem label="说明"
           ><ElInput v-model="form.description" type="textarea" maxlength="1000" /></ElFormItem
         ><ElFormItem label="提交要求（必填）"
@@ -110,7 +112,7 @@
       '状态：' + (r.status === 1 ? '启用' : '停用')
     ].join('\n')
   }
-  const types = ['检查', '复诊', '取药', '报告提交', '其他'],
+  const types = ['检查', '复诊', '取药', '其他'],
     blank = (): Template => ({
       name: '',
       type: '检查',
@@ -237,6 +239,14 @@
   .el-pagination {
     margin-top: 20px;
   }
+
+  .type-note {
+    margin: -10px 0 18px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #5f6b7a;
+  }
+
   pre {
     white-space: pre-wrap;
     padding: 16px;

@@ -1,5 +1,5 @@
 export function registerTaskTemplates({core,db,assert,find,page,clean,timestamp,nextId}) {
-  const types=['检查','复诊','取药','报告提交','其他'];
+  const types=['检查','复诊','取药','其他'];
   const text=(v,label,max,required=false)=>{const s=clean(v);assert(s.length<=max&&(!required||s),`请填写有效的${label}`);return s;};
   const snapshot=({history,...row})=>structuredClone(row);
   const log=(row,admin,before,reason)=>{row.history||=[];row.history.unshift({time:timestamp(),operator:admin.realname||admin.username,reason,before,after:snapshot(row)});};

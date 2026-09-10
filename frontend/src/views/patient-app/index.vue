@@ -699,7 +699,7 @@
                   <span class="round-icon blue"><ArtSvgIcon :icon="taskIcon(task.type)" /></span>
                   <span class="task-copy">
                     <strong>{{ task.name }}</strong>
-                    <small>{{ task.description || taskTimeText(task) }}</small>
+                    <small>{{ taskRequirementText(task) }}</small>
                     <small class="deadline">{{ taskTimeText(task) }}</small>
                   </span>
                   <span class="status-link">{{ taskAction(task.type) }}</span>
@@ -1170,16 +1170,12 @@
                   <ArtSvgIcon :icon="taskIcon(scheduleTask.type)" />
                 </span>
                 <div>
-                  <small>{{ scheduleTask.type }}</small>
                   <h2 :id="`schedule-title-${scheduleTask.id}`">{{ scheduleTask.name }}</h2>
                 </div>
                 <button type="button" aria-label="关闭安排" @click="closeScheduleDialog">
                   <ArtSvgIcon icon="ri:close-line" />
                 </button>
               </header>
-              <p class="schedule-description">{{
-                scheduleTask.description || '请按计划完成本次安排。'
-              }}</p>
               <dl>
                 <div>
                   <dt>安排日期</dt>
@@ -1190,6 +1186,14 @@
                   <dd>{{ scheduleTask.due_date }}</dd>
                 </div>
               </dl>
+              <section class="schedule-requirement">
+                <h3>提交要求</h3>
+                <p>{{
+                  scheduleTask.requirements ||
+                  scheduleTask.description ||
+                  '请按计划完成本次安排。'
+                }}</p>
+              </section>
               <template v-if="['复诊', '取药', '其他'].includes(scheduleTask.type)">
                 <label for="schedule-note">完成情况</label>
                 <textarea
@@ -1388,6 +1392,7 @@
     date: string
     due_date: string
     description: string
+    requirements?: string
     status: string
     source: string
     virtual: boolean
@@ -1678,7 +1683,7 @@
     return Math.round(((homeData.value?.medication_today.completed_slots || 0) / total) * 100)
   })
   const reportTasks = computed(() =>
-    (taskData.value?.tasks || []).filter((task) => ['检查', '报告提交'].includes(task.type))
+    (taskData.value?.tasks || []).filter((task) => ['检查', '补交检查资料'].includes(task.type))
   )
   const adverseMaxTime = computed(() => defaultAdverseTime())
   const supportTitle = computed(() => {
@@ -1972,18 +1977,21 @@
     if (task.due_date === homeData.value?.date) return '今日完成'
     return `${task.overdue ? '已逾期' : '截止'}：${task.due_date}`
   }
+  function taskRequirementText(task: PatientTask) {
+    return task.requirements || task.description || taskTimeText(task)
+  }
   function taskIcon(type: string) {
     if (type === '健康反馈') return 'ri:mic-line'
     if (type === '问卷') return 'ri:file-list-3-line'
     if (type === '取药') return 'ri:capsule-line'
-    if (type === '报告提交') return 'ri:file-upload-line'
+    if (type === '补交检查资料') return 'ri:file-upload-line'
     if (type === '复诊') return 'ri:hospital-line'
     return 'ri:calendar-check-line'
   }
   function taskAction(type: string) {
     if (type === '健康反馈') return '开始反馈'
     if (type === '问卷') return '填写问卷'
-    if (type === '报告提交') return '补充报告'
+    if (type === '补交检查资料') return '补交资料'
     if (type === '取药') return '查看提醒'
     return '查看安排'
   }
@@ -4081,13 +4089,8 @@
     align-items: center;
   }
 
-  .schedule-dialog > header small {
-    font-size: 12px;
-    color: #7c8797;
-  }
-
   .schedule-dialog h2 {
-    margin: 3px 0 0;
+    margin: 0;
     font-size: 19px;
   }
 
@@ -4103,15 +4106,9 @@
     border-radius: 50%;
   }
 
-  .schedule-description {
-    margin: 18px 0 10px;
-    line-height: 1.6;
-    color: #414d5d;
-  }
-
   .schedule-dialog dl {
     padding: 6px 14px;
-    margin: 0 0 16px;
+    margin: 18px 0 16px;
     background: #f5f8fc;
     border-radius: 12px;
   }
@@ -4134,6 +4131,24 @@
     margin: 0;
     font-weight: 600;
     color: #273346;
+  }
+
+  .schedule-requirement {
+    margin: 0 0 16px;
+  }
+
+  .schedule-requirement h3 {
+    margin: 0 0 8px;
+    font-size: 15px;
+  }
+
+  .schedule-requirement p {
+    padding: 12px 14px;
+    margin: 0;
+    line-height: 1.6;
+    color: #536071;
+    background: #f5f8fc;
+    border-radius: 12px;
   }
 
   .schedule-dialog > label {

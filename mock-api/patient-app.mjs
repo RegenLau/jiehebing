@@ -356,10 +356,8 @@ export function registerPatientApp({
               type: type || binding.snapshot.type,
               date,
               due_date: dueDate,
-              description:
-                binding.snapshot.requirements ||
-                binding.snapshot.description ||
-                "",
+              description: binding.snapshot.description || "",
+              requirements: binding.snapshot.requirements || "",
               status: "待完成",
               source: "分组安排",
               virtual: true,
@@ -739,7 +737,10 @@ export function registerPatientApp({
     let task = null;
     if (body.task_id) {
       task = resolveTask(patient, body.task_id);
-      assert(["检查", "报告提交"].includes(task.type), "该任务不支持上传报告");
+      assert(
+        ["检查", "补交检查资料"].includes(task.type),
+        "该任务不支持上传报告",
+      );
       assert(!["已完成", "已取消"].includes(task.status), "任务已经结束");
       assert(
         !db.reports.some((row) => row.task_id === task.id),

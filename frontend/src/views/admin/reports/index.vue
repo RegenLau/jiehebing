@@ -292,7 +292,7 @@
       if (all.length >= p.total) break
     }
     tasks.value = all.filter(
-      (t) => ['检查', '报告提交'].includes(t.type) && !['已完成', '已取消'].includes(t.status)
+      (t) => ['检查', '补交检查资料'].includes(t.type) && !['已完成', '已取消'].includes(t.status)
     )
   }
   async function open(id: number) {

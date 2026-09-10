@@ -71,7 +71,7 @@ export function registerReports({
     if (b.task_id) {
       task = find(db.followupTasks, b.task_id, "任务");
       assert(
-        task.user_id === p.id && ["检查", "报告提交"].includes(task.type),
+        task.user_id === p.id && ["检查", "补交检查资料"].includes(task.type),
         "任务不属于该患者或不支持报告",
       );
       assert(!["已完成", "已取消"].includes(task.status), "任务已结束");

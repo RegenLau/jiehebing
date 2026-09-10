@@ -704,6 +704,14 @@ test("patient self-confirmation follows identity then current treatment and reop
   let tasks = await api.json("/app/patient/tasks", { auth: patientToken });
   assert.equal(tasks.code, 0);
   assert.ok(tasks.data.tasks.some((task) => task.type === "健康反馈"));
+  const scheduledRevisitTask = tasks.data.tasks.find(
+    (task) => task.type === "复诊",
+  );
+  assert.equal(scheduledRevisitTask.description, "按研究安排完成复诊");
+  assert.equal(
+    scheduledRevisitTask.requirements,
+    "提交完成日期和补充说明",
+  );
   assert.ok(
     tasks.data.tasks.filter((task) => task.type === "问卷").length >= 2,
     "two scheduled rounds of the same survey stay separate",
@@ -2850,6 +2858,19 @@ test("task templates support maintenance, filters, revision checks and isolated 
     ).code,
     200,
   );
+  assert.notEqual(
+    (
+      await api.json(P + "task-template/save", {
+        body: { ...body, name: "重复报告任务", type: "报告提交" },
+      })
+    ).code,
+    200,
+  );
+  assert.ok(
+    (await api.ok(P + "project/catalog")).task_templates.every(
+      (template) => template.type !== "报告提交",
+    ),
+  );
   const g = await api.ok(P + "project/group-create", {
     body: { project_id: 1, name: "模板测试组" },
   });
@@ -3564,6 +3585,53 @@ test("report supplementation preserves originals and completes only its matching
   assert.ok(reportRows.flat().some((value) => String(value).includes("异常")));
   assert.equal(
     (await api.ok(P + "followup/detail", { query: { id: task.id } })).status,
+    "已完成",
+  );
+  const supplementaryTask = await api.ok(P + "followup/create", {
+    body: {
+      user_id: 1,
+      name: "补交历史检查资料",
+      type: "补交检查资料",
+      date: TODAY,
+      due_date: TODAY,
+      description: "补交缺失的历史报告页",
+    },
+  });
+  assert.notEqual(
+    (
+      await api.json(P + "followup/update", {
+        body: {
+          id: supplementaryTask.id,
+          action: "complete",
+          reason: "不能绕过资料核对",
+        },
+      })
+    ).code,
+    200,
+  );
+  const supplementaryReport = await api.ok(P + "report/create", {
+    body: {
+      user_id: 1,
+      task_id: supplementaryTask.id,
+      type: "历史检查资料",
+      exam_date: TODAY,
+      files: [uploaded.url],
+    },
+  });
+  await api.ok(P + "report/review", {
+    body: {
+      id: supplementaryReport.id,
+      status: "已核对",
+      reason: "缺失页面已补齐",
+      metrics: [],
+    },
+  });
+  assert.equal(
+    (
+      await api.ok(P + "followup/detail", {
+        query: { id: supplementaryTask.id },
+      })
+    ).status,
     "已完成",
   );
   assert.notEqual(
