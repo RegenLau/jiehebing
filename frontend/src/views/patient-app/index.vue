@@ -179,18 +179,17 @@
         </header>
 
         <div class="pending-start-status" aria-live="polite">
-          <img :src="pendingStartImage" alt="用药计划已确认，等待开始" />
+          <img :src="pendingStartImage" alt="用药计划已确认，等待开始日期" />
           <h2>信息与药品已确认</h2>
-          <p>您的用药计划尚未开始</p>
+          <p>您的用药计划尚未到开始日期</p>
         </div>
 
-        <article class="pending-start-time-card">
-          <span class="pending-start-label">开始服药时间</span>
+        <article class="pending-start-date-card">
+          <span class="pending-start-label">开始服药日期</span>
           <div class="pending-start-date-row">
             <strong>{{ medicationStartDateText }}</strong>
-            <span>尚未开始</span>
+            <span>尚未到日期</span>
           </div>
-          <time :datetime="data.medication_start?.start_at">{{ medicationStartTimeText }}</time>
         </article>
 
         <article class="pending-start-guidance">
@@ -198,14 +197,14 @@
             <ArtSvgIcon icon="ri:information-line" />
           </span>
           <div>
-            <h2>请按计划开始服药</h2>
+            <h2>请在开始日期按计划服药</h2>
             <p
-              >到达开始时间后，重新进入小程序即可查看首页和服药安排。期间如有疑问，请联系随访医生。</p
+              >到达开始日期后，重新进入小程序即可查看首页和服药安排，当天无需等待具体服药时间。期间如有疑问，请联系随访医生。</p
             >
           </div>
         </article>
 
-        <p class="pending-start-note">开始时间以医生确认的用药方案为准</p>
+        <p class="pending-start-note">开始日期以医生确认的用药方案为准</p>
       </section>
 
       <section v-else class="main-shell">
@@ -390,7 +389,10 @@
               >
                 <span class="round-icon blue"><ArtSvgIcon :icon="taskIcon(task.type)" /></span>
                 <span class="task-copy">
-                  <strong>{{ task.name }}</strong>
+                  <span class="task-title-row">
+                    <strong>{{ task.name }}</strong>
+                    <span v-if="task.status === '需补充'" class="task-supplement-tag">待补充</span>
+                  </span>
                   <small>{{ taskTimeText(task) }}</small>
                 </span>
                 <em>查看待办</em>
@@ -703,7 +705,12 @@
                 >
                   <span class="round-icon blue"><ArtSvgIcon :icon="taskIcon(task.type)" /></span>
                   <span class="task-copy">
-                    <strong>{{ task.name }}</strong>
+                    <span class="task-title-row">
+                      <strong>{{ task.name }}</strong>
+                      <span v-if="task.status === '需补充'" class="task-supplement-tag"
+                        >待补充</span
+                      >
+                    </span>
                     <small>{{ taskRequirementText(task) }}</small>
                     <small class="deadline">{{ taskTimeText(task) }}</small>
                   </span>
@@ -1723,13 +1730,6 @@
     if (!date) return '--'
     const [year, month, day] = date.split('-').map(Number)
     return `${year}年${month}月${day}日`
-  })
-  const medicationStartTimeText = computed(() => {
-    const time = data.value?.medication_start?.time
-    if (!time) return '--:--'
-    const hour = Number(time.slice(0, 2))
-    const period = hour < 6 ? '凌晨' : hour < 12 ? '上午' : hour < 18 ? '下午' : '晚上'
-    return `${period} ${time}`
   })
   const filteredReports = computed(() =>
     reports.value.filter((report) => {
@@ -3047,7 +3047,7 @@
     color: #687180;
   }
 
-  .pending-start-time-card {
+  .pending-start-date-card {
     padding: 18px 17px 17px;
     margin-top: 24px;
     background: #fff;
@@ -3085,13 +3085,6 @@
     color: #2468ff;
     background: #eaf2ff;
     border-radius: 99px;
-  }
-
-  .pending-start-time-card time {
-    display: block;
-    margin-top: 6px;
-    font-size: 18px;
-    color: #687180;
   }
 
   .pending-start-guidance {
@@ -3409,6 +3402,29 @@
     font-style: normal;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .task-title-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .task-title-row strong {
+    min-width: 0;
+  }
+
+  .task-supplement-tag {
+    flex: 0 0 auto;
+    padding: 2px 7px;
+    font-size: 11px;
+    font-weight: 650;
+    line-height: 1.4;
+    color: #d84b3e;
+    background: #fff0ed;
+    border: 1px solid #ffc9c1;
+    border-radius: 999px;
   }
 
   .preview-copy small,

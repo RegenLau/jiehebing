@@ -28,7 +28,7 @@ pnpm --dir mock-api test
 
 `GET /app/core/medication-plan/index` 额外支持可选 `as_of=YYYY-MM-DD`：在 `overdue=true` 时，逾期截止日和 `overdue_range` 起点以该日计算，保证历史工作台待办下钻与统计一致。缺省或非法日期仍使用上海当天；该参数不改变常规列表的 `scope=today` 行为，待办下钻应传 `scope=all,status=0,overdue=true`。
 
-`GET /app/core/patient/index`、`followup/index`、`feedback/index`、`reports/index`、`medication-plan/index` 和 `dashboard/overview` 支持 `project_id`/`group_id`；明细列表支持对应日期范围。`GET /app/core/research-export` 支持 `patients|tasks|reports|feedback|medications`，任务导出含轮次和来源。
+`GET /app/core/patient/index`、`followup/index`、`feedback/index`、`reports/index`、`medication-plan/index` 和 `dashboard/overview` 支持 `project_id`/`group_id`；明细列表支持对应日期范围。`followup/index` 汇总所有具备患者端登录资格且项目未结束的用户待办，共用患者端任务视图，因而包含动态每日反馈、取药提醒、分组生成任务及有效临时任务。`GET /app/core/research-export` 支持 `patients|tasks|reports|feedback|medications`，任务导出与列表共用数据口径，并含提醒时间和来源。
 
 用药方案管理提供“上传处方图片 / 关键词搜索”两个添加入口；分组用药只提供关键词搜索，可选择带入通用方案后调整。两处均按药品卡片保存：保留治疗天数，每张卡配置首次发药量、每次剂量、每日 1–4 次及对应时间/服药时机，全部确认后才能保存。取药周期由服务端计算为各药品 `药品量 / 每次剂量 / 每日次数` 的最小值向下取整，至少 1 天且不超过治疗天数；不再手填取药周期。分组快照独立于通用方案，修改分组不会改写已确认的患者个人方案。`POST /app/core/medication-scheme/recognize-prescription` 只接受已上传的本地图片，返回明确标记的模拟待确认药品，不执行真实 OCR；旧 `project/recognize-prescription` 路径保留兼容。
 

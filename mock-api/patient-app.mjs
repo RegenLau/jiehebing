@@ -1,9 +1,11 @@
 import { effectiveProjectStatus } from "./project-status.mjs";
 import { buildMockOcrResult } from "./report-ocr.mjs";
+import { calculatePatientStock } from "./pickup-reminder.mjs";
 import {
-  buildPickupReminderTask,
-  calculatePatientStock,
-} from "./pickup-reminder.mjs";
+  buildPatientTaskSummary,
+  buildPatientTasks,
+  latestTreatmentFor,
+} from "./patient-tasks.mjs";
 
 export function registerPatientApp({
   patientRoute,
@@ -24,42 +26,8 @@ export function registerPatientApp({
     assert(text && text.length <= 300, `请填写${label}，不超过300字`);
     return text;
   };
-  const latestActualTreatment = (patient) =>
-    db.patientTreatments.filter((row) => row.user_id === patient.id).at(-1);
-  const legacyTreatment = (patient) => {
-    const medicines = db.medicines.filter((row) => row.user_id === patient.id);
-    if (!medicines.length) return null;
-    const group = db.projectGroups.find((row) => row.id === patient.group_id);
-    const treatmentDays = group?.medication?.treatment_days || 0;
-    return {
-      id: `legacy-${patient.id}`,
-      user_id: patient.id,
-      source_group_id: patient.group_id,
-      source_revision: group?.revision || 1,
-      adjusted: false,
-      adjustment_summary: [],
-      start_date: patient.enroll_date,
-      end_date: treatmentDays
-        ? shiftDate(patient.enroll_date, treatmentDays - 1)
-        : "",
-      treatment_days: treatmentDays,
-      drugs: medicines.map((medicine) => ({
-        drug_id: medicine.common_medicine_id,
-        name: medicine.name,
-        specification: medicine.specification,
-        dose: Number(medicine.dosage_value),
-        unit: medicine.dosage_unit,
-        times: medicine.plan_times,
-        frequency: `每日${medicine.frequency}次`,
-        precautions: medicine.medication_guidance,
-      })),
-      created_at: medicines[0].created_at,
-      reason: "研究分组初始用药安排",
-      legacy: true,
-    };
-  };
   const latestTreatment = (patient) =>
-    latestActualTreatment(patient) || legacyTreatment(patient);
+    latestTreatmentFor({ db, patient, shiftDate });
   const medicationStart = (treatment) => {
     if (!treatment?.start_date) return null;
     const time =
@@ -126,10 +94,7 @@ export function registerPatientApp({
       )
         stage = "medication_issue";
       else if (patient.medicine_confirmed && medicationCurrent)
-        stage =
-          start && start.start_at > timestamp().slice(0, 16)
-            ? "pending_start"
-            : "home";
+        stage = start && start.date > today() ? "pending_start" : "home";
       else stage = "medication";
     }
     return {
@@ -180,7 +145,7 @@ export function registerPatientApp({
       state.stage === "project_ended"
         ? "项目已结束，当前无法继续使用患者端小程序"
         : state.stage === "pending_start"
-          ? "用药计划尚未开始，请在开始服药时间后进入"
+          ? "用药计划尚未开始，请在开始服药日期当天或之后进入"
           : "请先完成身份与用药确认",
     );
     return state;
@@ -281,146 +246,10 @@ export function registerPatientApp({
       };
     });
   };
-  const scheduledTasks = (patient, treatment) => {
-    const group = db.projectGroups.find((row) => row.id === patient.group_id);
-    if (!group || !treatment) return [];
-    const result = [];
-    for (const [kind, type, bindings] of [
-      ["surveys", "问卷", group.surveys],
-      ["tasks", null, group.tasks],
-    ])
-      for (const binding of bindings) {
-        const anchor =
-          binding.anchor === "date"
-            ? binding.date
-            : binding.anchor === "treatment"
-              ? treatment.start_date
-              : patient.enroll_date;
-        let date = shiftDate(anchor, binding.offset_days);
-        let iterations = 0;
-        while (date <= treatment.end_date && iterations++ < 4000) {
-          const dueDate = shiftDate(date, binding.deadline_days - 1);
-          if (date >= treatment.start_date && dueDate >= today()) {
-            result.push({
-              id: `scheduled-${kind}-${binding.id}-${date}`,
-              binding_kind: kind,
-              binding_id: binding.id,
-              snapshot: structuredClone(binding),
-              name: binding.snapshot.name,
-              type: type || binding.snapshot.type,
-              date,
-              due_date: dueDate,
-              description: binding.snapshot.description || "",
-              requirements: binding.snapshot.requirements || "",
-              status: "待完成",
-              source: "分组安排",
-              virtual: true,
-            });
-          }
-          if (!binding.interval_days) break;
-          date = shiftDate(date, binding.interval_days);
-        }
-      }
-    return result;
-  };
-  const taskSummary = (patient, treatment) => {
-    const visibleThrough = shiftDate(today(), 14);
-    const actual = db.followupTasks
-      .filter(
-        (row) =>
-          row.user_id === patient.id &&
-          ["待完成", "需补充"].includes(row.status) &&
-          row.date <= visibleThrough,
-      )
-      .map((row) => ({ ...row, virtual: false }));
-    const actualSchedules = new Set(
-      db.followupTasks
-        .filter((row) => row.user_id === patient.id)
-        .map(
-          (row) =>
-            `${row.binding_kind || ""}-${row.binding_id || ""}-${row.date}`,
-        ),
-    );
-    const planned = scheduledTasks(patient, treatment).filter((row) => {
-      return (
-        row.date <= visibleThrough &&
-        !actualSchedules.has(
-          `${row.binding_kind}-${row.binding_id}-${row.date}`,
-        )
-      );
-    });
-    const feedbackDone = db.feedback.some(
-      (row) => row.user_id === patient.id && row.date === today(),
-    );
-    const feedback = feedbackDone
-      ? []
-      : [
-          {
-            id: `daily-feedback-${today()}`,
-            name: "每日健康反馈",
-            type: "健康反馈",
-            date: today(),
-            due_date: today(),
-            description: "记录今天是否有身体不适或症状变化",
-            requirements: "提交有无不适、症状变化和补充说明",
-            status: "待完成",
-            source: "每日任务",
-            virtual: true,
-          },
-        ];
-    const pickupReminder = buildPickupReminderTask({
-      db,
-      patient,
-      treatment,
-      today,
-      shiftDate,
-      visibleThrough,
-    });
-    return [
-      ...feedback,
-      ...(pickupReminder ? [pickupReminder] : []),
-      ...actual,
-      ...planned,
-    ]
-      .sort(
-        (a, b) =>
-          a.due_date.localeCompare(b.due_date) || a.date.localeCompare(b.date),
-      )
-      .map((row) => ({
-        ...row,
-        overdue: row.due_date < today(),
-        form: row.type === "问卷" ? row.snapshot?.snapshot || null : null,
-      }));
-  };
-  const assignedTasks = (patient) =>
-    db.followupTasks
-      .filter(
-        (row) =>
-          row.user_id === patient.id &&
-          ["待完成", "需补充"].includes(row.status),
-      )
-      .sort((a, b) => b.id - a.id)
-      .map((row) => ({
-        ...row,
-        virtual: false,
-        overdue: row.due_date < today(),
-        form: row.type === "问卷" ? row.snapshot?.snapshot || null : null,
-      }));
-  const patientTasks = (patient) => {
-    const summary = taskSummary(patient, latestTreatment(patient));
-    const summaryIds = new Set(summary.map((row) => String(row.id)));
-    return [
-      ...summary,
-      ...assignedTasks(patient).filter(
-        (row) => !summaryIds.has(String(row.id)),
-      ),
-    ].sort(
-      (a, b) =>
-        a.due_date.localeCompare(b.due_date) ||
-        a.date.localeCompare(b.date) ||
-        String(a.id).localeCompare(String(b.id)),
-    );
-  };
+  const taskSummary = (patient, treatment) =>
+    buildPatientTaskSummary({ db, patient, treatment, today, shiftDate });
+  const patientTasks = (patient) =>
+    buildPatientTasks({ db, patient, today, shiftDate });
   const resolveTask = (patient, taskId) => {
     const numericId = Number(taskId);
     if (Number.isInteger(numericId) && numericId > 0) {

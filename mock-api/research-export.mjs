@@ -1,9 +1,12 @@
+import { buildLoginPatientTasks } from "./patient-tasks.mjs";
+
 export function registerResearchExport({
   core,
   db,
   assert,
   clean,
   today,
+  shiftDate,
   spreadsheet,
 }) {
   const patientFor = (userId) =>
@@ -64,12 +67,13 @@ export function registerResearchExport({
         "类型",
         "开始日期",
         "截止日期",
+        "提醒时间",
         "状态",
         "来源",
         "说明",
         "结果",
       ];
-      rows = db.followupTasks
+      rows = buildLoginPatientTasks({ db, today, shiftDate })
         .filter((r) => {
           const p = patientFor(r.user_id);
           return (
@@ -98,6 +102,7 @@ export function registerResearchExport({
             r.type,
             r.date,
             r.due_date,
+            r.remind_time || "",
             r.status,
             r.source,
             r.description,

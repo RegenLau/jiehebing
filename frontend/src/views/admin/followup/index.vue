@@ -49,14 +49,14 @@
           label="开始日期"
           width="120"
         /><ElTableColumn prop="due_date" label="截止日期" width="120" /><ElTableColumn
+          label="提醒时间"
+          width="100"
+          ><template #default="{ row }">{{ row.remind_time || '-' }}</template></ElTableColumn
+        ><ElTableColumn prop="source" label="来源" min-width="120" /><ElTableColumn
           label="状态"
           width="150"
           ><template #default="{ row }"
             >{{ row.status }} <ElTag v-if="row.overdue" type="danger">逾期</ElTag></template
-          ></ElTableColumn
-        ><ElTableColumn label="操作" width="90"
-          ><template #default="{ row }"
-            ><ElButton link type="primary" @click="open(row.id)">处理</ElButton></template
           ></ElTableColumn
         ></ElTable
       ><ElPagination
@@ -68,61 +68,38 @@
     /></ElCard>
     <ElDialog
       v-model="visible"
-      :title="form.id ? '任务详情与处理' : '新增临时任务'"
+      title="新增临时任务"
       width="760px"
       :before-close="close"
       :close-on-click-modal="false"
       ><ElForm :disabled="saving" label-position="top"
-        ><template v-if="!form.id"
-          ><ElFormItem label="患者"
-            ><ElSelect v-model="form.user_id" filterable
-              ><ElOption
-                v-for="p in patients"
-                :key="p.id"
-                :label="p.name + ' · ' + p.mobile"
-                :value="p.id" /></ElSelect></ElFormItem
-          ><ElFormItem label="任务名称"><ElInput v-model="form.name" /></ElFormItem
-          ><ElFormItem label="类型"
-            ><ElSelect v-model="form.type"
-              ><ElOption v-for="t in types" :key="t" :label="t" :value="t" /></ElSelect
-            ></ElFormItem
-          ><ElFormItem label="说明与提交要求"
-            ><ElInput v-model="form.description" type="textarea" /></ElFormItem></template
-        ><template v-else
-          ><p>{{ form.patient_name }} · {{ form.name }} · {{ form.status }}</p
-          ><p>{{ form.description }}</p
-          ><ElFormItem label="处理操作"
-            ><ElSelect v-model="action"
-              ><ElOption label="记录联系" value="contact" /><ElOption
-                label="调整日期"
-                value="reschedule" /><ElOption label="要求补充" value="supplement" /><ElOption
-                label="人工确认完成"
-                value="complete"
-                :disabled="form.type === '检查'" /><ElOption
-                label="取消任务"
-                value="cancel" /></ElSelect></ElFormItem></template
-        ><div v-if="!form.id || action === 'reschedule'" class="toolbar"
+        ><ElFormItem label="患者"
+          ><ElSelect v-model="form.user_id" filterable
+            ><ElOption
+              v-for="p in patients"
+              :key="p.id"
+              :label="p.name + ' · ' + p.mobile"
+              :value="p.id" /></ElSelect></ElFormItem
+        ><ElFormItem label="任务名称"><ElInput v-model="form.name" /></ElFormItem
+        ><ElFormItem label="类型"
+          ><ElSelect v-model="form.type"
+            ><ElOption
+              v-for="t in createTypes"
+              :key="t"
+              :label="t"
+              :value="t" /></ElSelect></ElFormItem
+        ><ElFormItem label="说明与提交要求"
+          ><ElInput v-model="form.description" type="textarea" /></ElFormItem
+        ><div class="toolbar"
           ><ElFormItem label="开始日期"
             ><ElDatePicker v-model="form.date" value-format="YYYY-MM-DD" /></ElFormItem
           ><ElFormItem label="截止日期"
-            ><ElDatePicker v-model="form.due_date" value-format="YYYY-MM-DD" /></ElFormItem></div
-        ><ElFormItem v-if="form.id" label="原因、结果或后续安排"
-          ><ElInput v-model="reason" type="textarea" /></ElFormItem></ElForm
-      ><ElTable v-if="form.id" :data="form.history || []"
-        ><ElTableColumn prop="time" label="时间" /><ElTableColumn
-          prop="operator"
-          label="操作人" /><ElTableColumn prop="action" label="操作" /><ElTableColumn
-          prop="reason"
-          label="说明" /></ElTable
+            ><ElDatePicker
+              v-model="form.due_date"
+              value-format="YYYY-MM-DD" /></ElFormItem></div></ElForm
       ><template #footer
         ><ElButton :disabled="saving" @click="visible = false">关闭</ElButton
-        ><ElButton
-          :disabled="['已完成', '已取消'].includes(form.status)"
-          type="primary"
-          :loading="saving"
-          @click="save"
-          >保存</ElButton
-        ></template
+        ><ElButton type="primary" :loading="saving" @click="save">保存</ElButton></template
       ></ElDialog
     ></div
   >
@@ -136,7 +113,7 @@
   import request from '@/utils/http'
   import { fetchPatientList, type PatientRecord } from '@/api/patient'
   interface Task {
-    id?: number
+    id?: number | string
     user_id?: number
     patient_name?: string
     name: string
@@ -145,12 +122,14 @@
     description: string
     date: string
     due_date: string
+    remind_time?: string
+    source?: string
     overdue?: boolean
-    history?: { time: string; operator: string; action: string; reason: string }[]
   }
   const route = useRoute(),
-    types = ['提醒', '检查'],
-    states = ['待完成', '已提交', '需补充', '已完成', '已取消'],
+    types = ['提醒', '检查', '问卷', '健康反馈'],
+    createTypes = ['提醒', '检查'],
+    states = ['待完成', '需补充'],
     blank = (): Task => ({
       name: '',
       type: '检查',
@@ -173,8 +152,6 @@
     loading = ref(false),
     saving = ref(false),
     visible = ref(false),
-    action = ref('contact'),
-    reason = ref(''),
     patients = ref<PatientRecord[]>([])
   async function load() {
     loading.value = true
@@ -208,35 +185,25 @@
   async function openCreate() {
     form.value = blank()
     const all: PatientRecord[] = []
+    let fetched = 0
     let n = 1
     while (true) {
       const p = await fetchPatientList({ current: n++, size: 100 })
-      all.push(...p.list)
-      if (all.length >= p.total) break
+      fetched += p.list.length
+      all.push(
+        ...p.list.filter((patient) => patient.created_via === 'admin' && patient.login_enabled)
+      )
+      if (fetched >= p.total || p.list.length === 0) break
     }
     patients.value = all
-    visible.value = true
-  }
-  async function open(id: number) {
-    form.value = await request.get({ url: '/app/core/followup/detail', params: { id } })
-    action.value = 'contact'
-    reason.value = ''
     visible.value = true
   }
   async function save() {
     saving.value = true
     try {
       await request.post({
-        url: '/app/core/followup/' + (form.value.id ? 'update' : 'create'),
-        params: form.value.id
-          ? {
-              id: form.value.id,
-              action: action.value,
-              reason: reason.value,
-              date: form.value.date,
-              due_date: form.value.due_date
-            }
-          : form.value,
+        url: '/app/core/followup/create',
+        params: form.value,
         showSuccessMessage: true
       })
       visible.value = false

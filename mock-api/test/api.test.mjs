@@ -368,7 +368,7 @@ test("patient mini-program login only accepts mobile numbers added by the admin"
   );
 });
 
-test("seeded pending-start patient stays confirmed before the first medication time", async (t) => {
+test("seeded pending-start patient stays confirmed before the medication start date", async (t) => {
   const api = await start(t);
   const login = await api.json("/app/login", {
     auth: "",
@@ -443,7 +443,28 @@ test("patient task page includes home pending tasks and active back-office recor
   const patientToken = login.data.token.access_token;
   const tasks = await api.json("/app/patient/tasks", { auth: patientToken });
   assert.equal(tasks.code, 0);
-
+  const comparableTask = (task) => ({
+    id: String(task.id),
+    user_id: task.user_id,
+    patient_name: task.patient_name,
+    name: task.name,
+    type: task.type,
+    date: task.date,
+    due_date: task.due_date,
+    remind_time: task.remind_time || "",
+    status: task.status,
+    source: task.source,
+    overdue: task.overdue,
+  });
+  assert.deepEqual(
+    backofficeTasks.map(comparableTask),
+    tasks.data.tasks.map(comparableTask),
+    "the back-office list uses the same task view as the patient app",
+  );
+  assert.ok(
+    backofficeTasks.some((task) => task.type === "健康反馈"),
+    "dynamic patient-app tasks are included in the back-office list",
+  );
   const types = ["提醒", "检查"];
   const showcaseTasks = tasks.data.tasks.filter(
     (task) => task.source === "患者端任务类型演示",
@@ -475,7 +496,11 @@ test("patient task page includes home pending tasks and active back-office recor
       .every((task) => taskIds.has(String(task.id))),
     "every active back-office task is available on the task page",
   );
-  assert.equal(taskIds.size, tasks.data.tasks.length, "tasks are not duplicated");
+  assert.equal(
+    taskIds.size,
+    tasks.data.tasks.length,
+    "tasks are not duplicated",
+  );
   assert.ok(
     tasks.data.tasks.every(
       (task) => !["已完成", "已提交", "已取消"].includes(task.status),
@@ -1269,8 +1294,8 @@ test("home pickup reminder dates follow actual dispensing, dose frequency, and s
   );
 });
 
-test("confirmed patient waits for the first medication time before home becomes available", async (t) => {
-  let currentNow = "2026-09-08T23:30:00.000Z";
+test("confirmed patient enters on the medication start date without waiting for its first time", async (t) => {
+  let currentNow = "2026-09-08T15:59:59.000Z";
   const api = await start(t, () => currentNow);
   await api.login();
   const group = (await api.ok(P + "project/detail", { query: { id: 1 } }))
@@ -1330,7 +1355,7 @@ test("confirmed patient waits for the first medication time before home becomes 
     assert.match(blocked.message, /用药计划尚未开始/);
   }
 
-  currentNow = "2026-09-09T00:00:01.000Z";
+  currentNow = "2026-09-08T16:00:00.000Z";
   bootstrap = await api.json("/app/patient/bootstrap", { auth: patientToken });
   assert.equal(bootstrap.data.stage, "home");
   assert.equal(
@@ -3825,12 +3850,20 @@ test("generated execution follows group dates and retains safety tasks when medi
   const tasks = await api.ok(P + "followup/index", {
     query: { user_id: p.id },
   });
-  assert.equal(tasks.total, 2);
-  assert.equal(tasks.list[1].date, "2026-09-09");
-  assert.equal(tasks.list[1].due_date, "2026-09-10");
+  const generatedTasks = tasks.list.filter(
+    (task) => task.source === "分组安排",
+  );
+  assert.equal(generatedTasks.length, 2);
+  assert.ok(
+    generatedTasks.some(
+      (task) => task.date === "2026-09-09" && task.due_date === "2026-09-10",
+    ),
+  );
   await api.ok(P + "patient/treatment", { body });
   assert.equal(
-    (await api.ok(P + "followup/index", { query: { user_id: p.id } })).total,
+    (
+      await api.ok(P + "followup/index", { query: { user_id: p.id } })
+    ).list.filter((task) => task.source === "分组安排").length,
     2,
   );
   await api.ok(P + "patient/state", {
@@ -3853,7 +3886,9 @@ test("generated execution follows group dates and retains safety tasks when medi
   assert.equal(
     (
       await api.ok(P + "followup/index", { query: { user_id: p.id } })
-    ).list.filter((r) => r.status === "待完成").length,
+    ).list.filter(
+      (task) => task.source === "分组安排" && task.status === "待完成",
+    ).length,
     2,
   );
   await api.ok(P + "patient/state", {
@@ -3874,11 +3909,13 @@ test("generated execution follows group dates and retains safety tasks when medi
     ).length,
     20,
   );
+  const inspectionTask = generatedTasks.find((task) => task.type === "检查");
+  assert.ok(inspectionTask);
   await api.ok(P + "followup/update", {
-    body: { id: tasks.list[0].id, action: "contact", reason: "已联系患者" },
+    body: { id: inspectionTask.id, action: "contact", reason: "已联系患者" },
   });
   assert.equal(
-    (await api.ok(P + "followup/detail", { query: { id: tasks.list[0].id } }))
+    (await api.ok(P + "followup/detail", { query: { id: inspectionTask.id } }))
       .status,
     "待完成",
   );
@@ -3886,7 +3923,7 @@ test("generated execution follows group dates and retains safety tasks when medi
     (
       await api.json(P + "followup/update", {
         body: {
-          id: tasks.list[0].id,
+          id: inspectionTask.id,
           action: "complete",
           reason: "不能绕过报告",
         },
@@ -3907,12 +3944,15 @@ test("generated execution follows group dates and retains safety tasks when medi
     user_id: p.id,
   });
   assert.ok(exited.every((r) => r.status === 3 && r.status_text === "已取消"));
-  assert.equal(
-    (
-      await api.ok(P + "followup/index", { query: { user_id: p.id } })
-    ).list.filter((r) => r.status === "已取消").length,
-    2,
+  const cancelledTasks = await Promise.all(
+    generatedTasks.map(async (task) => {
+      const detail = await api.ok(P + "followup/detail", {
+        query: { id: task.id },
+      });
+      return detail.status === "已取消";
+    }),
   );
+  assert.ok(cancelledTasks.every(Boolean));
 });
 
 test("report supplementation preserves originals and completes only its matching task", async (t) => {
@@ -4073,6 +4113,75 @@ test("report supplementation preserves originals and completes only its matching
   );
 });
 
+test("an expired report task reappears for the patient when the report needs supplementation", async (t) => {
+  const api = await start(t);
+  await api.login();
+  const task = await api.ok(P + "followup/create", {
+    body: {
+      user_id: 19,
+      name: "补充过期检查报告",
+      type: "检查",
+      date: "2026-08-20",
+      due_date: "2026-08-21",
+      description: "补充清晰、完整的报告原图",
+    },
+  });
+  const file = new FormData();
+  file.append(
+    "file",
+    new Blob([Buffer.from("89504e470d0a1a0a", "hex")], {
+      type: "image/png",
+    }),
+    "expired-report.png",
+  );
+  const uploaded = await api.ok(P + "file/upload-file", { body: file });
+  const report = await api.ok(P + "report/create", {
+    body: {
+      user_id: 19,
+      task_id: task.id,
+      type: "血常规",
+      exam_date: TODAY,
+      files: [uploaded.url],
+    },
+  });
+  const login = await api.json("/app/login", {
+    auth: "",
+    body: { mobile: "13910001019" },
+  });
+  assert.equal(login.code, 0);
+  const patientToken = login.data.token.access_token;
+  let patientTasks = await api.json("/app/patient/tasks", {
+    auth: patientToken,
+  });
+  assert.ok(
+    !patientTasks.data.tasks.some((row) => row.id === task.id),
+    "a submitted report task is no longer pending",
+  );
+
+  await api.ok(P + "report/review", {
+    body: {
+      id: report.id,
+      status: "需补充",
+      reason: "请补充完整页面",
+      metrics: [],
+    },
+  });
+  patientTasks = await api.json("/app/patient/tasks", { auth: patientToken });
+  const returnedTask = patientTasks.data.tasks.find(
+    (row) => row.id === task.id,
+  );
+  assert.equal(returnedTask?.status, "需补充");
+  assert.equal(returnedTask?.overdue, true);
+  assert.ok(returnedTask?.due_date < patientTasks.data.date);
+  const home = await api.json("/app/patient/home", { auth: patientToken });
+  assert.ok(
+    home.data.pending_tasks.some(
+      (row) => row.id === task.id && row.status === "需补充",
+    ),
+    "the expired task returns to the patient home pending list",
+  );
+});
+
 test("report list starts with representative mock records for every research group", async (t) => {
   const api = await start(t);
   await api.login();
@@ -4228,7 +4337,7 @@ test("new research exports are real XLSX and cover the filtered complete dataset
   for (let n = 0; n < 12; n++)
     await api.ok(P + "followup/create", {
       body: {
-        user_id: 1,
+        user_id: 19,
         name: `导出验证任务${n}`,
         type: "提醒",
         date: TODAY,
@@ -4236,7 +4345,9 @@ test("new research exports are real XLSX and cover the filtered complete dataset
         description: "模拟要求",
       },
     });
-  const patient = await api.ok(P + "patient/detail", { query: { user_id: 1 } });
+  const patient = await api.ok(P + "patient/detail", {
+    query: { user_id: 19 },
+  });
   const response = await api.raw(P + "research/export", {
     query: {
       kind: "tasks",
