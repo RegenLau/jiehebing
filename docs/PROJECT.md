@@ -155,13 +155,15 @@ JSON 顶层统一为 `{code,message,data}`，成功码 `200`。多数业务分�
 | 项目编辑数据及分组索引 | `GET /app/core/project/detail`；返回同口径状态，不提供单独的项目详情页面入口 |
 | 项目新增/编辑 | `POST /app/core/project/save`；当前仅维护编号、名称、研究周期和研究目的，允许向后调整结束日期 |
 | 手动结束项目 | `POST /app/core/project/change-status`；只接受结束状态及原因，手动结束优先于日期状态 |
+| 删除空项目 | `POST /app/core/project/delete`；仅项目无分组且无关联患者时成功，接口不做级联删除 |
 | 通用内容选择目录 | `GET /app/core/project/catalog` |
 | 分组详情及当前已入组患者 | `GET /app/core/project/group-detail` |
 | 分组创建（仅基础信息） | `POST /app/core/project/group-create` |
 | 分组基础信息编辑 | `POST /app/core/project/group-basic-save`；只更新名称和说明 |
+| 删除空分组 | `POST /app/core/project/group-delete`；仅成员为空且无患者档案指向该组时成功，可清理未使用的组内配置 |
 | 分组更新关联配置 | `POST /app/core/project/group-save` |
 
-项目列表 `/project/index` 的操作为分组、编辑及状态，不再提供项目详情入口。状态按开始及结束日期自动计算，结束日当天仍为进行中；尚未结束的项目可手动结束，已结束项目不重复显示可用操作。分组选择 `/project/groups?project_id=...`，新建使用基础信息弹窗并在成功后停留于列表；列表“编辑”仍在当前页弹窗中修改名称和说明，“进入分组”使用 `/project/group?project_id=...&id=...`。分组详情固定为患者、用药方案、随访任务-问卷、随访任务-提醒四个页签；患者页只读展示已入组患者并提供详情入口。配置模式只调整用药、问卷及提醒任务，不改变患者关系。旧的无id路径转回列表新建入口。分组API校验项目归属，更新携带revision避免覆盖过期数据。服务代码在mock-api/projects.mjs，不调用PHP。
+项目列表 `/project/index` 的操作为分组、编辑、状态及删除，不再提供项目详情入口。状态按开始及结束日期自动计算，结束日当天仍为进行中；尚未结束的项目可手动结束，已结束项目不重复显示可用操作。只有同时没有分组和关联患者的空项目可删除；存在空分组时也必须先进入分组列表处理，不做级联删除。分组选择 `/project/groups?project_id=...`，新建使用基础信息弹窗并在成功后停留于列表；列表“编辑”仍在当前页弹窗中修改名称和说明，“进入分组”使用 `/project/group?project_id=...&id=...`。分组列表仅允许删除没有患者的空分组，即使已配置方案和任务也可删除该组内快照，不影响通用模板。分组详情固定为患者、用药方案、随访任务-问卷、随访任务-提醒四个页签；患者页只读展示已入组患者并提供详情入口。配置模式只调整用药、问卷及提醒任务，不改变患者关系。旧的无id路径转回列表新建入口。分组API校验项目归属，更新携带revision避免覆盖过期数据。服务代码在mock-api/projects.mjs，不调用PHP。
 
 患者端登录仍允许后台已登记的结束项目患者取得会话，随后由 `GET /app/patient/bootstrap` 返回 `project_ended` 及项目名称、结束日期；页面只展示结束说明和退出入口。该患者的其他 `/app/patient/*` 业务接口返回业务码 `410`，不会回退或继续展示缓存中的首页、用药、任务及个人内容。
 

@@ -82,6 +82,7 @@ export interface GroupRecord {
   surveys: Schedule[]
   tasks: Schedule[]
   participant_ids: number[]
+  can_delete?: boolean
   participants?: {
     id: number
     patient_code?: string
@@ -111,6 +112,7 @@ export interface ProjectRecord extends ProjectPayload {
   notes?: string
   group_count?: number
   patient_count?: number
+  can_delete?: boolean
   groups?: GroupRecord[]
   created_at: string
   updated_at: string
@@ -142,6 +144,12 @@ export const changeProjectStatus = (
   request.post<ProjectRecord>({
     url: '/app/core/project/change-status',
     params: { id, status, reason, expected_status },
+    showSuccessMessage: true
+  })
+export const deleteProject = (id: number) =>
+  request.post<{ id: number; name: string }>({
+    url: '/app/core/project/delete',
+    params: { id },
     showSuccessMessage: true
   })
 export const fetchProjectCatalog = () => request.get<Catalog>({ url: '/app/core/project/catalog' })
@@ -194,5 +202,11 @@ export const saveGroupBasic = (params: {
   request.post<GroupRecord>({
     url: '/app/core/project/group-basic-save',
     params,
+    showSuccessMessage: true
+  })
+export const deleteGroup = (project_id: number, id: number) =>
+  request.post<{ id: number; name: string }>({
+    url: '/app/core/project/group-delete',
+    params: { project_id, id },
     showSuccessMessage: true
   })

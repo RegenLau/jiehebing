@@ -2214,6 +2214,130 @@ test("research project statuses follow dates, manual end overrides, and restart 
   assert.deepEqual(await restarted.all(P + "project/index"), initial);
 });
 
+test("only empty projects and groups can be deleted without cascading patient data", async (t) => {
+  const api = await start(t);
+  assert.equal(
+    (
+      await api.json(P + "project/delete", {
+        body: { id: 1 },
+      })
+    ).code,
+    401,
+  );
+  await api.login();
+  const seededProjects = await api.all(P + "project/index");
+  assert.ok(seededProjects.every((project) => project.can_delete === false));
+  const seededProject = seededProjects.find((project) => project.id === 1);
+  const seededDetail = await api.ok(P + "project/detail", {
+    query: { id: seededProject.id },
+  });
+  const seededGroup = seededDetail.groups.find(
+    (group) => group.participant_ids.length,
+  );
+  assert.equal(seededGroup.can_delete, false);
+  const nonemptyGroupDelete = await api.json(P + "project/group-delete", {
+    body: { project_id: seededProject.id, id: seededGroup.id },
+  });
+  assert.notEqual(nonemptyGroupDelete.code, 200);
+  assert.match(nonemptyGroupDelete.message, /患者/);
+  const nonemptyProjectDelete = await api.json(P + "project/delete", {
+    body: { id: seededProject.id },
+  });
+  assert.notEqual(nonemptyProjectDelete.code, 200);
+  assert.match(nonemptyProjectDelete.message, /分组/);
+
+  const payload = {
+    code: "TB-DELETE-001",
+    name: "空项目删除验收",
+    start_date: TODAY,
+    end_date: "2027-09-08",
+    purpose: "验证空项目与空分组删除",
+  };
+  const created = await api.ok(P + "project/save", { body: payload });
+  let projectRow = (await api.all(P + "project/index")).find(
+    (project) => project.id === created.id,
+  );
+  assert.deepEqual(
+    [projectRow.group_count, projectRow.patient_count, projectRow.can_delete],
+    [0, 0, true],
+  );
+
+  const emptyGroup = await api.ok(P + "project/group-create", {
+    body: {
+      project_id: created.id,
+      name: "空配置组",
+      description: "配置后仍没有患者",
+    },
+  });
+  projectRow = (await api.all(P + "project/index")).find(
+    (project) => project.id === created.id,
+  );
+  assert.equal(projectRow.can_delete, false);
+  const blockedByGroup = await api.json(P + "project/delete", {
+    body: { id: created.id },
+  });
+  assert.notEqual(blockedByGroup.code, 200);
+  assert.match(blockedByGroup.message, /分组/);
+
+  const configured = await api.ok(P + "project/group-save", {
+    body: {
+      id: emptyGroup.id,
+      project_id: created.id,
+      revision: emptyGroup.revision,
+      name: emptyGroup.name,
+      description: emptyGroup.description,
+      medication: seededGroup.medication,
+      reminder: seededGroup.reminder,
+      surveys: seededGroup.surveys,
+      tasks: seededGroup.tasks,
+      participant_ids: [],
+    },
+  });
+  assert.equal(configured.can_delete, true);
+  const deletedGroup = await api.ok(P + "project/group-delete", {
+    body: { project_id: created.id, id: emptyGroup.id },
+  });
+  assert.equal(deletedGroup.id, emptyGroup.id);
+  assert.notEqual(
+    (
+      await api.json(P + "project/group-detail", {
+        query: { project_id: created.id, id: emptyGroup.id },
+      })
+    ).code,
+    200,
+  );
+  const recreatedGroup = await api.ok(P + "project/group-create", {
+    body: {
+      project_id: created.id,
+      name: emptyGroup.name,
+      description: "名称可以重新使用",
+    },
+  });
+  await api.ok(P + "project/group-delete", {
+    body: { project_id: created.id, id: recreatedGroup.id },
+  });
+
+  projectRow = (await api.all(P + "project/index")).find(
+    (project) => project.id === created.id,
+  );
+  assert.equal(projectRow.can_delete, true);
+  const deletedProject = await api.ok(P + "project/delete", {
+    body: { id: created.id },
+  });
+  assert.equal(deletedProject.id, created.id);
+  assert.notEqual(
+    (
+      await api.json(P + "project/detail", {
+        query: { id: created.id },
+      })
+    ).code,
+    200,
+  );
+  const recreatedProject = await api.ok(P + "project/save", { body: payload });
+  assert.equal(recreatedProject.code, payload.code);
+  assert.equal(recreatedProject.name, payload.name);
+});
+
 test("basic group creation is independent from configuration and enforces project names", async (t) => {
   const api = await start(t);
   assert.equal(

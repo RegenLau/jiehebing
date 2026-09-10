@@ -16,6 +16,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
   const group = (projectId, id) => { const row = find(db.projectGroups, id, '分组'); assert(row.project_id === project(projectId).id, '分组不属于当前项目', 404); return row; };
   const groupView = row => ({
     ...copy(row),
+    can_delete: !(row.participant_ids || []).length && !db.patients.some(patient => patient.group_id === row.id),
     participants: (row.participant_ids || []).map(id => {
       const patient = find(db.patients,id,'患者');
       return {
@@ -43,10 +44,10 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
       const groups = db.projectGroups.filter(g => g.project_id === p.id);
       const patientIds = new Set(db.patients.filter(patient => patient.project_id === p.id).map(patient => patient.id));
       for (const group of groups) for (const id of group.participant_ids || []) patientIds.add(id);
-      return { ...view(p), group_count: groups.length, patient_count: patientIds.size };
+      return { ...view(p), group_count: groups.length, patient_count: patientIds.size, can_delete: groups.length === 0 && patientIds.size === 0 };
     }), q);
   });
-  core('GET', 'project/detail', ({ query: q }) => ({ ...view(project(q.id)), groups: db.projectGroups.filter(g => g.project_id === Number(q.id)) }));
+  core('GET', 'project/detail', ({ query: q }) => ({ ...view(project(q.id)), groups: db.projectGroups.filter(g => g.project_id === Number(q.id)).map(groupView) }));
   core('POST', 'project/save', ({ body: b, admin }) => {
     const existing = b.id === undefined ? null : project(b.id);
     assert(b.status === undefined, '项目状态由研究周期和手动结束决定');
@@ -77,6 +78,13 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     log(record, admin, '手动结束', reason, before, { status: 2, status_source: 'manual', manual_ended_at: record.manual_ended_at });
     return view(record);
   });
+  core('POST', 'project/delete', ({ body: b }) => {
+    const record = project(b.id);
+    assert(!db.projectGroups.some(group => group.project_id === record.id), '项目下仍有分组，请先删除空分组');
+    assert(!db.patients.some(patient => patient.project_id === record.id), '项目下仍有关联患者，不能删除');
+    db.projects.splice(db.projects.indexOf(record), 1);
+    return { id: record.id, name: record.name };
+  });
   core('GET', 'project/catalog', () => ({
     medication_schemes: db.medicationSchemes, task_templates: db.taskTemplates,
     reminder_schemes: db.reminderSchemes,
@@ -97,7 +105,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     const record = { id:nextId(db.projectGroups), project_id:p.id, name, description, revision:1, medication:null, reminder:null, surveys:[],tasks:[],participant_ids:[],participants:[],created_at:timestamp(),updated_at:timestamp() };
     db.projectGroups.push(record);
     log(p,admin,'新增分组',name, {group:{}}, {group:copy(record)});
-    return record;
+    return groupView(record);
   });
   core('GET', 'project/group-detail', ({ query: q }) => groupView(group(q.project_id, q.id)));
   core('POST', 'project/group-basic-save', ({ body: b, admin }) => {
@@ -112,6 +120,15 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     Object.assign(existing,{name,description,revision:existing.revision+1,updated_at:timestamp()});
     log(p,admin,'编辑分组基础信息',name,{group:before},{group:copy(existing)});
     return groupView(existing);
+  });
+  core('POST', 'project/group-delete', ({ body: b, admin }) => {
+    const p = project(b.project_id);
+    const record = group(p.id,b.id);
+    assert(!(record.participant_ids || []).length && !db.patients.some(patient => patient.group_id === record.id), '分组内仍有患者，不能删除');
+    const before = copy(record);
+    db.projectGroups.splice(db.projectGroups.indexOf(record), 1);
+    log(p,admin,'删除空分组',record.name,{group:before},{group:null});
+    return { id: record.id, name: record.name };
   });
   core('POST', 'project/group-save', ({ body: b, admin }) => {
     const p = project(b.project_id);

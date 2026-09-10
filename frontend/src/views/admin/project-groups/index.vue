@@ -44,11 +44,18 @@
           <ElTableColumn label="分组版本" width="100"
             ><template #default="{ row }">第 {{ row.revision }} 版</template></ElTableColumn
           >
-          <ElTableColumn label="操作" width="180"
+          <ElTableColumn label="操作" width="230"
             ><template #default="{ row }"
               ><ElButton link type="primary" @click="openEdit(row)">编辑</ElButton
-              ><ElButton link type="primary" @click="openGroup(row.id)"
-                >进入分组</ElButton
+              ><ElButton link type="primary" @click="openGroup(row.id)">进入分组</ElButton
+              ><ElButton
+                link
+                type="danger"
+                :loading="deletingGroupId === row.id"
+                :disabled="!canDeleteGroup(row)"
+                :title="canDeleteGroup(row) ? '删除空分组' : '分组内仍有患者，不能删除'"
+                @click="removeGroup(row)"
+                >删除</ElButton
               ></template
             ></ElTableColumn
           >
@@ -125,12 +132,13 @@
   import { useRoute, useRouter } from 'vue-router'
   import {
     createGroup,
+    deleteGroup,
     fetchProjectDetail,
     saveGroupBasic,
     type GroupRecord,
     type ProjectRecord
   } from '@/api/project'
-  import type { FormInstance } from 'element-plus'
+  import { ElMessageBox, type FormInstance } from 'element-plus'
   defineOptions({ name: 'ProjectGroups' })
   const route = useRoute(),
     router = useRouter(),
@@ -147,6 +155,7 @@
     editRef = ref<FormInstance>(),
     editingGroup = ref<GroupRecord>()
   const editForm = reactive({ name: '', description: '' })
+  const deletingGroupId = ref<number>()
   let createProjectId = 0
   function closeCreate(done: () => void) {
     if (!creating.value) done()
@@ -203,6 +212,36 @@
       editing.value = false
     }
   }
+  function canDeleteGroup(value: unknown) {
+    const row = value as GroupRecord
+    return row.can_delete ?? (row.participant_ids?.length || 0) === 0
+  }
+  async function removeGroup(value: unknown) {
+    const row = value as GroupRecord
+    if (!row.id || !canDeleteGroup(row) || deletingGroupId.value) return
+    const confirmed = await ElMessageBox.confirm(
+      `确认删除空分组“${row.name}”？该分组内尚未用于患者的用药方案与随访任务配置将一并删除。`,
+      '删除分组',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger'
+      }
+    )
+      .then(() => true)
+      .catch(() => false)
+    if (!confirmed) return
+    deletingGroupId.value = row.id
+    try {
+      await deleteGroup(row.project_id, row.id)
+      await load()
+    } catch {
+      /* 请求层提示 */
+    } finally {
+      deletingGroupId.value = undefined
+    }
+  }
   let sequence = 0
   async function load() {
     const seq = ++sequence
@@ -246,26 +285,31 @@
 </script>
 <style scoped>
   .tip {
-    color: var(--el-text-color-secondary);
     font-size: 13px;
+    color: var(--el-text-color-secondary);
   }
+
   .groups-page {
     padding: 20px;
   }
+
   .heading {
     display: flex;
+    gap: 20px;
     align-items: center;
     justify-content: space-between;
-    gap: 20px;
     margin-bottom: 20px;
   }
+
   .heading h2 {
     margin: 12px 0 4px;
     font-size: 22px;
   }
+
   .heading p {
     color: var(--el-text-color-secondary);
   }
+
   .config-tags {
     display: flex;
     flex-wrap: wrap;

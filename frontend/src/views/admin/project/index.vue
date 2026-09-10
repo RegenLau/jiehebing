@@ -49,7 +49,7 @@
             }}</ElTag></template
           ></ElTableColumn
         >
-        <ElTableColumn label="操作" width="190" fixed="right"
+        <ElTableColumn label="操作" width="240" fixed="right"
           ><template #default="{ row }"
             ><ElButton
               link
@@ -59,6 +59,14 @@
             ><ElButton link type="primary" @click="edit(row.id)">编辑</ElButton
             ><ElButton link type="primary" :disabled="row.status === 2" @click="openStatus(row.id)"
               >状态</ElButton
+            ><ElButton
+              link
+              type="danger"
+              :loading="deletingProjectId === row.id"
+              :disabled="!canDeleteProject(row)"
+              :title="canDeleteProject(row) ? '删除空项目' : '项目仍有分组或患者，不能删除'"
+              @click="removeProject(row)"
+              >删除</ElButton
             ></template
           ></ElTableColumn
         >
@@ -146,12 +154,13 @@
 </template>
 <script setup lang="ts">
   import { computed, nextTick, onActivated, reactive, ref } from 'vue'
-  import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+  import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
   import {
     fetchProjectList,
     fetchProjectDetail,
     saveProject,
     changeProjectStatus,
+    deleteProject,
     type ProjectPayload,
     type ProjectRecord,
     type ProjectStatus
@@ -185,6 +194,7 @@
     statusSaving = ref(false),
     statusProject = ref<ProjectRecord>(),
     reason = ref('')
+  const deletingProjectId = ref<number>()
   const editingStatusSource = ref<ProjectRecord['status_source']>()
   const endDateHint = computed(() =>
     editingStatusSource.value === 'manual'
@@ -305,6 +315,37 @@
       /* 请求层提示 */
     } finally {
       statusSaving.value = false
+    }
+  }
+  function canDeleteProject(value: unknown) {
+    const row = value as ProjectRecord
+    return row.can_delete ?? (row.group_count === 0 && row.patient_count === 0)
+  }
+  async function removeProject(value: unknown) {
+    const row = value as ProjectRecord
+    if (!canDeleteProject(row) || deletingProjectId.value) return
+    const confirmed = await ElMessageBox.confirm(
+      `确认删除空项目“${row.name}”？删除后无法恢复。`,
+      '删除项目',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger'
+      }
+    )
+      .then(() => true)
+      .catch(() => false)
+    if (!confirmed) return
+    deletingProjectId.value = row.id
+    try {
+      await deleteProject(row.id)
+      if (list.value.length === 1 && pager.current > 1) pager.current -= 1
+      await load()
+    } catch {
+      /* 请求层提示 */
+    } finally {
+      deletingProjectId.value = undefined
     }
   }
   onActivated(load)
