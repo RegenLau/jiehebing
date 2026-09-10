@@ -1,3 +1,5 @@
+import { normalizeGroupDrugs } from './group-medication.mjs';
+
 export function registerMedicationSchemes({core,db,assert,find,page,clean,timestamp,nextId}) {
   const integer=(v,label,min,max)=>{assert(Number.isInteger(v)&&v>=min&&v<=max,`${label}应为${min}至${max}的整数`);return v;};
   const text=(v,label,max,required=false)=>{const s=clean(v);assert(s.length<=max&&(!required||s),`请填写有效的${label}`);return s;};
@@ -14,10 +16,12 @@ export function registerMedicationSchemes({core,db,assert,find,page,clean,timest
     if(old) assert(b.version===old.version,'方案已更新，请刷新后编辑');
     const name=text(b.name,'方案名称',100,true),description=text(b.description,'方案说明',1000),reason=text(b.reason,'修改原因',300,Boolean(old));
     assert(!db.medicationSchemes.some(r=>r!==old&&r.name.toLowerCase()===name.toLowerCase()),'方案名称已存在');
-    const treatment_days=integer(b.treatment_days,'治疗天数',1,3650),pickup_days=integer(b.pickup_days,'取药周期',1,3650),advance_days=integer(b.advance_days,'提前提醒天数',0,pickup_days);
+    assert(b.pickup_mode===undefined||['manual','quantity'].includes(b.pickup_mode),'取药周期计算方式不合法');
+    const byQuantity=b.pickup_mode==='quantity';
+    const treatment_days=integer(b.treatment_days,'治疗天数',1,3650);
     assert(Array.isArray(b.drugs)&&b.drugs.length>0&&b.drugs.length<=50,'请添加1至50种药品');
     assert(new Set(b.drugs.map(d=>d.drug_id)).size===b.drugs.length,'药品不能重复');
-    const drugs=b.drugs.map(d=>{
+    const drugs=byQuantity?normalizeGroupDrugs(b.drugs,{db,assert,find,clean},old?.drugs):b.drugs.map(d=>{
       integer(d.drug_id,'药品编号',1,99999999);
       const medicine=find(db.commonMedicines,d.drug_id,'药品');
       assert(medicine.status===1||old?.drugs.some(r=>r.drug_id===d.drug_id),'停用药品不能新增到方案');
@@ -26,8 +30,12 @@ export function registerMedicationSchemes({core,db,assert,find,page,clean,timest
       assert(times.every(t=>/^([01]\d|2[0-3]):[0-5]\d$/.test(t))&&new Set(times).size===times.length,'请填写有效且不重复的服药时间，多个时间用逗号分隔');
       return {drug_id:medicine.id,name:medicine.common_name,specification:medicine.specification,dose,unit:text(d.unit,'用量单位',20,true),frequency:text(d.frequency,'用药频次',60,true),times:times.join(','),precautions:text(d.precautions,'注意事项',1000),quantity:integer(d.quantity,'默认发药数量',1,100000)};
     });
+    const pickup_days=byQuantity?Math.min(treatment_days,Math.max(1,Math.floor(Math.min(...drugs.map(d=>d.quantity/Number(d.dose)/d.daily_count))))):integer(b.pickup_days,'取药周期',1,3650);
+    const advance_days=integer(b.advance_days,'提前提醒天数',0,byQuantity?3650:pickup_days);
+    const prescription_url=clean(b.prescription_url);
+    if(prescription_url){const match=prescription_url.match(/^\/api\/mock-files\/([\w-]+)$/);assert(match&&db.files.get(match[1])?.type.startsWith('image/'),'请上传有效的处方图片');}
     const row=old||{id:nextId(db.medicationSchemes),status:1,history:[]},before=old?snapshot(old):null;
-    Object.assign(row,{name,description,treatment_days,pickup_days,advance_days,drugs,revision:(old?.revision||1)+1,updated_at:timestamp()});row.version=`V${row.revision}`;
+    Object.assign(row,{name,description,treatment_days,pickup_days,advance_days,drugs,pickup_mode:byQuantity?'quantity':'manual',prescription_url,revision:(old?.revision||1)+1,updated_at:timestamp()});row.version=`V${row.revision}`;
     record(row,admin,before,reason||'新增用药方案');if(!old)db.medicationSchemes.push(row);return row;
   });
   core('POST','medication-scheme/status',({body:b,admin})=>{

@@ -10,6 +10,9 @@ export interface ProjectPayload {
   end_date: string
 }
 export interface Drug {
+  daily_count?: number
+  reminders?: { time: string; timing: string }[]
+  confirmed?: boolean
   quantity?: number
   drug_id: number
   name: string
@@ -60,6 +63,9 @@ export interface Schedule extends Binding {
   reminders: { start: boolean; due: boolean; overdue: boolean }
 }
 export interface Medication extends Binding {
+  drugs?: Drug[]
+  prescription_url?: string
+  pickup_mode?: 'manual' | 'quantity'
   treatment_days: number
   pickup_days: number
   advance_days: number

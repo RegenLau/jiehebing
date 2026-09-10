@@ -72,84 +72,22 @@
               <p class="muted">已有患者的归属由患者研究管理维护，此处用于查看当前结果。</p>
             </ElTabPane>
             <ElTabPane label="用药方案" name="medication">
-              <ElSelect
-                :model-value="form.medication?.id"
-                placeholder="选择通用用药方案"
-                clearable
-                filterable
-                style="width: 100%"
-                @change="selectMedication"
-              >
-                <ElOption
-                  v-for="s in catalog.medication_schemes"
-                  :key="s.id"
-                  :label="`${s.name}${s.status === 1 ? '' : '（已停用）'}`"
-                  :value="s.id"
-                  :disabled="s.status !== 1"
-                />
-              </ElSelect>
-              <template v-if="form.medication">
-                <p class="muted">{{ form.medication.snapshot.description }}</p>
-                <ElTable :data="form.medication.snapshot.drugs" border>
-                  <ElTableColumn label="药品" min-width="160"
-                    ><template #default="{ row }"
-                      >{{ row.name }}<div class="muted">{{ row.specification }}</div></template
-                    ></ElTableColumn
-                  >
-                  <ElTableColumn label="用法" min-width="160"
-                    ><template #default="{ row }"
-                      >{{ row.dose }}{{ row.unit }} / 次 · {{ row.frequency }} ·
-                      {{ row.times }}</template
-                    ></ElTableColumn
-                  >
-                  <ElTableColumn
-                    prop="precautions"
-                    label="注意事项"
-                    min-width="150"
-                    show-overflow-tooltip
-                  />
-                </ElTable>
-                <div class="fields">
-                  <ElFormItem label="默认治疗天数"
-                    ><ElInputNumber
-                      v-model="form.medication.treatment_days"
-                      :min="1"
-                      :max="3650"
-                      :precision="0"
-                  /></ElFormItem>
-                  <ElFormItem label="默认取药周期（天）"
-                    ><ElInputNumber
-                      v-model="form.medication.pickup_days"
-                      :min="1"
-                      :max="3650"
-                      :precision="0"
-                  /></ElFormItem>
-                  <ElFormItem v-if="!form.reminder" label="余药预警提前（天）"
-                    ><ElInputNumber
-                      v-model="form.medication.advance_days"
-                      :min="0"
-                      :max="form.medication.pickup_days"
-                      :precision="0"
-                  /></ElFormItem>
-                  <ElFormItem v-else label="取药提醒提前量">
-                    <ElInput
-                      :model-value="
-                        form.reminder.snapshot.pickup_enabled
-                          ? `预计余药不足前 ${form.reminder.snapshot.pickup_advance_days} 天`
-                          : '提醒方案未启用取药提醒'
-                      "
-                      disabled
-                    />
-                  </ElFormItem>
-                  <ElFormItem
-                    v-for="q in form.medication.quantities"
-                    :key="q.drug_id"
-                    :label="`${drugName(q.drug_id)}首次发药（${drugUnit(q.drug_id)}）`"
-                    ><ElInputNumber v-model="q.quantity" :min="1" :max="100000" :precision="0"
-                  /></ElFormItem>
-                </div>
-                <p class="muted">以上是本组默认条件，实际发药以患者发药登记为准。</p>
-              </template>
+              <MedicationEditor
+                context="group"
+                ref="medicationEditor"
+                v-model="form.medication"
+                :sources="catalog.medication_schemes"
+                :group-name="form.name"
+                :readonly="readonly"
+                :disabled="saving"
+                :advance-days="
+                  form.reminder
+                    ? form.reminder.snapshot.pickup_enabled
+                      ? form.reminder.snapshot.pickup_advance_days
+                      : 0
+                    : (form.medication?.advance_days ?? 3)
+                "
+              />
             </ElTabPane>
             <ElTabPane label="随访问卷" name="followup-surveys"
               ><Schedules
@@ -242,6 +180,7 @@
     type GroupRecord
   } from '@/api/project'
   import Schedules from '../project/modules/schedules.vue'
+  import MedicationEditor from '@/components/business/medication-editor.vue'
   defineOptions({ name: 'ProjectGroup' })
   const route = useRoute(),
     router = useRouter()
@@ -258,6 +197,7 @@
     participant_ids: []
   })
   const form = ref<GroupRecord>(blank())
+  const medicationEditor = ref<InstanceType<typeof MedicationEditor>>()
   const catalog = ref<Catalog>({
     medication_schemes: [],
     reminder_schemes: [],
@@ -286,10 +226,6 @@
       Boolean(currentReminderSource.value) &&
       currentReminderSource.value?.version !== form.value.reminder?.snapshot.version
   )
-  const drugName = (id: number) =>
-    form.value.medication?.snapshot.drugs?.find((d) => d.drug_id === id)?.name || ''
-  const drugUnit = (id: number) =>
-    form.value.medication?.snapshot.drugs?.find((d) => d.drug_id === id)?.unit || ''
   let sequence = 0
   async function loadPage() {
     const seq = ++sequence
@@ -357,27 +293,6 @@
   }
   watch(() => route.fullPath, loadPage, { immediate: true })
   onBeforeRouteLeave(() => !saving.value)
-  function selectMedication(id?: number) {
-    if (!id) {
-      form.value.medication = null
-      return
-    }
-    const source = catalog.value.medication_schemes.find((s) => s.id === id)
-    if (!source || source.id === form.value.medication?.id) return
-    form.value.medication = {
-      id,
-      snapshot: JSON.parse(JSON.stringify(source)),
-      treatment_days: source.treatment_days ?? 30,
-      pickup_days: source.pickup_days ?? 30,
-      advance_days: form.value.reminder?.snapshot.pickup_enabled
-        ? form.value.reminder.snapshot.pickup_advance_days
-        : (source.advance_days ?? 3),
-      quantities: (source.drugs || []).map((d) => ({
-        drug_id: d.drug_id,
-        quantity: d.quantity ?? 30
-      }))
-    }
-  }
   function selectReminder(id?: number) {
     if (!id) {
       form.value.reminder = null
@@ -418,6 +333,10 @@
   }
   async function save() {
     if (readonly.value || saving.value) return
+    if (!medicationEditor.value?.validate()) {
+      activeTab.value = 'medication'
+      return
+    }
     if ([...form.value.surveys, ...form.value.tasks].some((s) => s.anchor === 'date' && !s.date)) {
       ElMessage.warning('请填写指定执行日期')
       return
@@ -428,7 +347,7 @@
       saving.value = false
       await router.replace({
         path: '/project/group',
-        query: { project_id: projectId.value, id: saved.id }
+        query: { project_id: projectId.value, id: saved.id, tab: activeTab.value }
       })
     } catch {
       /* 保留表单 */
@@ -480,12 +399,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .group-tabs :deep(.el-tabs__item) {
+  .group-tabs > :deep(.el-tabs__header .el-tabs__item) {
     font-size: 16px;
     height: 52px;
     padding: 0 28px;
   }
-  .group-tabs :deep(.el-tabs__content) {
+  .group-tabs > :deep(.el-tabs__content) {
     padding: 24px;
     min-height: 320px;
     border: 1px solid var(--el-border-color-light);
@@ -517,12 +436,6 @@
   .patient-detail-link:hover {
     color: var(--el-color-primary-light-3);
   }
-  .fields {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 24px;
-    margin-top: 16px;
-  }
   .source-alert,
   .reminder-description,
   .reminder-detail {
@@ -537,9 +450,6 @@
   @media (max-width: 680px) {
     .configuration-summary {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .fields {
-      grid-template-columns: 1fr;
     }
     .reminder-detail :deep(.el-descriptions__body) {
       overflow-x: auto;

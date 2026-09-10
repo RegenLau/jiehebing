@@ -1,5 +1,7 @@
+import { normalizeGroupDrugs, registerPrescriptionRecognition } from './group-medication.mjs';
 // Project configuration is independent from patient treatment and generated tasks.
 export function registerProjects({ core, db, assert, find, page, clean, isDate, timestamp, nextId }) {
+  registerPrescriptionRecognition({core, db, assert, clean});
   const copy = value => structuredClone(value);
   const number = (value, label, min = 0, max = 3650) => {
     assert(typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max, `${label}应为${min}至${max}的整数`);
@@ -123,16 +125,30 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     let medication = null;
     if (b.medication !== null && b.medication !== undefined) {
       const m = b.medication;
-      const source = binding(db.medicationSchemes,m.id,'用药方案',existing?.medication);
+      const source = m.id === 0
+        ? {id:0,snapshot:{id:0,name:`${name}用药方案`,status:1,drugs:[]}}
+        : binding(db.medicationSchemes,m.id,'用药方案',existing?.medication);
+      if (m.drugs !== undefined) {
+        source.snapshot.drugs = normalizeGroupDrugs(m.drugs, {db,assert,find,clean}, existing?.medication?.snapshot.drugs);
+      }
+      assert(source.snapshot.drugs?.length, '请添加并确认分组药品');
       const days = number(m.treatment_days,'治疗天数',1);
-      const cycle = number(m.pickup_days,'取药周期',1);
-      const advance = number(m.advance_days,'提前提醒天数',0,cycle);
+      assert(m.pickup_mode === undefined || ['manual','quantity'].includes(m.pickup_mode), '取药周期计算方式不合法');
+      if (m.pickup_mode === 'quantity') assert(m.drugs !== undefined, '按药量计算取药周期时请提交完整药品卡片');
+      const cycle = m.pickup_mode === 'quantity'
+        ? Math.min(days, Math.max(1, Math.floor(Math.min(...source.snapshot.drugs.map(d => d.quantity / (Number(d.dose) * d.daily_count))))))
+        : number(m.pickup_days,'取药周期',1);
+      const advance = number(m.advance_days,'提前提醒天数',0,m.pickup_mode === 'quantity' ? 3650 : cycle);
       const quantities = array(m.quantities,'首次发药',100);
       const drugs = source.snapshot.drugs;
       unique(quantities.map(q=>q.drug_id),'发药药品');
       assert(quantities.length === drugs.length, '请填写方案中每种药品的首次发药数量');
       const amounts = quantities.map(q => { assert(drugs.some(d=>d.drug_id === q.drug_id), '发药药品不属于当前方案'); return { drug_id:q.drug_id, quantity:number(q.quantity,'首次发药数量',1,100000) }; });
-      medication = { ...source, treatment_days:days, pickup_days:cycle, advance_days:advance, quantities:amounts };
+      if (m.drugs !== undefined) assert(amounts.every(q=>q.quantity===drugs.find(d=>d.drug_id===q.drug_id).quantity), '首次发药量应与药品卡片的药品量一致');
+      const prescription_url = clean(m.prescription_url);
+      if (prescription_url) assert(/^\/api\/mock-files\/[\w-]+$/.test(prescription_url) && db.files.get(prescription_url.split('/').at(-1))?.type.startsWith('image/'), '处方图片已失效，请重新上传');
+      medication = { ...source, treatment_days:days, pickup_days:cycle, advance_days:advance, quantities:amounts,
+        ...(m.drugs !== undefined ? {drugs:copy(source.snapshot.drugs)} : {}), ...(m.pickup_mode ? {pickup_mode:m.pickup_mode} : {}), ...(prescription_url ? {prescription_url} : {}) };
     }
     let reminder = null;
     if (b.reminder !== null && b.reminder !== undefined) {

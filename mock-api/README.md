@@ -28,4 +28,8 @@ pnpm --dir mock-api test
 
 `GET /app/core/patient/index`、`followup/index`、`feedback/index`、`reports/index`、`medication-plan/index` 和 `dashboard/overview` 支持 `project_id`/`group_id`；明细列表支持对应日期范围。`GET /app/core/research-export` 支持 `patients|tasks|reports|feedback|medications`，任务导出含轮次和来源。
 
+用药方案管理提供“上传处方图片 / 关键词搜索”两个添加入口；分组用药只提供关键词搜索，可选择带入通用方案后调整。两处均按药品卡片保存：保留治疗天数，每张卡配置首次发药量、每次剂量、每日 1–4 次及对应时间/服药时机，全部确认后才能保存。取药周期由服务端计算为各药品 `药品量 / 每次剂量 / 每日次数` 的最小值向下取整，至少 1 天且不超过治疗天数；不再手填取药周期。分组快照独立于通用方案，修改分组不会改写已确认的患者个人方案。`POST /app/core/medication-scheme/recognize-prescription` 只接受已上传的本地图片，返回明确标记的模拟待确认药品，不执行真实 OCR；旧 `project/recognize-prescription` 路径保留兼容。
+
+药品库规格按沈阳红旗制药官方产品说明核对（2026-09-10），不以占位文案替代：[异烟肼片 0.1g×100片/瓶](https://www.hongqipharma.com/product/99.html)、[利福平胶囊 0.3g×50粒/瓶](https://www.hongqipharma.com/product/75.html)、[吡嗪酰胺片 0.25g×100片/瓶](https://www.hongqipharma.com/product/68.html)、[盐酸乙胺丁醇片 0.25g×100片/瓶](https://www.hongqipharma.com/product/54.html)。胶囊按“粒”计量。规格和厂家是已核对的产品资料；患者、发药量和用药安排仍为模拟数据，不是临床处方。
+
 测试可以 `import { createMockServer } from './server.mjs'`，再调用 `createMockServer({now: '2026-09-08T04:00:00Z'})`；返回未监听的 `node:http.Server`，可用 `listen(0, '127.0.0.1')` 随机端口。`now` 也接受 Date 或返回 Date 的函数，便于验证过期和上海日期边界。每次创建实例都有独立数据，无外部副作用。

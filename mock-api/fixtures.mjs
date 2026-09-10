@@ -53,10 +53,12 @@ export function createFixtures(now) {
     };
   });
   const drugNames = ['异烟肼片', '利福平胶囊', '吡嗪酰胺片', '盐酸乙胺丁醇片'];
+  // Manufacturer specifications and packaging are documented in README.md; usage remains demo data.
+  const drugSpecifications = ['0.1g×100片/瓶', '0.3g×50粒/瓶', '0.25g×100片/瓶', '0.25g×100片/瓶'];
   const commonMedicines = Array.from({ length: 16 }, (_, i) => ({
-    id: i + 1, common_name: drugNames[i % 4], company: '', specification: '以药品包装为准',
+    id: i + 1, common_name: drugNames[i % 4], company: '沈阳红旗制药有限公司', specification: drugSpecifications[i % 4],
     ybm: `DRUG-${String(i + 1).padStart(3, '0')}`, usage: '口服', frequency: 1,
-    dosage: '遵医嘱', dosage_value: '1', dosage_unit: '片', medication_guidance: '具体用药请遵医嘱。',
+    dosage: '遵医嘱', dosage_value: '1', dosage_unit: i % 4 === 1 ? '粒' : '片', medication_guidance: '具体用药请遵医嘱。',
     thumb: '/api/mock-files/medicine-cover', sort_order: i, status: i % 5 ? 1 : 0,
     status_text: i % 5 ? '启用' : '停用', created_at: `${shiftDate(today, -60)} 06:00:00`, updated_at: time
   }));
@@ -201,6 +203,9 @@ export function createFixtures(now) {
   });
   const projectGroups = groupDefinitions.map(definition => {
     const scheme = medicationSchemes.find(item => item.id === definition.scheme_id);
+    const drugs = scheme.drugs.map(drug => ({ ...structuredClone(drug), quantity: 30, daily_count: 1,
+      reminders: [{ time: drug.times, timing: '餐后' }], confirmed: true }));
+    const pickupDays = Math.min(180, Math.max(1, Math.floor(Math.min(...drugs.map(drug => drug.quantity / Number(drug.dose) / drug.daily_count)))));
     const reminder = reminderSchemes.find(item => item.id === definition.reminder_scheme_id);
     const participants = definition.participant_ids.map(id => {
       const patient = patients.find(item => item.id === id);
@@ -208,7 +213,7 @@ export function createFixtures(now) {
     });
     return {
       id: definition.id, project_id: definition.project_id, name: definition.name, description: definition.description, revision: 2,
-      medication: { id: scheme.id, snapshot: structuredClone(scheme), treatment_days: 180, pickup_days: 30, advance_days: reminder.pickup_enabled ? reminder.pickup_advance_days : 0, quantities: scheme.drugs.map(drug => ({ drug_id: drug.drug_id, quantity: 30 })) },
+      medication: { id: scheme.id, snapshot: { ...structuredClone(scheme), drugs }, drugs: structuredClone(drugs), treatment_days: 180, pickup_mode: 'quantity', pickup_days: pickupDays, advance_days: reminder.pickup_enabled ? reminder.pickup_advance_days : 0, quantities: drugs.map(drug => ({ drug_id: drug.drug_id, quantity: drug.quantity })) },
       reminder: { id: reminder.id, snapshot: structuredClone(reminder) },
       surveys: [schedule(surveys[0], reminder, definition.id % 2 ? 14 : 7)],
       tasks: definition.task_ids.map((id, index) => schedule(taskTemplates.find(item => item.id === id), reminder, 30, index * 3)),
