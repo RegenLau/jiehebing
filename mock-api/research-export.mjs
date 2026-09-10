@@ -224,6 +224,6 @@ export function registerResearchExport({
           ];
         });
     } else assert(false, "导出类型不支持");
-    spreadsheet(res, `${q.kind}_mock.xlsx`, headers, rows);
+    spreadsheet(res, `${q.kind}.xlsx`, headers, rows);
   });
 }

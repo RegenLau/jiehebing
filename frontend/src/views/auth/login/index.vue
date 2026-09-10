@@ -9,15 +9,6 @@
       <div class="auth-right-wrap">
         <div class="form">
           <h3 class="title">{{ $t('login.title') }}</h3>
-          <ElAlert
-            v-if="isMock"
-            title="本地模拟环境 · 数据仅供演示"
-            type="info"
-            :closable="false"
-            class="mt-4"
-          >
-            账号：admin / 密码：Mock123456 / 验证码：1234；重启服务恢复初始数据。
-          </ElAlert>
           <ElForm
             ref="formRef"
             :model="formData"
@@ -115,8 +106,6 @@
 
   const userStore = useUserStore()
   const router = useRouter()
-
-  const isMock = import.meta.env.MODE === 'mock' || import.meta.env.MODE === 'development'
 
   const captcha = ref(
     'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'

@@ -18,33 +18,33 @@ export function createFixtures(now) {
   const today = shanghaiDate(now);
   const time = `${today} 09:00:00`;
   const projects = [0, 1, 2].map((status, i) => ({
-    id: i + 1, code: `TB-DEMO-00${i + 1}`, name: ['结核病院外随访研究（筹备示例）', '结核病规范用药随访研究（演示）', '结核病随访试点（结束示例）'][i],
-    center: '模拟医院 · 结核病研究中心', investigator: '演示研究者', phone: '010-00000000',
+    id: i + 1, code: `TB-RESEARCH-00${i + 1}`, name: ['结核病院外随访研究', '结核病规范用药随访研究', '结核病随访试点'][i],
+    center: '结核病研究中心', investigator: '项目负责人', phone: '010-00000000',
     start_date: shiftDate(today, status === 0 ? 7 : -90), end_date: shiftDate(today, status === 2 ? -1 : 180),
-    protocol_version: 'V1.0', effective_date: shiftDate(today, -100), purpose: '用于演示研究项目信息维护，不对应真实临床研究。', notes: '',
-    research_type: ['open', 'single_blind', 'double_blind'][i], status, created_at: time, updated_at: time, history: [{ action: '初始化', operator: '模拟系统', time, note: '演示项目数据' }]
+    protocol_version: 'V1.0', effective_date: shiftDate(today, -100), purpose: '开展结核病患者院外用药管理与随访。', notes: '',
+    research_type: ['open', 'single_blind', 'double_blind'][i], status, created_at: time, updated_at: time, history: [{ action: '初始化', operator: '系统', time, note: '创建研究项目' }]
   }));
   const patientProfiles = [
-    ['模拟患者·林安然', '13910001001', 2, '1988-03-12'], ['模拟患者·周明远', '13910001002', 1, '1979-11-26'],
-    ['模拟患者·陈嘉禾', '13910001003', 1, '1992-07-08'], ['模拟患者·赵清妍', '13910001004', 2, '1985-01-19'],
-    ['模拟患者·孙景行', '13910001005', 1, '1971-09-03'], ['模拟患者·吴念慈', '13910001006', 2, '1996-05-22'],
-    ['模拟患者·郑云帆', '13910001007', 1, '1982-12-14'], ['模拟患者·王舒宁', '13910001008', 2, '1990-04-30'],
-    ['模拟患者·冯知远', '13910001009', 1, '1968-08-17'], ['模拟患者·褚静宜', '13910001010', 2, '1976-02-09'],
-    ['模拟患者·卫向晨', '13910001011', 1, '1998-10-05'], ['模拟患者·蒋若溪', '13910001012', 2, '1987-06-28'],
-    ['模拟患者·沈致远', '13910001013', 1, '1974-03-16'], ['模拟患者·韩书瑶', '13910001014', 2, '1994-09-21'],
-    ['模拟患者·杨修文', '13910001015', 1, '1980-01-07'], ['模拟患者·朱清和', '13910001016', 2, '1965-11-11'],
-    ['模拟患者·秦望舒', '13910001017', 2, '1999-07-24'], ['模拟患者·许承安', '13910001018', 1, '1983-05-13'],
-    ['模拟患者·何雨晴', '13910001019', 2, '1978-12-02'], ['模拟患者·吕知行', '13910001020', 1, '1991-08-09'],
-    ['模拟患者·施婉宁', '13910001021', 2, '1986-04-18'], ['模拟患者·张怀瑾', '13910001022', 1, '1970-10-27'],
-    ['模拟患者·孔思齐', '13910001023', 1, '1995-02-15'], ['模拟患者·曹静姝', '13910001024', 2, '1981-06-06'],
-    ['模拟患者·严嘉树', '13910001025', 1, '1989-09-12'], ['模拟患者·华安琪', '13910001026', 2, '1973-01-25'],
-    ['模拟患者·金予安', '13910001027', 1, '1997-11-08'], ['模拟患者·魏清越', '13910001028', 2, '1984-05-31']
+    ['林安然', '13910001001', 2, '1988-03-12'], ['周明远', '13910001002', 1, '1979-11-26'],
+    ['陈嘉禾', '13910001003', 1, '1992-07-08'], ['赵清妍', '13910001004', 2, '1985-01-19'],
+    ['孙景行', '13910001005', 1, '1971-09-03'], ['吴念慈', '13910001006', 2, '1996-05-22'],
+    ['郑云帆', '13910001007', 1, '1982-12-14'], ['王舒宁', '13910001008', 2, '1990-04-30'],
+    ['冯知远', '13910001009', 1, '1968-08-17'], ['褚静宜', '13910001010', 2, '1976-02-09'],
+    ['卫向晨', '13910001011', 1, '1998-10-05'], ['蒋若溪', '13910001012', 2, '1987-06-28'],
+    ['沈致远', '13910001013', 1, '1974-03-16'], ['韩书瑶', '13910001014', 2, '1994-09-21'],
+    ['杨修文', '13910001015', 1, '1980-01-07'], ['朱清和', '13910001016', 2, '1965-11-11'],
+    ['秦望舒', '13910001017', 2, '1999-07-24'], ['许承安', '13910001018', 1, '1983-05-13'],
+    ['何雨晴', '13910001019', 2, '1978-12-02'], ['吕知行', '13910001020', 1, '1991-08-09'],
+    ['施婉宁', '13910001021', 2, '1986-04-18'], ['张怀瑾', '13910001022', 1, '1970-10-27'],
+    ['孔思齐', '13910001023', 1, '1995-02-15'], ['曹静姝', '13910001024', 2, '1981-06-06'],
+    ['严嘉树', '13910001025', 1, '1989-09-12'], ['华安琪', '13910001026', 2, '1973-01-25'],
+    ['金予安', '13910001027', 1, '1997-11-08'], ['魏清越', '13910001028', 2, '1984-05-31']
   ];
   const patients = patientProfiles.map(([name, mobile, gender, birth_date], i) => {
     const offset = i < 12 ? -(40 + i) : i < 16 ? -(i - 11) : -(i + 3);
     const enroll_date = shiftDate(today, offset);
     return {
-      id: i + 1, patient_code: `TB-MOCK-${String(i + 1).padStart(3, '0')}`, name, mobile, gender,
+      id: i + 1, patient_code: `TB-P-${String(i + 1).padStart(3, '0')}`, name, mobile, gender,
       gender_text: gender === 1 ? '男' : '女', birth_date, age: ageOnDate(birth_date, today),
       is_archived: 1, login_enabled: true, created_via: 'admin', study_state: '待启用',
       enroll_date, offline_confirmed: true, consent_confirmed: true,
@@ -54,9 +54,9 @@ export function createFixtures(now) {
   });
   const drugNames = ['异烟肼片', '利福平胶囊', '吡嗪酰胺片', '盐酸乙胺丁醇片'];
   const commonMedicines = Array.from({ length: 16 }, (_, i) => ({
-    id: i + 1, common_name: drugNames[i % 4], company: `模拟药业${i % 4 + 1}`, specification: '演示规格',
-    ybm: `MOCK-DRUG-${String(i + 1).padStart(3, '0')}`, usage: '口服（演示）', frequency: 1,
-    dosage: '遵医嘱（模拟）', dosage_value: '1', dosage_unit: '片', medication_guidance: '模拟资料，仅用于展示界面；具体用药请遵医嘱。',
+    id: i + 1, common_name: drugNames[i % 4], company: '', specification: '以药品包装为准',
+    ybm: `DRUG-${String(i + 1).padStart(3, '0')}`, usage: '口服', frequency: 1,
+    dosage: '遵医嘱', dosage_value: '1', dosage_unit: '片', medication_guidance: '具体用药请遵医嘱。',
     thumb: '/api/mock-files/medicine-cover', sort_order: i, status: i % 5 ? 1 : 0,
     status_text: i % 5 ? '启用' : '停用', created_at: `${shiftDate(today, -60)} 06:00:00`, updated_at: time
   }));
@@ -67,8 +67,8 @@ export function createFixtures(now) {
     const proposedDate = shiftDate(today, -(i % 30));
     const occurred_at = `${proposedDate < p.enroll_date ? p.enroll_date : proposedDate} 10:30:00`;
     return { id: i + 1, user_id: p.id, patient_name: p.name, patient_mobile: p.mobile, occurred_at,
-      symptoms, symptom_summary: symptoms.join('、'), symptom_description: '模拟症状记录，用于功能演示。', severity,
-      severity_text: ['轻度', '中度', '重度'][severity - 1], advice_text: '模拟处理建议，请联系医生评估。',
+      symptoms, symptom_summary: symptoms.join('、'), symptom_description: `患者反馈出现${symptoms.join('、')}。`, severity,
+      severity_text: ['轻度', '中度', '重度'][severity - 1], advice_text: '请联系医生评估。',
       status: i % 4 === 0 ? 2 : 1, status_text: i % 4 === 0 ? '已处理' : '已上报', created_at: occurred_at };
   });
   const titleList = ['您最近有无新增或减少药物？', '您最近服用药物的剂量和频次是否有变化？', '您最近有没有到医院复查？', '服药以后有没有出现不舒服（如头晕、皮疹、恶心等）？', '最近 2 周内，有没有以下情况？（可多选）', '您最想问药师或医生的用药问题是：'];
@@ -103,28 +103,28 @@ export function createFixtures(now) {
     };
   });
   const surveys = [
-    { id: 1, code: 'TB_FOLLOWUP_V1', name: '结核病随访问卷', description: '模拟问卷，用于演示随访管理。', fillableDay: 7, status: 1, createdAt: `${shiftDate(today, -60)} 06:00:00`, updatedAt: `${shiftDate(today, -60)} 06:00:00`, questions },
-    { id: 2, code: 'MOCK_DRAFT', name: '模拟随访草稿', description: '暂无作答，可编辑或删除。', fillableDay: 30, status: 0, createdAt: time, updatedAt: time,
+    { id: 1, code: 'TB_FOLLOWUP_V1', name: '结核病随访问卷', description: '了解近期用药、复查及身体状况。', fillableDay: 7, status: 1, createdAt: `${shiftDate(today, -60)} 06:00:00`, updatedAt: `${shiftDate(today, -60)} 06:00:00`, questions },
+    { id: 2, code: 'TB_FOLLOWUP_DRAFT', name: '随访问卷草稿', description: '暂无作答，可编辑或删除。', fillableDay: 30, status: 0, createdAt: time, updatedAt: time,
       questions: [{ id: 7, questionNo: 1, title: '请填写本次随访备注', type: 'TEXT', required: 0, sortOrder: 1, placeholder: '请输入备注', options: [] }] }
   ];
   const answers = patients.filter(p => p.id >= 5 && p.id <= 12).map(p => ({ user_id: p.id, template_id: 1, submitted_at: `${[shiftDate(today, -1), shiftDate(p.enroll_date, surveys[0].fillableDay)].sort().at(-1)} 14:00:00`,
-    values: questions.map(q => ({ question_id: q.id, option_ids: q.type === 'TEXT' ? [] : [q.options[q.type === 'CHECKBOX' ? 3 : p.id % 2].id], text_value: q.type === 'TEXT' ? '模拟答卷：希望了解复查安排。' : '', extra_inputs: { [`detail_${q.id}`]: '模拟补充说明' } })) }));
+    values: questions.map(q => ({ question_id: q.id, option_ids: q.type === 'TEXT' ? [] : [q.options[q.type === 'CHECKBOX' ? 3 : p.id % 2].id], text_value: q.type === 'TEXT' ? '希望了解复查安排。' : '', extra_inputs: { [`detail_${q.id}`]: '详见本次随访记录' } })) }));
   const articles = Array.from({ length: 13 }, (_, i) => ({
-    id: i + 1, title: ['规范用药与随访', '复查前的准备', '健康生活小贴士'][i % 3] + `（演示${i + 1}）`, cover: '/api/mock-files/article-cover',
-    summary: '模拟健康文章摘要，用于展示列表和详情。', content: '<h2>模拟健康科普</h2><p>请按医生安排完成随访与复查。此为演示内容。</p>',
+    id: i + 1, title: ['规范用药与随访', '复查前的准备', '健康生活小贴士', '用药记录管理', '随访问题整理', '检查报告归档', '不适症状记录', '复诊资料准备', '取药安排管理', '每日健康反馈', '个人健康档案', '随访问卷填写', '就诊沟通记录'][i], cover: '/api/mock-files/article-cover',
+    summary: '了解用药、复查与日常健康记录的管理要点。', content: '<h2>随访健康科普</h2><p>请按医生安排完成随访与复查。</p>',
     view_count: 30 + i * 7, sort: i, status: i % 4 ? 1 : 0, published_at: `${shiftDate(today, -i)} 09:00:00`, created_at: `${shiftDate(today, -i)} 09:00:00`, updated_at: time
   }));
-  const admins = [{ id: 1, username: 'admin', password: 'Mock123456', realname: '演示管理员', gender: '1', email: 'admin@example.invalid', phone: '13800000000', avatar: '/api/mock-files/admin-avatar', status: 1, created_at: time, updated_at: time }];
+  const admins = [{ id: 1, username: 'admin', password: 'Mock123456', realname: '管理员', gender: '1', email: 'admin@example.invalid', phone: '13800000000', avatar: '/api/mock-files/admin-avatar', status: 1, created_at: time, updated_at: time }];
   const files = new Map();
-  for (const [id, title, color] of [['article-cover', '随访健康科普 · 模拟', '#2b76b7'], ['medicine-cover', '模拟药品', '#269b88'], ['admin-avatar', '演示', '#557cc4']]) {
+  for (const [id, title, color] of [['article-cover', '随访健康科普', '#2b76b7'], ['medicine-cover', '药品资料', '#269b88'], ['admin-avatar', '管理', '#557cc4']]) {
     const buffer = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" rx="24" fill="${color}"/><text x="320" y="190" text-anchor="middle" font-size="36" fill="white">${title}</text></svg>`);
     files.set(id, { buffer, type: 'image/svg+xml', name: `${id}.svg`, created_at: time });
   }
   const medicationSchemes = [1, 2, 3].map((id) => ({
-    id, name: `演示用药方案 ${id}`, description: '仅用于验证关联流程，非临床用药建议', version: 'V1.0', status: id === 3 ? 0 : 1,
-    drugs: commonMedicines.filter(m => m.status === 1).slice(id - 1, id + 1).map(m => ({ drug_id: m.id, name: m.common_name, specification: m.specification, dose: m.dosage_value, unit: m.dosage_unit, frequency: '每日1次（演示）', times: '08:00', precautions: m.medication_guidance }))
+    id, name: `用药方案 ${id}`, description: '具体用药安排由医生评估确认。', version: 'V1.0', status: id === 3 ? 0 : 1,
+    drugs: commonMedicines.filter(m => m.status === 1).slice(id - 1, id + 1).map(m => ({ drug_id: m.id, name: m.common_name, specification: m.specification, dose: m.dosage_value, unit: m.dosage_unit, frequency: '每日1次', times: '08:00', precautions: m.medication_guidance }))
   }));
-  const taskTemplates = ['检查', '复诊', '取药', '报告提交'].map((type,i) => ({ id:i+1, name:`${type}模板（演示）`, type, status:1, version:'V1.0', description:`按研究安排完成${type}`, requirements: i === 0 || i === 3 ? '提交检查日期及报告原图' : '提交完成日期和补充说明' }));
+  const taskTemplates = ['检查', '复诊', '取药', '报告提交'].map((type,i) => ({ id:i+1, name:`${type}模板`, type, status:1, version:'V1.0', description:`按研究安排完成${type}`, requirements: i === 0 || i === 3 ? '提交检查日期及报告原图' : '提交完成日期和补充说明' }));
   const reminderSchemes = [
     {
       id: 1,
@@ -169,7 +169,7 @@ export function createFixtures(now) {
     {
       id: 3,
       name: '历史提醒方案',
-      description: '停用示例，仅供已关联小组查看历史快照。',
+      description: '已停用，供已关联小组查看历史快照。',
       status: 0,
       revision: 1,
       version: 'V1',
@@ -188,10 +188,10 @@ export function createFixtures(now) {
     }
   ];
   const groupDefinitions = [
-    { id: 1, project_id: 1, name: '筹备标准随访组', description: '筹备阶段的标准随访流程演示组。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(8, 13).map(p => p.id) },
-    { id: 2, project_id: 1, name: '筹备强化随访组', description: '筹备阶段的强化提醒与复查流程演示组。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 3], participant_ids: patients.slice(13, 18).map(p => p.id) },
-    { id: 3, project_id: 2, name: '规范用药随访组', description: '用于演示规范用药、定期复查及随访问卷。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(18, 23).map(p => p.id) },
-    { id: 4, project_id: 2, name: '强化管理随访组', description: '用于演示加强提醒、取药和报告提交管理。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 3, 4], participant_ids: patients.slice(23).map(p => p.id) },
+    { id: 1, project_id: 1, name: '筹备标准随访组', description: '筹备阶段的标准随访管理分组。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(8, 13).map(p => p.id) },
+    { id: 2, project_id: 1, name: '筹备强化随访组', description: '筹备阶段的强化提醒与复查管理分组。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 3], participant_ids: patients.slice(13, 18).map(p => p.id) },
+    { id: 3, project_id: 2, name: '规范用药随访组', description: '开展规范用药、定期复查及随访问卷管理。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(18, 23).map(p => p.id) },
+    { id: 4, project_id: 2, name: '强化管理随访组', description: '开展加强提醒、取药和报告提交管理。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 3, 4], participant_ids: patients.slice(23).map(p => p.id) },
     { id: 5, project_id: 3, name: '历史完成随访组', description: '用于查看已结束项目的历史分组配置。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(0, 4).map(p => p.id) },
     { id: 6, project_id: 3, name: '历史重点复核组', description: '用于查看已结束项目的重点复核配置。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 4], participant_ids: patients.slice(4, 8).map(p => p.id) }
   ];
@@ -235,8 +235,8 @@ export function createFixtures(now) {
       const medicine = {
         ...source, id: nextMedicine++, user_id: patient.id, common_medicine_id: source.id, name: source.common_name,
         project_id: group.project_id, group_id: group.id, group_name: group.name, medication_scheme_id: group.medication.id,
-        medication_scheme_name: group.medication.snapshot.name, remark: `来自研究分组“${group.name}”`, trade_name: '模拟药品',
-        medicine_count: String(quantity), batch_no: `MOCK-${patient.id}-${String(sort + 1).padStart(2, '0')}`, sort,
+        medication_scheme_name: group.medication.snapshot.name, remark: `来自研究分组“${group.name}”`, trade_name: source.common_name,
+        medicine_count: String(quantity), batch_no: `BATCH-${patient.id}-${String(sort + 1).padStart(2, '0')}`, sort,
         source: 'group', source_text: '研究分组方案', usage: '口服', dosage: `${drug.dose}${drug.unit}/次`,
         dosage_value: String(drug.dose), dosage_unit: drug.unit, frequency: times.length, plan_times: times,
         medication_guidance: drug.precautions, created_at: `${patient.enroll_date} 07:00:00`, updated_at: time

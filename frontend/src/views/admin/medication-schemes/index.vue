@@ -164,7 +164,7 @@
           </template>
         </ElUpload>
         <ElAlert
-          title="当前本地演示环境尚未接入真实处方识别服务，不会生成模拟药品。"
+          title="处方识别服务暂未开通，请手动添加药品。"
           description="可返回新增方案后，通过“添加单个药”继续录入。"
           type="info"
           show-icon

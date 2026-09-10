@@ -36,8 +36,8 @@ export function registerFeedback({
           n === 0 && i % 2 === 0
             ? []
             : [{ name: "咳嗽", change: changes[(i + n) % changes.length] }],
-        note: "模拟每日反馈",
-        source: "模拟患者反馈",
+        note: "",
+        source: "患者反馈",
         created_at: timestamp(),
       })),
     );

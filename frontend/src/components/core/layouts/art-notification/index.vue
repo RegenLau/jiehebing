@@ -200,7 +200,7 @@
         type: 'email'
       },
       {
-        title: '菜单mock本地真实数据',
+        title: '系统菜单已更新',
         time: '2024-1-17 22:06',
         type: 'notice'
       }

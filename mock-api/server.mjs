@@ -54,7 +54,7 @@ function spreadsheet(res, name, headers, rows) {
   const book = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   sheet['!cols'] = headers.map(() => ({ wch: 24 }));
-  XLSX.utils.book_append_sheet(book, sheet, '模拟数据');
+  XLSX.utils.book_append_sheet(book, sheet, '数据明细');
   const buffer = XLSX.write(book, { type: 'buffer', bookType: 'xlsx' });
   res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
   res.end(buffer);
@@ -73,7 +73,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
   const captchas = new Map();
   const nextId = rows => Math.max(0, ...rows.map(r => r.id)) + 1;
   const invalidateSessions = id => { for (const [token, session] of sessions) if (session.id === id) sessions.delete(token); };
-  const userInfo = admin => ({ ...safeAdmin(admin), realname: admin.realname || admin.username, roles: ['R_ADMIN'], buttons: ['*'], dashboard: '/dashboard/console', department: { id: 1, name: '模拟管理团队' } });
+  const userInfo = admin => ({ ...safeAdmin(admin), realname: admin.realname || admin.username, roles: ['R_ADMIN'], buttons: ['*'], dashboard: '/dashboard/console', department: { id: 1, name: '随访管理团队' } });
   const surveyAnswers = id => db.answers.filter(answer => answer.template_id === id);
   const submissionCount = id => surveyAnswers(id).length;
   const participantCount = id => new Set(surveyAnswers(id).map(answer => answer.user_id)).size;
@@ -164,7 +164,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
     return { ...page(filtered.sort((a, b) => b.plan_date.localeCompare(a.plan_date) || a.plan_time.localeCompare(b.plan_time) || b.id - a.id), q), scope };
   });
   core('GET', 'adverse-reaction/index', ({ query }) => page(adverseRows(query), query));
-  core('GET', 'adverse-reaction/export', ({ query, res }) => spreadsheet(res, 'adverse_reaction_mock.xlsx', ['ID', '患者姓名', '手机号', '发生时间', '主要症状', '症状描述', '严重程度', '处理建议', '状态', '上报时间'], adverseRows(query).map(r => [r.id, r.patient_name, r.patient_mobile, r.occurred_at, r.symptom_summary, r.symptom_description, r.severity_text, r.advice_text, r.status_text, r.created_at])));
+  core('GET', 'adverse-reaction/export', ({ query, res }) => spreadsheet(res, 'adverse_reaction.xlsx', ['ID', '患者姓名', '手机号', '发生时间', '主要症状', '症状描述', '严重程度', '处理建议', '状态', '上报时间'], adverseRows(query).map(r => [r.id, r.patient_name, r.patient_mobile, r.occurred_at, r.symptom_summary, r.symptom_description, r.severity_text, r.advice_text, r.status_text, r.created_at])));
   core('GET','dashboard/research',({query:q})=>{const patients=db.patients.filter(p=>(!integer(q.project_id)||p.project_id===integer(q.project_id))&&(!integer(q.group_id)||p.group_id===integer(q.group_id))),ids=new Set(patients.map(p=>p.id)),tasks=db.followupTasks.filter(t=>ids.has(t.user_id)),reports=db.reports.filter(r=>ids.has(r.user_id)),events=db.adverse.filter(a=>ids.has(a.user_id));return{patients:patients.length,treating:patients.filter(p=>p.study_state==='治疗中').length,completed:patients.filter(p=>p.study_state==='已完成').length,withdrawn:patients.filter(p=>p.study_state==='提前退出').length,reports_pending:reports.filter(r=>r.status==='待核对').length,events_pending:events.filter(a=>(a.processing_status||'待处理')!=='已处理').length,tasks_overdue:tasks.filter(t=>t.due_date<today()&&!['已完成','已取消'].includes(t.status)).length,tasks_completed:tasks.filter(t=>t.status==='已完成').length,tasks_total:tasks.length};});
   core('GET', 'dashboard/overview', ({ query: q }) => {
     const range = ['today', '7d', '30d'].includes(q.range) ? q.range : 'today';
@@ -252,7 +252,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
       const p = find(db.patients, a.user_id, '患者'); const detail = answerDetail(p.id, s.id);
       return [p.id, p.name, p.mobile, a.submitted_at, ...detail.questions.map(q => q.type === 'TEXT' ? q.text_value : q.selected_options.map(o => o.label + (o.input_fields.length ? `（${o.input_fields.map(f => `${f.field_label}：${f.value}`).join('；')}）` : '')).join('、'))];
     });
-    spreadsheet(res, 'survey_answers_mock.xlsx', ['患者ID', '患者姓名', '手机号', '提交时间', ...s.questions.map(q => `第${q.questionNo}题 ${q.title}`)], rows);
+    spreadsheet(res, 'survey_answers.xlsx', ['患者ID', '患者姓名', '手机号', '提交时间', ...s.questions.map(q => `第${q.questionNo}题 ${q.title}`)], rows);
   });
   core('POST', 'file/upload-file', async ({ body, res }) => {
     const file = body.get?.('file');
@@ -276,7 +276,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
   route('GET', '/core/system/getLoginLogList', ({ query, admin }) => legacyPage(descId(db.loginLogs.filter(l => l.admin_id === admin.id)), query));
   route('GET', '/core/system/getOperationLogList', ({ query, admin }) => legacyPage(descId(db.operationLogs.filter(l => l.admin_id === admin.id)), query));
   route('GET', '/core/system/clearAllCache', () => ({ cleared: true }));
-  route('GET', '/core/system/getResourceCategory', () => [{ id: 1, value: 1, name: '本地模拟资源', label: '本地模拟资源', children: [] }]);
+  route('GET', '/core/system/getResourceCategory', () => [{ id: 1, value: 1, name: '资料库', label: '资料库', children: [] }]);
   route('GET', '/core/system/getResourceList', ({ query: q }) => legacyPage([...db.files.entries()].filter(([, f]) => f.type.startsWith('image/') && (!q.object_name || f.name.includes(q.object_name)) && (!q.category_id || q.category_id === '1')).map(([id, f]) => ({ id, origin_name: f.name, url: `/api/mock-files/${id}`, size_info: `${Math.ceil(f.buffer.length / 1024)} KB`, category_id: 1, type: f.type, createTime: f.created_at })), q));
 
   const server = http.createServer(async (req, res) => {
@@ -294,7 +294,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
       }
       if (req.method === 'GET' && path.startsWith('/mock-files/')) {
         const file = db.files.get(path.slice('/mock-files/'.length));
-        if (!file) throw new ApiError('模拟文件不存在（服务重启后上传文件会清空）', 404, 404);
+        if (!file) throw new ApiError('文件不存在或已失效，请重新上传', 404, 404);
         res.writeHead(200, { 'Content-Type': file.type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); return res.end(file.buffer);
       }
       const publicCaptcha = req.method === 'GET' && ['/app/core/captcha', '/app/admin/captcha'].includes(path);
@@ -308,7 +308,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
       }
       const handler = routes.get(`${req.method} ${path}`);
       const patientHandler = patientRoutes.get(`${req.method} ${path}`);
-      if (!publicAdminLogin && !publicPatientLogin && !handler && !patientHandler) throw new ApiError('该接口未实现本地 Mock', 404, 404);
+      if (!publicAdminLogin && !publicPatientLogin && !handler && !patientHandler) throw new ApiError('该功能暂不可用，请稍后重试', 404, 404);
       let admin;
       let patient;
       if (patientHandler) {
@@ -350,12 +350,12 @@ export function createMockServer({ now = () => new Date() } = {}) {
         admin = db.admins.find(a => a.username === clean(body.username) && a.password === String(body.password) && a.status === 1);
         assert(admin, '用户名或密码错误', 401);
         const token = randomUUID(); sessions.set(token, { id: admin.id, expires: clock().getTime() + 28800000 });
-        db.loginLogs.push({ id: nextId(db.loginLogs), admin_id: admin.id, login_time: timestamp(), ip_location: '本地模拟环境', os: '浏览器', ip: '127.0.0.1' });
+        db.loginLogs.push({ id: nextId(db.loginLogs), admin_id: admin.id, login_time: timestamp(), ip_location: '本机', os: '浏览器', ip: '127.0.0.1' });
         return sendJson(res, { token_type: 'Bearer', expires_in: 28800, access_token: token, refresh_token: '' });
       }
       const context = { req, res, body, query: Object.fromEntries(url.searchParams), admin, patient };
       const result = await (patientHandler || handler)(context);
-      if (req.method === 'POST' && admin) db.operationLogs.push({ id: nextId(db.operationLogs), admin_id: admin.id, create_time: timestamp(), service_name: '模拟数据操作', router: path, ip_location: '本地模拟环境' });
+      if (req.method === 'POST' && admin) db.operationLogs.push({ id: nextId(db.operationLogs), admin_id: admin.id, create_time: timestamp(), service_name: '数据操作', router: path, ip_location: '本机' });
       if (!res.writableEnded) {
         if (patientHandler) sendPatientJson(res, result ?? [], req.method === 'POST' ? '提交成功' : '获取成功');
         else sendJson(res, result ?? [], req.method === 'POST' ? '操作成功' : 'success');
@@ -363,7 +363,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
     } catch (error) {
       if (!res.writableEnded) {
         res.writeHead(error.httpStatus || 200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-        res.end(JSON.stringify({ code: error.code || 500, message: error instanceof ApiError ? error.message : '模拟服务处理失败，请检查请求内容', data: null }));
+        res.end(JSON.stringify({ code: error.code || 500, message: error instanceof ApiError ? error.message : '操作失败，请检查填写内容后重试', data: null }));
       }
     }
   });

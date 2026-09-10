@@ -46,7 +46,6 @@
       <span>当前统计范围：{{ projectId ? (groupId ? '所选分组' : '所选研究') : '全部研究' }}</span>
     </div>
 
-    <ResearchSummary :project-id="projectId" :group-id="groupId" />
     <div class="metric-grid">
       <article v-for="item in metrics" :key="item.title" class="metric-card">
         <div class="metric-icon" :class="item.tone">
@@ -132,7 +131,6 @@
 </template>
 
 <script setup lang="ts">
-  import ResearchSummary from './research-summary.vue'
   import ResearchScopeFilter from '@/components/business/research-scope-filter/index.vue'
 
   import { Icon } from '@iconify/vue'
