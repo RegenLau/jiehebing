@@ -94,7 +94,7 @@ Mock 初始日期以 `Asia/Shanghai` 当天为基准，提供今日、近期、�
 | 富文本、头像和文件上传 | `POST /app/core/file/upload-file` | 接收 `FormData.file`，返回本地可访问的资源地址 |
 | 图库 | `GET /core/system/getResourceCategory`、`GET /core/system/getResourceList` | 图片分类和分页资源列表，包含上传后的图片 |
 | 患者登录 | `POST /app/login`、`POST /app/logout` | 后台登记手机号准入；患者会话与医生会话隔离 |
-| 患者首次确认 | `GET /app/patient/bootstrap`、`POST /app/patient/confirm-identity`、`POST /app/patient/confirm-medication` | 按身份、当前治疗方案顺序确认，保存错误或疑问说明 |
+| 患者启动状态与首次确认 | `GET /app/patient/bootstrap`、`POST /app/patient/confirm-identity`、`POST /app/patient/confirm-medication` | 先判断关联项目是否结束；可参与时再按身份、当前治疗方案顺序确认，保存错误或疑问说明 |
 | 患者用药 | `GET /app/patient/medication`、`POST /app/patient/medication-slot` | 按日期+时点整次记录，支持部分未服、明确未服和有原因的更正；返回近期时点与余药估算 |
 | 患者任务与提交 | `GET /app/patient/tasks`、`POST /app/patient/feedback`、`POST /app/patient/survey-submit`、`POST /app/patient/adverse-report` | 任务快照、每日反馈、多轮问卷和不良反应上报；反馈只接收转写后的文字，不接收原始音频 |
 | 患者报告 | `GET /app/patient/reports`、`GET /app/patient/report-detail`、`POST /app/patient/report-submit`、`POST /app/patient/report-confirm` | 报告上传/补传、患者核对名称/值/单位/参考范围/异常标识及原资料历史 |
@@ -151,17 +151,19 @@ JSON 顶层统一为 `{code,message,data}`，成功码 `200`。多数业务分�
 
 | 页面/行为 | 接口 |
 |---|---|
-| 项目列表 | `GET /app/core/project/index`；返回分组数及去重患者数 |
-| 项目编辑数据及分组索引 | `GET /app/core/project/detail`；不提供单独的项目详情页面入口 |
-| 项目新增/编辑 | `POST /app/core/project/save`；当前仅维护编号、名称、研究周期和研究目的 |
-| 人工变更项目状态 | `POST /app/core/project/change-status` |
+| 项目列表 | `GET /app/core/project/index`；返回分组数、去重患者数及按上海日期计算的状态，可按计算结果筛选 |
+| 项目编辑数据及分组索引 | `GET /app/core/project/detail`；返回同口径状态，不提供单独的项目详情页面入口 |
+| 项目新增/编辑 | `POST /app/core/project/save`；当前仅维护编号、名称、研究周期和研究目的，允许向后调整结束日期 |
+| 手动结束项目 | `POST /app/core/project/change-status`；只接受结束状态及原因，手动结束优先于日期状态 |
 | 通用内容选择目录 | `GET /app/core/project/catalog` |
 | 分组详情及当前已入组患者 | `GET /app/core/project/group-detail` |
 | 分组创建（仅基础信息） | `POST /app/core/project/group-create` |
 | 分组基础信息编辑 | `POST /app/core/project/group-basic-save`；只更新名称和说明 |
 | 分组更新关联配置 | `POST /app/core/project/group-save` |
 
-项目列表 `/project/index` 的操作为分组、编辑及状态，不再提供项目详情入口。分组选择 `/project/groups?project_id=...`，新建使用基础信息弹窗并在成功后停留于列表；列表“编辑”仍在当前页弹窗中修改名称和说明，“进入分组”使用 `/project/group?project_id=...&id=...`。分组详情固定为患者、用药方案、随访问卷、任务模板和提醒方案五个页签，顶部显示配置摘要；患者页可带入当前研究和分组新增患者。详情页的“配置方案与任务”进入 `mode=edit`，调整用药、随访和提醒配置。旧的无id路径转回列表新建入口。分组API校验项目归属，更新携带revision避免覆盖过期数据。服务代码在mock-api/projects.mjs，不调用PHP。
+项目列表 `/project/index` 的操作为分组、编辑及状态，不再提供项目详情入口。状态按开始及结束日期自动计算，结束日当天仍为进行中；尚未结束的项目可手动结束，已结束项目不重复显示可用操作。分组选择 `/project/groups?project_id=...`，新建使用基础信息弹窗并在成功后停留于列表；列表“编辑”仍在当前页弹窗中修改名称和说明，“进入分组”使用 `/project/group?project_id=...&id=...`。分组详情固定为患者、用药方案、随访任务-问卷、随访任务-提醒四个页签；患者页只读展示已入组患者并提供详情入口。配置模式只调整用药、问卷及提醒任务，不改变患者关系。旧的无id路径转回列表新建入口。分组API校验项目归属，更新携带revision避免覆盖过期数据。服务代码在mock-api/projects.mjs，不调用PHP。
+
+患者端登录仍允许后台已登记的结束项目患者取得会话，随后由 `GET /app/patient/bootstrap` 返回 `project_ended` 及项目名称、结束日期；页面只展示结束说明和退出入口。该患者的其他 `/app/patient/*` 业务接口返回业务码 `410`，不会回退或继续展示缓存中的首页、用药、任务及个人内容。
 
 ## 后续研究功能接口（2026-09-09）
 

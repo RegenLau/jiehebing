@@ -104,6 +104,9 @@ export interface Catalog {
 export interface ProjectRecord extends ProjectPayload {
   id: number
   status: ProjectStatus
+  status_source?: 'date' | 'manual'
+  manual_ended_at?: string
+  manual_end_reason?: string
   research_type?: ResearchType
   notes?: string
   group_count?: number

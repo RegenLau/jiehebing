@@ -342,6 +342,75 @@ test("seeded pending-start patient stays confirmed before the first medication t
   assert.match(blocked.message, /用药计划尚未开始/);
 });
 
+test("patient in an ended project sees the terminal page and cannot use business APIs", async (t) => {
+  const api = await start(t);
+  const login = await api.json("/app/login", {
+    auth: "",
+    body: { mobile: "13910001030" },
+  });
+  assert.equal(login.code, 0);
+  const patientToken = login.data.token.access_token;
+  const bootstrap = await api.json("/app/patient/bootstrap", {
+    auth: patientToken,
+  });
+  assert.equal(bootstrap.code, 0);
+  assert.equal(bootstrap.data.stage, "project_ended");
+  assert.deepEqual(bootstrap.data.project_end, {
+    project_id: 4,
+    project_name: "项目结束状态演示",
+    end_date: "2026-09-07",
+    ended_manually: false,
+  });
+  for (const path of [
+    "/app/patient/home",
+    "/app/patient/medication",
+    "/app/patient/tasks",
+    "/app/patient/reports",
+    "/app/patient/support",
+  ]) {
+    const blocked = await api.json(path, { auth: patientToken });
+    assert.equal(blocked.code, 410);
+    assert.match(blocked.message, /项目已结束/);
+  }
+  assert.equal(
+    (await api.json("/app/logout", { auth: patientToken, body: {} })).code,
+    0,
+  );
+});
+
+test("manual project end immediately moves its patient to the terminal page", async (t) => {
+  const api = await start(t);
+  const login = await api.json("/app/login", {
+    auth: "",
+    body: { mobile: "13910001019" },
+  });
+  assert.equal(login.code, 0);
+  const patientToken = login.data.token.access_token;
+  assert.equal(
+    (await api.json("/app/patient/bootstrap", { auth: patientToken })).data.stage,
+    "home",
+  );
+  await api.login();
+  await api.ok(P + "project/change-status", {
+    body: {
+      id: 2,
+      status: 2,
+      expected_status: 1,
+      reason: "提前结束演示",
+    },
+  });
+  const bootstrap = await api.json("/app/patient/bootstrap", {
+    auth: patientToken,
+  });
+  assert.equal(bootstrap.code, 0);
+  assert.equal(bootstrap.data.stage, "project_ended");
+  assert.equal(bootstrap.data.project_end.ended_manually, true);
+  assert.equal(
+    (await api.json("/app/patient/home", { auth: patientToken })).code,
+    410,
+  );
+});
+
 test("patient self-confirmation follows identity then current treatment and reopens after doctor changes", async (t) => {
   const api = await start(t);
   await api.login();
@@ -1968,11 +2037,21 @@ test("multipart upload is byte accurate, visible in gallery, and restart resets 
   );
 });
 
-test("research project basic fields, editable statuses and restart isolation", async (t) => {
+test("research project statuses follow dates, manual end overrides, and restart resets", async (t) => {
   const api = await start(t);
   assert.equal((await api.json(P + "project/catalog")).code, 401);
   await api.login();
   const initial = await api.all(P + "project/index");
+  assert.equal(initial.length, 4);
+  assert.deepEqual(
+    initial.map((project) => [project.id, project.status, project.status_source]),
+    [
+      [4, 2, "date"],
+      [3, 2, "date"],
+      [2, 1, "date"],
+      [1, 0, "date"],
+    ],
+  );
   const menu = (await api.ok(P + "system/menu")).find(
     (m) => m.path === "/project",
   );
@@ -2005,7 +2084,8 @@ test("research project basic fields, editable statuses and restart isolation", a
     purpose: "研究目的",
   };
   const created = await api.ok(P + "project/save", { body: payload });
-  assert.equal(created.status, 0);
+  assert.equal(created.status, 1);
+  assert.equal(created.status_source, "date");
   assert.equal(created.center, undefined);
   assert.equal(created.research_type, undefined);
   assert.equal(created.notes, undefined);
@@ -2043,7 +2123,7 @@ test("research project basic fields, editable statuses and restart isolation", a
   assert.equal(page.list.length, 1);
   assert.equal(page.total, initial.length + 1);
   assert.equal(
-    (await api.all(P + "project/index", { keyword: "tb-test", status: 0 }))[0]
+    (await api.all(P + "project/index", { keyword: "tb-test", status: 1 }))[0]
       .id,
     created.id,
   );
@@ -2051,18 +2131,25 @@ test("research project basic fields, editable statuses and restart isolation", a
     (await api.all(P + "project/index", { keyword: "无此项目" })).length,
     0,
   );
-  for (const status of [2, 1, 0]) {
-    await api.ok(P + "project/change-status", {
-      body: { id: created.id, status, reason: "人工修正状态" },
-    });
-    await api.ok(P + "project/save", {
-      body: { ...payload, id: created.id, notes: "可继续维护" },
-    });
-  }
+  const naturallyEnded = await api.ok(P + "project/detail", {
+    query: { id: 4 },
+  });
+  const extended = await api.ok(P + "project/save", {
+    body: {
+      id: naturallyEnded.id,
+      code: naturallyEnded.code,
+      name: naturallyEnded.name,
+      start_date: naturallyEnded.start_date,
+      end_date: "2027-09-08",
+      purpose: naturallyEnded.purpose,
+    },
+  });
+  assert.equal(extended.status, 1);
+  assert.equal(extended.status_source, "date");
   assert.notEqual(
     (
       await api.json(P + "project/change-status", {
-        body: { id: created.id, status: 1, reason: "" },
+        body: { id: created.id, status: 2, reason: "" },
       })
     ).code,
     200,
@@ -2073,9 +2160,46 @@ test("research project basic fields, editable statuses and restart isolation", a
         body: {
           id: created.id,
           status: 1,
-          expected_status: 2,
+          expected_status: 1,
+          reason: "不能手动恢复或改为未开始",
+        },
+      })
+    ).code,
+    200,
+  );
+  assert.notEqual(
+    (
+      await api.json(P + "project/change-status", {
+        body: {
+          id: created.id,
+          status: 2,
+          expected_status: 0,
           reason: "过期提交",
         },
+      })
+    ).code,
+    200,
+  );
+  const manuallyEnded = await api.ok(P + "project/change-status", {
+    body: {
+      id: created.id,
+      status: 2,
+      expected_status: 1,
+      reason: "研究提前完成",
+    },
+  });
+  assert.equal(manuallyEnded.status, 2);
+  assert.equal(manuallyEnded.status_source, "manual");
+  assert.match(manuallyEnded.manual_ended_at, /^2026-09-08 /);
+  const editedAfterManualEnd = await api.ok(P + "project/save", {
+    body: { ...payload, id: created.id, end_date: "2028-09-08" },
+  });
+  assert.equal(editedAfterManualEnd.status, 2);
+  assert.equal(editedAfterManualEnd.status_source, "manual");
+  assert.notEqual(
+    (
+      await api.json(P + "project/change-status", {
+        body: { id: created.id, status: 2, reason: "重复结束" },
       })
     ).code,
     200,
@@ -2083,7 +2207,7 @@ test("research project basic fields, editable statuses and restart isolation", a
   const detail = await api.ok(P + "project/detail", {
     query: { id: created.id },
   });
-  assert.ok(detail.history.some((h) => h.action === "变更状态"));
+  assert.ok(detail.history.some((h) => h.action === "手动结束"));
   assert.deepEqual(detail.groups, []);
   const restarted = await start(t);
   await restarted.login();
@@ -2278,8 +2402,10 @@ test("seed research groups cover every patient exactly once", async (t) => {
       ),
     )
   ).flatMap((project) => project.groups);
-  assert.equal(groups.length, 6);
-  assert.ok(projects.every((project) => project.group_count === 2));
+  assert.equal(groups.length, 7);
+  assert.ok(
+    projects.every((project) => project.group_count === (project.id === 4 ? 1 : 2)),
+  );
   assert.ok(
     groups.every(
       (group) =>

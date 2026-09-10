@@ -44,7 +44,7 @@
         <ElTableColumn prop="patient_count" label="患者数" width="80" />
         <ElTableColumn label="状态" width="100"
           ><template #default="{ row }"
-            ><ElTag :type="row.status === 1 ? 'success' : 'info'">{{
+            ><ElTag :type="statusTagType(row.status)">{{
               statusLabel(row.status)
             }}</ElTag></template
           ></ElTableColumn
@@ -57,7 +57,9 @@
               @click="router.push({ path: '/project/groups', query: { project_id: row.id } })"
               >分组</ElButton
             ><ElButton link type="primary" @click="edit(row.id)">编辑</ElButton
-            ><ElButton link type="primary" @click="openStatus(row.id)">状态</ElButton></template
+            ><ElButton link type="primary" :disabled="row.status === 2" @click="openStatus(row.id)"
+              >状态</ElButton
+            ></template
           ></ElTableColumn
         >
       </ElTable>
@@ -93,8 +95,12 @@
           <ElFormItem label="开始日期" prop="start_date"
             ><ElDatePicker v-model="form.start_date" value-format="YYYY-MM-DD" /></ElFormItem
           ><ElFormItem label="结束日期" prop="end_date"
-            ><ElDatePicker v-model="form.end_date" value-format="YYYY-MM-DD" /></ElFormItem
-        ></div>
+            ><div class="date-field"
+              ><ElDatePicker v-model="form.end_date" value-format="YYYY-MM-DD" />
+              <span v-if="form.id" class="field-hint">{{ endDateHint }}</span></div
+            ></ElFormItem
+          ></div
+        >
         <ElFormItem label="研究目的"
           ><ElInput
             v-model.trim="form.purpose"
@@ -109,39 +115,37 @@
     </ElDialog>
     <ElDialog
       v-model="statusVisible"
-      title="变更项目状态"
+      title="手动结束项目"
       width="480px"
       :close-on-click-modal="false"
       :close-on-press-escape="!statusSaving"
       :before-close="closeStatus"
-      ><p>项目：{{ statusProject?.name }}</p
-      ><p class="muted">只更新项目记录，不自动改变患者治疗或任务。</p
-      ><ElForm label-position="top" :disabled="statusSaving"
-        ><ElFormItem label="目标状态"
-          ><ElSelect v-model="targetStatus"
-            ><ElOption
-              v-for="s in statuses"
-              :key="s.value"
-              :label="s.label"
-              :value="s.value"
-              :disabled="s.value === statusProject?.status" /></ElSelect></ElFormItem
-        ><ElFormItem label="变更原因"
+      ><ElAlert
+        class="status-warning"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="项目手动结束后，项目里的患者将不能使用患者端小程序。"
+      />
+      <ElForm label-position="top" :disabled="statusSaving"
+        ><ElFormItem label="结束原因"
           ><ElInput
             v-model.trim="reason"
             type="textarea"
             maxlength="300"
+            placeholder="请填写手动结束原因"
             show-word-limit /></ElFormItem></ElForm
       ><template #footer
         ><ElButton :disabled="statusSaving" @click="statusVisible = false">取消</ElButton
-        ><ElButton type="primary" :loading="statusSaving" @click="submitStatus"
-          >确认变更</ElButton
+        ><ElButton type="danger" :loading="statusSaving" @click="submitStatus"
+          >确认结束</ElButton
         ></template
       ></ElDialog
     >
   </div>
 </template>
 <script setup lang="ts">
-  import { nextTick, onActivated, reactive, ref } from 'vue'
+  import { computed, nextTick, onActivated, reactive, ref } from 'vue'
   import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
   import {
     fetchProjectList,
@@ -161,6 +165,7 @@
     { value: 2, label: '已结束' }
   ]
   const statusLabel = (v: number) => statuses.find((s) => s.value === v)?.label || '未知'
+  const statusTagType = (v: ProjectStatus) => (v === 0 ? 'warning' : v === 1 ? 'success' : 'info')
   const blank = (): ProjectPayload => ({
     code: '',
     name: '',
@@ -179,8 +184,13 @@
   const statusVisible = ref(false),
     statusSaving = ref(false),
     statusProject = ref<ProjectRecord>(),
-    targetStatus = ref<ProjectStatus>(),
     reason = ref('')
+  const editingStatusSource = ref<ProjectRecord['status_source']>()
+  const endDateHint = computed(() =>
+    editingStatusSource.value === 'manual'
+      ? '该项目已手动结束，调整日期不会恢复患者端访问。'
+      : '可将结束日期往后调整，项目状态将按新的研究周期重新计算。'
+  )
   let request = 0,
     editRequest = 0
   const rules: FormRules = {
@@ -237,6 +247,7 @@
         end_date: r.end_date,
         purpose: r.purpose
       }
+      editingStatusSource.value = id ? (r as ProjectRecord).status_source : undefined
       formVisible.value = true
       await nextTick()
       formRef.value?.clearValidate()
@@ -264,7 +275,10 @@
   async function openStatus(id: number) {
     try {
       statusProject.value = await fetchProjectDetail(id)
-      targetStatus.value = undefined
+      if (statusProject.value.status === 2) {
+        ElMessage.info('项目已结束，无需重复操作')
+        return
+      }
       reason.value = ''
       statusVisible.value = true
     } catch {
@@ -273,15 +287,15 @@
   }
   async function submitStatus() {
     if (statusSaving.value) return
-    if (targetStatus.value === undefined || !reason.value) {
-      ElMessage.warning('请选择目标状态并填写原因')
+    if (!reason.value) {
+      ElMessage.warning('请填写手动结束原因')
       return
     }
     statusSaving.value = true
     try {
       await changeProjectStatus(
         statusProject.value!.id,
-        targetStatus.value,
+        2,
         reason.value,
         statusProject.value!.status
       )
@@ -297,42 +311,64 @@
 </script>
 <style scoped>
   .project-page {
-    padding: 20px;
     min-width: 0;
+    padding: 20px;
   }
+
   .heading,
   .filters {
     display: flex;
-    align-items: center;
     gap: 12px;
+    align-items: center;
     margin-bottom: 20px;
   }
+
   .heading {
     justify-content: space-between;
   }
+
   .heading h2 {
     margin: 0;
     font-size: 22px;
   }
-  .heading p,
-  .muted {
+
+  .heading p {
     color: var(--el-text-color-secondary);
   }
+
   .filters {
     flex-wrap: wrap;
   }
+
   .pagination {
     display: flex;
     justify-content: flex-end;
     margin-top: 20px;
   }
+
   .fields {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0 20px;
   }
+
   .fields :deep(.el-date-editor),
   .fields :deep(.el-select) {
     width: 100%;
+  }
+
+  .date-field {
+    width: 100%;
+  }
+
+  .field-hint {
+    display: block;
+    margin-top: 6px;
+    line-height: 1.5;
+    color: var(--el-text-color-secondary);
+  }
+
+  .status-warning {
+    margin-bottom: 18px;
   }
 </style>

@@ -1,5 +1,8 @@
 <template>
-  <main class="patient-app" :class="{ 'is-login': stage === 'login' }">
+  <main
+    class="patient-app"
+    :class="{ 'is-login': stage === 'login', 'is-ended': stage === 'project_ended' }"
+  >
     <section v-if="stage === 'loading'" class="center-state" aria-live="polite">
       <ArtSvgIcon class="loading-icon" icon="ri:loader-4-line" />
       <p>正在读取您的健康计划</p>
@@ -36,11 +39,17 @@
         <button class="demo-button" type="button" @click="mobile = '13910001029'">
           填入待开始患者 13910001029
         </button>
+        <button class="demo-button" type="button" @click="mobile = '13910001030'">
+          填入已结束项目患者 13910001030
+        </button>
       </form>
     </section>
 
     <template v-else-if="data">
-      <header v-if="stage !== 'home' && stage !== 'pending_start'" class="page-header">
+      <header
+        v-if="stage !== 'home' && stage !== 'pending_start' && stage !== 'project_ended'"
+        class="page-header"
+      >
         <button class="icon-button" type="button" aria-label="退出登录" @click="logout">
           <ArtSvgIcon icon="ri:arrow-left-s-line" />
         </button>
@@ -48,7 +57,37 @@
         <span class="header-spacer"></span>
       </header>
 
-      <section v-if="isIdentityStage" class="flow-page">
+      <section v-if="stage === 'project_ended'" class="project-ended-page">
+        <header class="project-ended-header">
+          <h1>项目已结束</h1>
+        </header>
+
+        <div class="project-ended-status" aria-live="polite">
+          <span class="project-ended-illustration" aria-hidden="true">
+            <ArtSvgIcon icon="ri:calendar-check-line" />
+          </span>
+          <h2>感谢您的参与</h2>
+          <p>您参与的研究项目已结束，当前没有可继续参与的项目。</p>
+        </div>
+
+        <article class="project-ended-card">
+          <span>已结束项目</span>
+          <strong>{{ data.project_end?.project_name || data.patient.project_name }}</strong>
+          <div>
+            <small>结束时间</small>
+            <time :datetime="data.project_end?.end_date">{{ projectEndDateText }}</time>
+          </div>
+        </article>
+
+        <div class="project-ended-help">
+          <ArtSvgIcon icon="ri:customer-service-2-line" />
+          <p>如有疑问，请联系随访医生</p>
+        </div>
+
+        <button class="project-ended-logout" type="button" @click="logout">退出登录</button>
+      </section>
+
+      <section v-else-if="isIdentityStage" class="flow-page">
         <div class="step-copy">
           <p>第 <strong>1</strong> 步 / 共 2 步</p>
           <div class="progress-track"><span style="width: 50%"></span></div>
@@ -1295,6 +1334,7 @@
       | 'medication'
       | 'medication_issue'
       | 'pending_start'
+      | 'project_ended'
       | 'home'
     patient: {
       id: number
@@ -1311,6 +1351,12 @@
     medication_start: null | { date: string; time: string; start_at: string }
     identity_confirmation: null | { note: string }
     medication_confirmation: null | { note: string }
+    project_end: null | {
+      project_id: number | null
+      project_name: string
+      end_date: string
+      ended_manually: boolean
+    }
   }
   interface MedicationSlot {
     id: string
@@ -1597,6 +1643,12 @@
   )
   const medicationStartDateText = computed(() => {
     const date = data.value?.medication_start?.date
+    if (!date) return '--'
+    const [year, month, day] = date.split('-').map(Number)
+    return `${year}年${month}月${day}日`
+  })
+  const projectEndDateText = computed(() => {
+    const date = data.value?.project_end?.end_date
     if (!date) return '--'
     const [year, month, day] = date.split('-').map(Number)
     return `${year}年${month}月${day}日`
@@ -2722,6 +2774,151 @@
     background: #35b76f;
   }
 
+  .patient-app.is-ended {
+    background: linear-gradient(180deg, #f5f9ff 0%, #eef5ff 58%, #f7faff 100%);
+  }
+
+  .project-ended-page {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+    padding: max(14px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+  }
+
+  .project-ended-header {
+    display: grid;
+    place-items: center;
+    min-height: 44px;
+  }
+
+  .project-ended-header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 650;
+    color: #17233c;
+  }
+
+  .project-ended-status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 38px;
+    text-align: center;
+  }
+
+  .project-ended-illustration {
+    display: grid;
+    place-items: center;
+    width: 120px;
+    height: 120px;
+    margin-bottom: 24px;
+    font-size: 60px;
+    color: #2468ff;
+    background: linear-gradient(145deg, #e7f1ff, #d9eaff);
+    border: 12px solid rgb(255 255 255 / 72%);
+    border-radius: 50%;
+    box-shadow: 0 16px 40px rgb(48 104 197 / 16%);
+  }
+
+  .project-ended-illustration :deep(svg) {
+    width: 1em;
+    height: 1em;
+  }
+
+  .project-ended-status h2 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: #15213a;
+    letter-spacing: -0.4px;
+  }
+
+  .project-ended-status p {
+    max-width: 300px;
+    margin: 10px 0 0;
+    font-size: 15px;
+    line-height: 1.7;
+    color: #748096;
+  }
+
+  .project-ended-card {
+    padding: 18px;
+    margin-top: 26px;
+    background: rgb(255 255 255 / 92%);
+    border: 1px solid #e1eaf8;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgb(54 89 146 / 8%);
+  }
+
+  .project-ended-card > span,
+  .project-ended-card small {
+    color: #8a94a6;
+  }
+
+  .project-ended-card > span {
+    display: block;
+    margin-bottom: 7px;
+    font-size: 13px;
+  }
+
+  .project-ended-card > strong {
+    display: block;
+    overflow: hidden;
+    font-size: 18px;
+    font-weight: 650;
+    color: #1b2943;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-ended-card > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 15px;
+    margin-top: 15px;
+    border-top: 1px solid #edf1f7;
+  }
+
+  .project-ended-card time {
+    font-size: 14px;
+    font-weight: 600;
+    color: #536178;
+  }
+
+  .project-ended-help {
+    display: flex;
+    gap: 9px;
+    align-items: center;
+    justify-content: center;
+    margin-top: 22px;
+    font-size: 15px;
+    color: #69758a;
+  }
+
+  .project-ended-help :deep(svg) {
+    width: 20px;
+    height: 20px;
+    color: #2468ff;
+  }
+
+  .project-ended-help p {
+    margin: 0;
+  }
+
+  .project-ended-logout {
+    min-height: 48px;
+    margin-top: auto;
+    color: #2468ff;
+    cursor: pointer;
+    background: #fff;
+    border: 1px solid #b9d0ff;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgb(47 90 159 / 8%);
+  }
+
   .pending-start-page {
     box-sizing: border-box;
     display: flex;
@@ -2854,15 +3051,15 @@
   }
 
   .pending-start-note {
-    margin: auto 0 0;
     padding-top: 24px;
+    margin: auto 0 0;
     font-size: 12px;
     line-height: 1.5;
     color: #929aa7;
     text-align: center;
   }
 
-  @media (max-width: 350px) {
+  @media (width <= 350px) {
     .pending-start-status img {
       width: 150px;
       height: 150px;

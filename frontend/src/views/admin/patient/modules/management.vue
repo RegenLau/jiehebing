@@ -386,35 +386,37 @@
                 /></ElFormItem>
               </div>
               <ElButton type="primary" :loading="saving" @click="saveState">登记状态变更</ElButton>
-              <ElDivider />
-              <div class="tab-heading">
-                <div
-                  ><h3>患者端确认</h3>
-                  <p>确认结果由患者本人提交；医生修改资料或用药安排后会自动要求重新确认。</p></div
-                >
-              </div>
-              <div class="confirmation-box confirmation-status">
-                <span>基础信息</span>
-                <ElTag :type="form.identity_confirmed ? 'success' : 'warning'">{{
-                  form.identity_confirmed ? '患者已确认' : '待患者确认'
-                }}</ElTag>
-                <span>当前用药</span>
-                <ElTag :type="form.medicine_confirmed ? 'success' : 'warning'">{{
-                  form.medicine_confirmed ? '患者已确认' : '待患者确认'
-                }}</ElTag>
-              </div>
-              <ElTable
-                :data="confirmationIssues"
-                border
-                empty-text="暂无患者反馈"
-                class="issue-table"
-              >
-                <ElTableColumn prop="created_at" label="提交时间" min-width="170" />
-                <ElTableColumn prop="type_text" label="反馈类型" min-width="140" />
-                <ElTableColumn prop="note" label="患者说明" min-width="220" />
-                <ElTableColumn prop="status" label="处理状态" width="110" />
-              </ElTable>
             </ElForm>
+          </ElTabPane>
+
+          <ElTabPane label="患者端确认" name="confirmation">
+            <div class="tab-heading">
+              <div>
+                <h3>患者端确认</h3>
+                <p>确认结果由患者本人提交；医生修改资料或用药安排后会自动要求重新确认。</p>
+              </div>
+            </div>
+            <div class="confirmation-box confirmation-status">
+              <span>基础信息</span>
+              <ElTag :type="form.identity_confirmed ? 'success' : 'warning'">{{
+                form.identity_confirmed ? '患者已确认' : '待患者确认'
+              }}</ElTag>
+              <span>当前用药</span>
+              <ElTag :type="form.medicine_confirmed ? 'success' : 'warning'">{{
+                form.medicine_confirmed ? '患者已确认' : '待患者确认'
+              }}</ElTag>
+            </div>
+            <ElTable
+              :data="confirmationIssues"
+              border
+              empty-text="暂无患者反馈"
+              class="issue-table"
+            >
+              <ElTableColumn prop="created_at" label="提交时间" min-width="170" />
+              <ElTableColumn prop="type_text" label="反馈类型" min-width="140" />
+              <ElTableColumn prop="note" label="患者说明" min-width="220" />
+              <ElTableColumn prop="status" label="处理状态" width="110" />
+            </ElTable>
           </ElTabPane>
 
           <ElTabPane label="操作记录" name="history">

@@ -19,6 +19,7 @@ export function createFixtures(now) {
   const time = `${today} 09:00:00`;
   const demoPatientMobile = '13910001019';
   const pendingStartPatientMobile = '13910001029';
+  const endedProjectPatientMobile = '13910001030';
   const projects = [0, 1, 2].map((status, i) => ({
     id: i + 1, code: `TB-RESEARCH-00${i + 1}`, name: ['结核病院外随访研究', '结核病规范用药随访研究', '结核病随访试点'][i],
     center: '结核病研究中心', investigator: '项目负责人', phone: '010-00000000',
@@ -26,6 +27,14 @@ export function createFixtures(now) {
     protocol_version: 'V1.0', effective_date: shiftDate(today, -100), purpose: '开展结核病患者院外用药管理与随访。', notes: '',
     research_type: ['open', 'single_blind', 'double_blind'][i], status, created_at: time, updated_at: time, history: [{ action: '初始化', operator: '系统', time, note: '创建研究项目' }]
   }));
+  projects.push({
+    id: 4, code: 'TB-RESEARCH-004', name: '项目结束状态演示',
+    center: '结核病研究中心', investigator: '项目负责人', phone: '010-00000000',
+    start_date: shiftDate(today, -180), end_date: shiftDate(today, -1),
+    protocol_version: 'V1.0', effective_date: shiftDate(today, -190), purpose: '用于验证研究项目结束后的患者端访问状态。', notes: '',
+    research_type: 'open', status: 2, created_at: time, updated_at: time,
+    history: [{ action: '初始化', operator: '系统', time, note: '创建已结束项目演示数据' }]
+  });
   const patientProfiles = [
     ['林安然', '13910001001', 2, '1988-03-12'], ['周明远', '13910001002', 1, '1979-11-26'],
     ['陈嘉禾', '13910001003', 1, '1992-07-08'], ['赵清妍', '13910001004', 2, '1985-01-19'],
@@ -41,18 +50,20 @@ export function createFixtures(now) {
     ['孔思齐', '13910001023', 1, '1995-02-15'], ['曹静姝', '13910001024', 2, '1981-06-06'],
     ['严嘉树', '13910001025', 1, '1989-09-12'], ['华安琪', '13910001026', 2, '1973-01-25'],
     ['金予安', '13910001027', 1, '1997-11-08'], ['魏清越', '13910001028', 2, '1984-05-31'],
-    ['待开始服药患者', '13910001029', 1, '1988-05-12']
+    ['待开始服药患者', '13910001029', 1, '1988-05-12'],
+    ['项目已结束患者', '13910001030', 2, '1986-06-18']
   ];
   const patients = patientProfiles.map(([name, mobile, gender, birth_date], i) => {
     const isPendingStartPatient = mobile === pendingStartPatientMobile;
-    const offset = isPendingStartPatient ? 1 : i < 12 ? -(40 + i) : i < 16 ? -(i - 11) : -(i + 3);
+    const isEndedProjectPatient = mobile === endedProjectPatientMobile;
+    const offset = isPendingStartPatient ? 1 : isEndedProjectPatient ? -180 : i < 12 ? -(40 + i) : i < 16 ? -(i - 11) : -(i + 3);
     const enroll_date = shiftDate(today, offset);
     const isDemoPatient = mobile === demoPatientMobile;
-    const isConfirmedPatient = isDemoPatient || isPendingStartPatient;
+    const isConfirmedPatient = isDemoPatient || isPendingStartPatient || isEndedProjectPatient;
     return {
       id: i + 1, patient_code: `TB-P-${String(i + 1).padStart(3, '0')}`, name, mobile, gender,
       gender_text: gender === 1 ? '男' : '女', birth_date, age: ageOnDate(birth_date, today),
-      is_archived: 1, login_enabled: true, created_via: 'admin', study_state: isDemoPatient ? '治疗中' : '待启用',
+      is_archived: 1, login_enabled: true, created_via: 'admin', study_state: isEndedProjectPatient ? '已完成' : isDemoPatient ? '治疗中' : '待启用',
       enroll_date, offline_confirmed: true, consent_confirmed: true,
       identity_confirmed: isConfirmedPatient, medicine_confirmed: isConfirmedPatient, status: 1,
       ...(isConfirmedPatient ? {
@@ -213,9 +224,10 @@ export function createFixtures(now) {
     { id: 1, project_id: 1, name: '筹备标准随访组', description: '筹备阶段的标准随访管理分组。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(8, 13).map(p => p.id) },
     { id: 2, project_id: 1, name: '筹备强化随访组', description: '筹备阶段的强化提醒与复查管理分组。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 3], participant_ids: patients.slice(13, 18).map(p => p.id) },
     { id: 3, project_id: 2, name: '规范用药随访组', description: '开展规范用药、定期复查及随访问卷管理。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(18, 23).map(p => p.id) },
-    { id: 4, project_id: 2, name: '强化管理随访组', description: '开展加强提醒、取药和报告提交管理。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 3, 4], participant_ids: patients.slice(23).map(p => p.id) },
+    { id: 4, project_id: 2, name: '强化管理随访组', description: '开展加强提醒、取药和报告提交管理。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 3, 4], participant_ids: patients.slice(23, 29).map(p => p.id) },
     { id: 5, project_id: 3, name: '历史完成随访组', description: '用于查看已结束项目的历史分组配置。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(0, 4).map(p => p.id) },
-    { id: 6, project_id: 3, name: '历史重点复核组', description: '用于查看已结束项目的重点复核配置。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 4], participant_ids: patients.slice(4, 8).map(p => p.id) }
+    { id: 6, project_id: 3, name: '历史重点复核组', description: '用于查看已结束项目的重点复核配置。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 4], participant_ids: patients.slice(4, 8).map(p => p.id) },
+    { id: 7, project_id: 4, name: '项目结束演示组', description: '用于验证项目结束后的患者端状态。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.filter(p => p.mobile === endedProjectPatientMobile).map(p => p.id) }
   ];
   const schedule = (source, reminder, interval_days, offset_days = 0) => ({
     id: source.id, snapshot: structuredClone(source), anchor: 'enrollment', date: '', offset_days, interval_days, deadline_days: 3,

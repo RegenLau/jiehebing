@@ -10,6 +10,7 @@ import { registerMedicationSchemes } from './medication-schemes.mjs';
 import { registerReminderSchemes } from './reminder-schemes.mjs';
 import { registerProjects } from './projects.mjs';
 import { registerPatientApp } from './patient-app.mjs';
+import { effectiveProjectStatus } from './project-status.mjs';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
@@ -106,7 +107,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
   registerTaskTemplates({ core, db, assert, find, page, clean, timestamp, nextId });
   registerMedicationSchemes({ core, db, assert, find, page, clean, timestamp, nextId });
   registerReminderSchemes({ core, db, assert, find, page, clean, timestamp, nextId });
-  registerProjects({ core, db, assert, find, page, clean, isDate, timestamp, nextId });
+  registerProjects({ core, db, assert, find, page, clean, isDate, timestamp, nextId, today });
   registerResearchExport({core,db,assert,clean,today,spreadsheet});
   core('GET', 'admin/index', () => descId(db.admins).map(safeAdmin));
   const saveAdmin = ({ body: b }, update) => {
@@ -336,6 +337,10 @@ export function createMockServer({ now = () => new Date() } = {}) {
         const session = patientSessions.get(token);
         patient = db.patients.find(p => p.id === session?.id && p.login_enabled && p.created_via === 'admin');
         assert(session && session.expires > clock().getTime() && patient, '登录已过期，请重新登录', 402);
+        if (path !== '/app/patient/bootstrap') {
+          const assignedProject = db.projects.find(project => project.id === patient.project_id);
+          assert(assignedProject && effectiveProjectStatus(assignedProject, today()) !== 2, '项目已结束，当前无法继续使用患者端小程序', 410);
+        }
       } else if (!publicAdminLogin && !publicPatientLogin) {
         const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
         const session = sessions.get(token);

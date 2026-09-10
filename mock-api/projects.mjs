@@ -1,6 +1,7 @@
 import { normalizeGroupDrugs, registerPrescriptionRecognition } from './group-medication.mjs';
+import { effectiveProjectStatus, projectStatusView } from './project-status.mjs';
 // Project configuration is independent from patient treatment and generated tasks.
-export function registerProjects({ core, db, assert, find, page, clean, isDate, timestamp, nextId }) {
+export function registerProjects({ core, db, assert, find, page, clean, isDate, timestamp, nextId, today }) {
   registerPrescriptionRecognition({core, db, assert, clean});
   const copy = value => structuredClone(value);
   const number = (value, label, min = 0, max = 3650) => {
@@ -11,6 +12,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     const result = clean(value); assert(result.length <= max && (!required || result), `请填写${required ? '有效的' : ''}${label}（最多${max}字）`); return result;
   };
   const project = id => find(db.projects, id, '项目');
+  const view = record => projectStatusView(record, today());
   const group = (projectId, id) => { const row = find(db.projectGroups, id, '分组'); assert(row.project_id === project(projectId).id, '分组不属于当前项目', 404); return row; };
   const groupView = row => ({
     ...copy(row),
@@ -36,39 +38,44 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
   core('GET', 'project/index', ({ query: q }) => {
     assert(q.status === undefined || q.status === '' || ['0', '1', '2'].includes(q.status), '项目状态不合法');
     const keyword = clean(q.keyword).toLowerCase();
-    const rows = db.projects.filter(p => (!keyword || `${p.code} ${p.name}`.toLowerCase().includes(keyword)) && (q.status === undefined || q.status === '' || p.status === Number(q.status)));
+    const rows = db.projects.filter(p => (!keyword || `${p.code} ${p.name}`.toLowerCase().includes(keyword)) && (q.status === undefined || q.status === '' || effectiveProjectStatus(p, today()) === Number(q.status)));
     return page([...rows].sort((a,b) => b.id-a.id).map(({ history, ...p }) => {
       const groups = db.projectGroups.filter(g => g.project_id === p.id);
       const patientIds = new Set(db.patients.filter(patient => patient.project_id === p.id).map(patient => patient.id));
       for (const group of groups) for (const id of group.participant_ids || []) patientIds.add(id);
-      return { ...p, group_count: groups.length, patient_count: patientIds.size };
+      return { ...view(p), group_count: groups.length, patient_count: patientIds.size };
     }), q);
   });
-  core('GET', 'project/detail', ({ query: q }) => ({ ...project(q.id), groups: db.projectGroups.filter(g => g.project_id === Number(q.id)) }));
+  core('GET', 'project/detail', ({ query: q }) => ({ ...view(project(q.id)), groups: db.projectGroups.filter(g => g.project_id === Number(q.id)) }));
   core('POST', 'project/save', ({ body: b, admin }) => {
     const existing = b.id === undefined ? null : project(b.id);
-    assert(b.status === undefined || b.status === (existing?.status ?? 0), '请通过变更状态操作修改状态');
+    assert(b.status === undefined, '项目状态由研究周期和手动结束决定');
     const data = { code: text(b.code,'项目编号',40,true), name: text(b.name,'项目名称',100,true), purpose: text(b.purpose,'研究目的',1000), start_date: clean(b.start_date), end_date: clean(b.end_date) };
     assert(/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(data.code), '项目编号仅支持字母、数字、短横线和下划线');
     assert(!db.projects.some(p => p !== existing && p.code.toLowerCase() === data.code.toLowerCase()), '项目编号已存在');
     assert(isDate(data.start_date) && isDate(data.end_date) && data.start_date <= data.end_date, '请填写有效且顺序正确的研究周期');
     const record = existing || { id: nextId(db.projects), status: 0, created_at: timestamp(), history: [] };
     const before = copy(record);
-    if (existing && Object.keys(data).every(k => data[k] === existing[k])) return record;
+    if (existing && Object.keys(data).every(k => data[k] === existing[k])) return view(record);
     Object.assign(record, data);
     log(record, admin, existing ? '编辑' : '新建', existing ? '更新项目资料' : '创建研究项目', before, data);
     if (!existing) db.projects.push(record);
-    return record;
+    return view(record);
   });
   core('POST', 'project/change-status', ({ body: b, admin }) => {
     const record = project(b.id);
-    number(b.status, '状态', 0, 2);
-    assert(b.status !== record.status, '状态未发生变化');
-    if (b.expected_status !== undefined) assert(b.expected_status === record.status, '项目状态已变化，请刷新后重试');
+    const target = number(b.status, '状态', 0, 2);
+    assert(target === 2, '项目状态只能手动结束');
+    const current = effectiveProjectStatus(record, today());
+    assert(current !== 2, '项目已结束，无需重复操作');
+    if (b.expected_status !== undefined) assert(b.expected_status === current, '项目状态已变化，请刷新后重试');
     const reason = text(b.reason, '状态变更原因', 300, true);
-    const before = { status: record.status }; record.status = b.status;
-    log(record, admin, '变更状态', reason, before, { status: b.status });
-    return record;
+    const before = { status: current, status_source: 'date', manual_ended_at: '' };
+    record.status = 2;
+    record.manual_ended_at = timestamp();
+    record.manual_end_reason = reason;
+    log(record, admin, '手动结束', reason, before, { status: 2, status_source: 'manual', manual_ended_at: record.manual_ended_at });
+    return view(record);
   });
   core('GET', 'project/catalog', () => ({
     medication_schemes: db.medicationSchemes, task_templates: db.taskTemplates,

@@ -17,24 +17,30 @@
         }"
       /><ElButton type="primary" @click="openCreate">新增临时任务</ElButton></div
     ><ElCard shadow="never">
-      <ResearchScopeFilter
-        v-model:project-id="projectId"
-        v-model:group-id="groupId"
-        v-model:date-range="dateRange"
-        @change="search" />
-      <div class="toolbar"
-        ><ElInput
-          v-model="keyword"
-          placeholder="患者或任务名称"
-          clearable
-          @keyup.enter="search"
-        /><ElSelect v-model="type" clearable placeholder="全部类型" @change="search"
-          ><ElOption v-for="t in types" :key="t" :label="t" :value="t" /></ElSelect
-        ><ElSelect v-model="status" clearable placeholder="全部状态" @change="search"
-          ><ElOption v-for="s in states" :key="s" :label="s" :value="s" /></ElSelect
-        ><ElCheckbox v-model="overdue" @change="search">仅逾期</ElCheckbox
-        ><ElButton @click="search">查询</ElButton></div
-      ><ElTable v-loading="loading" :data="rows" border
+      <div class="filter-section">
+        <ResearchScopeFilter
+          v-model:project-id="projectId"
+          v-model:group-id="groupId"
+          v-model:date-range="dateRange"
+          @change="search"
+        />
+        <div class="filter-toolbar"
+          ><ElInput
+            v-model="keyword"
+            placeholder="患者或任务名称"
+            clearable
+            @keyup.enter="search"
+          /><ElSelect v-model="type" clearable placeholder="全部类型" @change="search"
+            ><ElOption v-for="t in types" :key="t" :label="t" :value="t" /></ElSelect
+          ><ElSelect v-model="status" clearable placeholder="全部状态" @change="search"
+            ><ElOption v-for="s in states" :key="s" :label="s" :value="s" /></ElSelect
+          ><div class="filter-actions"
+            ><ElCheckbox v-model="overdue" @change="search">仅逾期</ElCheckbox
+            ><ElButton @click="search">查询</ElButton></div
+          ></div
+        >
+      </div>
+      <ElTable v-loading="loading" :data="rows" border
         ><ElTableColumn prop="patient_name" label="患者" /><ElTableColumn
           prop="name"
           label="任务"
@@ -272,6 +278,34 @@
   }
   .toolbar .el-select {
     width: 150px;
+  }
+  .filter-section {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .filter-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 16px;
+  }
+  .filter-toolbar .el-input {
+    width: 240px;
+    min-width: 180px;
+    max-width: 240px;
+    flex: 1 1 180px;
+  }
+  .filter-toolbar .el-select {
+    width: 150px;
+  }
+  .filter-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .filter-actions .el-checkbox {
+    margin-right: 0;
   }
   .el-pagination {
     margin-top: 20px;

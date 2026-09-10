@@ -1,3 +1,5 @@
+import { effectiveProjectStatus } from './project-status.mjs';
+
 export function registerPatientApp({
   patientRoute,
   db,
@@ -94,16 +96,18 @@ export function registerPatientApp({
       String(confirmation.treatment_id) === String(treatment.id),
     );
   const bootstrap = (patient) => {
+    const currentProject = db.projects.find((row) => row.id === patient.project_id);
+    const projectEnded = !currentProject || effectiveProjectStatus(currentProject, today()) === 2;
     const treatment = latestTreatment(patient);
     const start = medicationStart(treatment);
     const medicationCurrent = matchesTreatment(
       patient.medication_confirmation,
       treatment,
     );
-    let stage = "identity";
-    if (patient.identity_confirmation?.status === "issue")
+    let stage = projectEnded ? "project_ended" : "identity";
+    if (!projectEnded && patient.identity_confirmation?.status === "issue")
       stage = "identity_issue";
-    else if (patient.identity_confirmed) {
+    else if (!projectEnded && patient.identity_confirmed) {
       if (
         patient.medication_confirmation?.status === "issue" &&
         medicationCurrent
@@ -145,15 +149,25 @@ export function registerPatientApp({
       medication_confirmation: medicationCurrent
         ? patient.medication_confirmation
         : null,
+      project_end: projectEnded
+        ? {
+            project_id: currentProject?.id ?? null,
+            project_name: currentProject?.name || patient.project_name || "",
+            end_date: currentProject?.end_date || "",
+            ended_manually: Boolean(currentProject?.manual_ended_at),
+          }
+        : null,
     };
   };
   const requireHome = (patient) => {
     const state = bootstrap(patient);
     assert(
       state.stage === "home",
-      state.stage === "pending_start"
-        ? "用药计划尚未开始，请在开始服药时间后进入"
-        : "请先完成身份与用药确认",
+      state.stage === "project_ended"
+        ? "项目已结束，当前无法继续使用患者端小程序"
+        : state.stage === "pending_start"
+          ? "用药计划尚未开始，请在开始服药时间后进入"
+          : "请先完成身份与用药确认",
     );
     return state;
   };
