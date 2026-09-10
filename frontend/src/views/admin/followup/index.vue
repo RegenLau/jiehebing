@@ -84,11 +84,8 @@
           ><ElFormItem label="任务名称"><ElInput v-model="form.name" /></ElFormItem
           ><ElFormItem label="类型"
             ><ElSelect v-model="form.type"
-              ><ElOption
-                v-for="t in types.filter((t) => t !== '问卷')"
-                :key="t"
-                :label="t"
-                :value="t" /></ElSelect></ElFormItem
+              ><ElOption v-for="t in types" :key="t" :label="t" :value="t" /></ElSelect
+            ></ElFormItem
           ><ElFormItem label="说明与提交要求"
             ><ElInput v-model="form.description" type="textarea" /></ElFormItem></template
         ><template v-else
@@ -101,7 +98,7 @@
                 value="reschedule" /><ElOption label="要求补充" value="supplement" /><ElOption
                 label="人工确认完成"
                 value="complete"
-                :disabled="['检查', '补交检查资料'].includes(form.type)" /><ElOption
+                :disabled="form.type === '检查'" /><ElOption
                 label="取消任务"
                 value="cancel" /></ElSelect></ElFormItem></template
         ><div v-if="!form.id || action === 'reschedule'" class="toolbar"
@@ -152,7 +149,7 @@
     history?: { time: string; operator: string; action: string; reason: string }[]
   }
   const route = useRoute(),
-    types = ['检查', '复诊', '取药', '补交检查资料', '问卷', '其他'],
+    types = ['提醒', '检查'],
     states = ['待完成', '已提交', '需补充', '已完成', '已取消'],
     blank = (): Task => ({
       name: '',

@@ -23,10 +23,10 @@
 | 入口 | 页面地址 | 已有管理端能力与使用边界 |
 | --- | --- | --- |
 | 随访工作台 | `/dashboard/console` | 今日、近 7 天、近 30 天及统计日期切换；研究/分组范围；患者、用药、报告、事件和任务指标及同范围下钻 |
-| 研究管理 | `/project/index` | 建立研究和多个分组；分组关联通用用药方案、问卷、任务模板及提醒方案，并查看已入组患者 |
+| 研究管理 | `/project/index` | 建立研究和多个分组；分组关联通用用药方案、问卷和任务模板，每项随访安排独立设置提醒时间，并查看已入组患者 |
 | 患者管理 | `/patient/index` | 姓名/手机号/编号、研究状态、研究/分组和入组日期筛选；三步建档、个体用药、发药、状态与关联记录 |
 | 用药管理 | `/medication-plan/schemes`、`/medication-plan/index` | 通用用药方案维护；执行计划支持已服、明确未服、未记录及取消/暂停状态，并可人工记录联系 |
-| 随访任务 | `/followup/index`、`/followup/feedback`、`/followup/templates`、`/followup/reminder-schemes` | 任务列表、临时任务、改期/取消/联系；每日反馈、任务模板和提醒方案分开维护 |
+| 随访任务 | `/followup/index`、`/followup/feedback`、`/followup/templates` | 任务列表、临时任务、改期/取消/联系；每日反馈和任务模板分开维护，提醒时间在分组的每项任务中设置 |
 | 检查报告 | `/reports/index` | 患者或报告类型、状态、研究/分组和日期筛选；代录、原资料、补传、人工指标与核对流程 |
 | 不良反应 | `/adverse-reaction/index` | 患者姓名、严重程度筛选，详情、人工评估/跟进和筛选结果导出 |
 | 问卷管理 | `/survey/index` | 基础新增、编辑、启停、详情和答卷导出；列表分开展示答卷份数与参与患者数 |
@@ -98,7 +98,7 @@ Mock 初始日期以 `Asia/Shanghai` 当天为基准，提供今日、近期、�
 | 患者用药 | `GET /app/patient/medication`、`POST /app/patient/medication-slot` | 按日期+时点整次记录，支持部分未服、明确未服和有原因的更正；返回近期时点与余药估算 |
 | 患者任务与提交 | `GET /app/patient/tasks`、`POST /app/patient/feedback`、`POST /app/patient/survey-submit`、`POST /app/patient/adverse-report` | 任务快照、每日反馈、多轮问卷和不良反应上报；反馈只接收转写后的文字，不接收原始音频 |
 | 患者报告 | `GET /app/patient/reports`、`GET /app/patient/report-detail`、`POST /app/patient/report-submit`、`POST /app/patient/report-confirm` | 报告上传/补传、患者核对名称/值/单位/参考范围/异常标识及原资料历史 |
-| 患者服务 | `GET /app/patient/support`、`POST /app/patient/reminder-preferences` | 小组提醒方案、个人消息偏好、联系人及已发布科普 |
+| 患者服务 | `GET /app/patient/support`、`POST /app/patient/reminder-preferences` | 逐任务提醒时间、个人消息偏好、联系人及已发布科普 |
 
 原 `backend/config/route.php` 并未声明上述 `/core/user/*`、日志、清缓存和图库路径；这些是前端继承的公共契约，需要由 Mock 补齐兼容。API 文件中其他未使用的模板函数，不自动进入本次覆盖范围。
 

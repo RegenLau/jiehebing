@@ -1,3 +1,5 @@
+import { buildMockOcrResult } from "./report-ocr.mjs";
+
 export function registerReports({
   core,
   db,
@@ -71,7 +73,7 @@ export function registerReports({
     if (b.task_id) {
       task = find(db.followupTasks, b.task_id, "任务");
       assert(
-        task.user_id === p.id && ["检查", "补交检查资料"].includes(task.type),
+        task.user_id === p.id && task.type === "检查",
         "任务不属于该患者或不支持报告",
       );
       assert(!["已完成", "已取消"].includes(task.status), "任务已结束");
@@ -88,7 +90,8 @@ export function registerReports({
       exam_date: b.exam_date,
       task_id: task?.id || null,
       status: "待核对",
-      ocr_status: "未接入，人工录入",
+      ocr_status: "解析完成，待人工核对",
+      ocr_result: null,
       metrics: [],
       versions: [
         {
@@ -100,6 +103,15 @@ export function registerReports({
       ],
       history: [],
     };
+    row.ocr_result = buildMockOcrResult({
+      type,
+      patient: p,
+      examDate: b.exam_date,
+      files: documents,
+      extractedAt: timestamp(),
+      sequence: row.id,
+    });
+    row.metrics = structuredClone(row.ocr_result.metrics);
     db.reports.push(row);
     if (task) task.status = "已提交";
     return row;
@@ -115,6 +127,17 @@ export function registerReports({
       time: timestamp(),
       operator: admin.realname || admin.username,
     });
+    const patient = find(db.patients, r.user_id, "患者");
+    r.ocr_result = buildMockOcrResult({
+      type: r.type,
+      patient,
+      examDate: r.exam_date,
+      files: r.versions.flatMap((version) => version.files),
+      extractedAt: timestamp(),
+      sequence: r.id,
+    });
+    r.metrics = structuredClone(r.ocr_result.metrics);
+    r.ocr_status = "解析完成，待人工核对";
     r.status = "待核对";
     if (r.task_id) {
       const t = find(db.followupTasks, r.task_id, "任务");
@@ -141,6 +164,7 @@ export function registerReports({
     const before = { status: r.status, metrics: structuredClone(r.metrics) };
     r.status = b.status;
     r.metrics = metrics;
+    r.ocr_status = b.status === "已核对" ? "人工已核对" : "待补充后重新解析";
     r.history.push({
       time: timestamp(),
       operator: admin.realname || admin.username,

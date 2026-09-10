@@ -314,7 +314,7 @@
 
           <ElTabPane label="预计余药" name="stock">
             <ElAlert
-              title="按截至昨日的计划用量估算；未打卡仍按计划估算，结果需与患者核对。"
+              title="按患者实际发药或最近盘点，扣除截至昨日的计划用量估算；没有实际药量时不生成取药提醒。"
               type="warning"
               :closable="false"
               show-icon
@@ -325,18 +325,37 @@
             <ElTable :data="stock" border empty-text="请先确认个人用药方案并登记实际发药">
               <ElTableColumn prop="name" label="药品" min-width="150" />
               <ElTableColumn label="预计余量" min-width="120"
-                ><template #default="{ row }"
-                  >{{ row.estimated }} {{ row.unit }}</template
-                ></ElTableColumn
+                ><template #default="{ row }">{{
+                  row.calculation_ready ? `${row.estimated} ${row.unit}` : '-'
+                }}</template></ElTableColumn
               >
               <ElTableColumn label="预计可用" min-width="110"
-                ><template #default="{ row }">{{ row.days }} 天</template></ElTableColumn
+                ><template #default="{ row }">{{
+                  row.calculation_ready ? `${row.days} 天` : '-'
+                }}</template></ElTableColumn
+              >
+              <ElTableColumn label="提醒日 / 预计不足日" min-width="200"
+                ><template #default="{ row }">
+                  <template v-if="row.calculation_ready">
+                    {{ row.reminder_date }} / {{ row.expected_shortage_date }}
+                  </template>
+                  <template v-else>待登记实际发药或盘点</template>
+                </template></ElTableColumn
               >
               <ElTableColumn label="取药提醒" min-width="140"
                 ><template #default="{ row }"
-                  ><ElTag :type="row.needs_pickup ? 'danger' : 'success'">{{
-                    row.needs_pickup ? '需联系取药' : '暂未到提醒窗口'
-                  }}</ElTag></template
+                  ><ElTag
+                    :type="
+                      !row.calculation_ready ? 'warning' : row.needs_pickup ? 'danger' : 'success'
+                    "
+                    >{{
+                      !row.calculation_ready
+                        ? '待登记实际药量'
+                        : row.needs_pickup
+                          ? '需联系取药'
+                          : '暂未到提醒窗口'
+                    }}</ElTag
+                  ></template
                 ></ElTableColumn
               >
             </ElTable>
@@ -562,6 +581,9 @@
       estimated: number
       days: number
       needs_pickup: boolean
+      calculation_ready: boolean
+      reminder_date: string
+      expected_shortage_date: string
     }[]
   >([])
   const stockForm = ref({

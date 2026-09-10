@@ -27,10 +27,6 @@
             <span>任务模板</span>
             <strong>{{ form.tasks.length }} 项</strong>
           </div>
-          <div>
-            <span>提醒方案</span>
-            <strong>{{ form.reminder?.snapshot.name || '未配置' }}</strong>
-          </div>
         </div>
         <ElForm :model="form" label-position="top" :disabled="readonly || saving">
           <ElTabs v-model="activeTab" class="group-tabs">
@@ -80,82 +76,48 @@
                 :group-name="form.name"
                 :readonly="readonly"
                 :disabled="saving"
-                :advance-days="
-                  form.reminder
-                    ? form.reminder.snapshot.pickup_enabled
-                      ? form.reminder.snapshot.pickup_advance_days
-                      : 0
-                    : (form.medication?.advance_days ?? 3)
-                "
+                :advance-days="form.medication?.advance_days ?? defaultPickupAdvanceDays"
               />
             </ElTabPane>
-            <ElTabPane label="随访问卷" name="followup-surveys"
-              ><Schedules
-                v-model="form.surveys"
-                :sources="catalog.surveys"
-                label="问卷"
-                :reminder-name="form.reminder?.snapshot.name"
-            /></ElTabPane>
-            <ElTabPane label="任务模板" name="followup-tasks"
-              ><Schedules
-                v-model="form.tasks"
-                :sources="catalog.task_templates"
-                label="任务模板"
-                :reminder-name="form.reminder?.snapshot.name"
-            /></ElTabPane>
-            <ElTabPane label="提醒方案" name="reminder">
-              <ElSelect
-                :model-value="form.reminder?.id"
-                placeholder="选择提醒方案"
-                clearable
-                filterable
-                style="width: 100%"
-                @change="selectReminder"
-              >
-                <ElOption
-                  v-for="source in catalog.reminder_schemes"
-                  :key="source.id"
-                  :label="`${source.name}${source.status === 1 ? '' : '（已停用）'}`"
-                  :value="source.id"
-                  :disabled="source.status !== 1"
-                />
-              </ElSelect>
-              <ElEmpty
-                v-if="!form.reminder"
-                description="暂未关联提醒方案，患者仍可在任务列表查看待办"
-                :image-size="58"
-              />
-              <template v-else>
+            <ElTabPane label="随访问卷" name="followup-surveys">
+              <Schedules v-model="form.surveys" :sources="catalog.surveys" label="问卷" />
+            </ElTabPane>
+            <ElTabPane label="任务模板" name="followup-tasks">
+              <section class="pickup-rule-card">
+                <div class="pickup-rule-heading">
+                  <div>
+                    <h3>取药提醒</h3>
+                    <p>系统根据每位患者的实际发药量和个体用法用量，自动计算提醒日期。</p>
+                  </div>
+                  <ElTag type="primary" effect="light">系统自动计算</ElTag>
+                </div>
                 <ElAlert
-                  v-if="reminderOutdated"
-                  title="提醒方案已有新版本，当前小组仍使用原版本"
-                  description="确认新规则适合本组后，再更新为最新版。"
+                  v-if="!form.medication"
+                  title="请先在“用药方案”中配置药品，随后再设置提前提醒天数。"
                   type="warning"
                   :closable="false"
                   show-icon
-                  class="source-alert"
-                >
-                  <template #default>
-                    <ElButton type="warning" link @click="refreshReminder">更新为最新版</ElButton>
-                  </template>
-                </ElAlert>
-                <p class="muted reminder-description">{{ form.reminder.snapshot.description }}</p>
-                <ElDescriptions :column="2" border class="reminder-detail">
-                  <ElDescriptionsItem label="服药提醒">
-                    {{ medicationReminder(form.reminder.snapshot) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="任务提醒">
-                    {{ taskReminder(form.reminder.snapshot) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="任务提醒时间">
-                    {{ form.reminder.snapshot.task_remind_time }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="取药提醒">
-                    {{ pickupReminder(form.reminder.snapshot) }}
-                  </ElDescriptionsItem>
-                </ElDescriptions>
-                <p class="muted">保存后，本组问卷和任务统一采用该提醒方案，不再逐条重复设置。</p>
-              </template>
+                />
+                <div v-else class="pickup-rule-setting">
+                  <ElFormItem label="提前提醒（天）">
+                    <ElInputNumber
+                      v-model="form.medication.advance_days"
+                      :min="0"
+                      :max="60"
+                      :precision="0"
+                    />
+                  </ElFormItem>
+                  <p>
+                    每日用量＝单次用量 × 每日服药次数；多种药品按最早预计不足的药品触发。
+                    登记实际发药或余药盘点后，提醒日期会自动重算。
+                  </p>
+                </div>
+              </section>
+              <div class="scheduled-task-heading">
+                <h3>检查及其他任务</h3>
+                <p>以下任务仍按时间基准、频次和完成期限生成。</p>
+              </div>
+              <Schedules v-model="form.tasks" :sources="scheduledTaskTemplates" label="任务模板" />
             </ElTabPane>
           </ElTabs>
         </ElForm>
@@ -177,7 +139,8 @@
     fetchProjectCatalog,
     saveGroup,
     type Catalog,
-    type GroupRecord
+    type GroupRecord,
+    type Schedule
   } from '@/api/project'
   import Schedules from '../project/modules/schedules.vue'
   import MedicationEditor from '@/components/business/medication-editor.vue'
@@ -211,21 +174,21 @@
     projectName = ref('')
   const readonly = computed(() => Boolean(groupId.value) && route.query.mode !== 'edit')
   const activeTab = ref('participants')
-  const allowedTabs = [
-    'participants',
-    'medication',
-    'followup-surveys',
-    'followup-tasks',
-    'reminder'
-  ]
-  const currentReminderSource = computed(() =>
-    catalog.value.reminder_schemes.find((source) => source.id === form.value.reminder?.id)
+  const allowedTabs = ['participants', 'medication', 'followup-surveys', 'followup-tasks']
+  const scheduledTaskTemplates = computed(() =>
+    catalog.value.task_templates.filter((source) => source.system_kind !== 'pickup')
   )
-  const reminderOutdated = computed(
-    () =>
-      Boolean(currentReminderSource.value) &&
-      currentReminderSource.value?.version !== form.value.reminder?.snapshot.version
+  const defaultPickupAdvanceDays = computed(() =>
+    form.value.reminder?.snapshot.pickup_enabled
+      ? form.value.reminder.snapshot.pickup_advance_days
+      : 3
   )
+  function normalizeSchedule(row: Schedule, fallbackTime: string): Schedule {
+    return {
+      ...row,
+      remind_time: row.remind_time || fallbackTime
+    }
+  }
   let sequence = 0
   async function loadPage() {
     const seq = ++sequence
@@ -255,9 +218,14 @@
       ])
       if (seq !== sequence) return
       catalog.value = sources
-      form.value = { ...record, participant_ids: record.participant_ids || [] }
-      if (!readonly.value && form.value.reminder) {
-        syncMedicationPickupReminder(form.value.reminder.snapshot)
+      const fallbackTime = record.reminder?.snapshot.task_remind_time || '09:00'
+      form.value = {
+        ...record,
+        participant_ids: record.participant_ids || [],
+        surveys: (record.surveys || []).map((item) => normalizeSchedule(item, fallbackTime)),
+        tasks: (record.tasks || [])
+          .filter((task) => task.snapshot.system_kind !== 'pickup')
+          .map((item) => normalizeSchedule(item, fallbackTime))
       }
       projectName.value = project.name
       const requestedTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
@@ -293,44 +261,6 @@
   }
   watch(() => route.fullPath, loadPage, { immediate: true })
   onBeforeRouteLeave(() => !saving.value)
-  function selectReminder(id?: number) {
-    if (!id) {
-      form.value.reminder = null
-      return
-    }
-    const source = catalog.value.reminder_schemes.find((item) => item.id === id)
-    if (!source || source.id === form.value.reminder?.id) return
-    form.value.reminder = { id, snapshot: JSON.parse(JSON.stringify(source)) }
-    syncMedicationPickupReminder(source)
-  }
-  function refreshReminder() {
-    const source = currentReminderSource.value
-    if (!source || source.status !== 1) return
-    form.value.reminder = { id: source.id, snapshot: JSON.parse(JSON.stringify(source)) }
-    syncMedicationPickupReminder(source)
-  }
-  function syncMedicationPickupReminder(source: Catalog['reminder_schemes'][number]) {
-    if (form.value.medication)
-      form.value.medication.advance_days = source.pickup_enabled ? source.pickup_advance_days : 0
-  }
-  function medicationReminder(source: Catalog['reminder_schemes'][number]) {
-    if (!source.medication_enabled) return '不提醒'
-    return source.medication_advance_minutes
-      ? `提前 ${source.medication_advance_minutes} 分钟`
-      : '按服药时点'
-  }
-  function taskReminder(source: Catalog['reminder_schemes'][number]) {
-    const stages = [
-      source.task_start_enabled ? '开始' : '',
-      source.task_due_enabled ? '到期' : '',
-      source.task_overdue_enabled ? '逾期' : ''
-    ].filter(Boolean)
-    return stages.length ? stages.join('、') : '不提醒'
-  }
-  function pickupReminder(source: Catalog['reminder_schemes'][number]) {
-    if (!source.pickup_enabled) return '不提醒'
-    return `预计不足前 ${source.pickup_advance_days} 天 · ${source.pickup_remind_time}`
-  }
   async function save() {
     if (readonly.value || saving.value) return
     if (!medicationEditor.value?.validate()) {
@@ -339,6 +269,14 @@
     }
     if ([...form.value.surveys, ...form.value.tasks].some((s) => s.anchor === 'date' && !s.date)) {
       ElMessage.warning('请填写指定执行日期')
+      return
+    }
+    if (
+      [...form.value.surveys, ...form.value.tasks].some(
+        (s) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(s.remind_time)
+      )
+    ) {
+      ElMessage.warning('请为每项问卷和任务选择提醒时间')
       return
     }
     saving.value = true
@@ -374,7 +312,7 @@
   }
   .configuration-summary {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
     margin-bottom: 16px;
   }
@@ -436,10 +374,44 @@
   .patient-detail-link:hover {
     color: var(--el-color-primary-light-3);
   }
-  .source-alert,
-  .reminder-description,
-  .reminder-detail {
+  .pickup-rule-card {
+    padding: 18px;
+    border: 1px solid var(--el-color-primary-light-7);
+    border-radius: 8px;
+    background: var(--el-color-primary-light-9);
+  }
+  .pickup-rule-heading,
+  .pickup-rule-setting {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+  }
+  .pickup-rule-heading h3,
+  .scheduled-task-heading h3 {
+    margin: 0 0 6px;
+  }
+  .pickup-rule-heading p,
+  .pickup-rule-setting p,
+  .scheduled-task-heading p {
+    margin: 0;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .pickup-rule-card > .el-alert,
+  .pickup-rule-setting {
     margin-top: 16px;
+  }
+  .pickup-rule-setting :deep(.el-form-item) {
+    flex: 0 0 200px;
+    margin-bottom: 0;
+  }
+  .pickup-rule-setting p {
+    padding-top: 27px;
+  }
+  .scheduled-task-heading {
+    margin: 24px 0 14px;
   }
   .footer {
     display: flex;
@@ -451,8 +423,15 @@
     .configuration-summary {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-    .reminder-detail :deep(.el-descriptions__body) {
-      overflow-x: auto;
+    .pickup-rule-heading,
+    .pickup-rule-setting {
+      display: block;
+    }
+    .pickup-rule-heading .el-tag {
+      margin-top: 10px;
+    }
+    .pickup-rule-setting p {
+      padding-top: 0;
     }
   }
 </style>

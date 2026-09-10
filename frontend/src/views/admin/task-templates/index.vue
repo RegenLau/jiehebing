@@ -30,10 +30,15 @@
         ><ElTableColumn label="操作" width="190"
           ><template #default="{ row }"
             ><ElButton link type="primary" @click="open(row.id, true)">详情</ElButton
-            ><ElButton link type="primary" @click="open(row.id)">编辑</ElButton
-            ><ElButton link type="warning" @click="toggle(row as Template)">{{
-              row.status === 1 ? '停用' : '启用'
-            }}</ElButton></template
+            ><ElButton v-if="!row.system_kind" link type="primary" @click="open(row.id)"
+              >编辑</ElButton
+            ><ElButton
+              v-if="!row.system_kind"
+              link
+              type="warning"
+              @click="toggle(row as Template)"
+              >{{ row.status === 1 ? '停用' : '启用' }}</ElButton
+            ></template
           ></ElTableColumn
         ></ElTable
       ><ElPagination
@@ -57,8 +62,7 @@
             ><ElOption v-for="t in types" :key="t" :value="t" :label="t" /></ElSelect></ElFormItem
         ><p v-if="form.type === '检查'" class="type-note"
           >检查任务已包含报告上传、患者确认和医护核对流程，无需另建报告提交任务。</p
-        ><ElFormItem label="说明"
-          ><ElInput v-model="form.description" type="textarea" maxlength="1000" /></ElFormItem
+        ><p v-else class="type-note">提醒任务无需上传报告，患者可直接确认完成。</p
         ><ElFormItem label="提交要求（必填）"
           ><ElInput v-model="form.requirements" type="textarea" maxlength="1000" /></ElFormItem
         ><ElFormItem v-if="form.id && !readonly" label="修改原因（必填）"
@@ -99,6 +103,7 @@
     version?: string
     reason: string
     history?: { time: string; operator: string; reason: string; before: unknown; after: unknown }[]
+    system_kind?: 'pickup'
   }
   function describe(value: unknown) {
     if (!value) return '新增前无记录'
@@ -106,13 +111,13 @@
     return [
       r.name,
       '类型：' + r.type,
-      r.description,
       '提交要求：' + r.requirements,
       '版本：' + r.version,
       '状态：' + (r.status === 1 ? '启用' : '停用')
     ].join('\n')
   }
-  const types = ['检查', '复诊', '取药', '其他'],
+  const types = ['提醒', '检查'],
+    templateOrder = ['取药提醒', '血常规复查', '生化指标复查', '胸部 CT 复查'],
     blank = (): Template => ({
       name: '',
       type: '检查',
@@ -145,7 +150,13 @@
           size: 10
         }
       })
-      rows.value = p.list
+      rows.value = [...p.list].sort((a, b) => {
+        const aIndex = templateOrder.indexOf(a.name)
+        const bIndex = templateOrder.indexOf(b.name)
+        if (aIndex === -1) return bIndex === -1 ? 0 : 1
+        if (bIndex === -1) return -1
+        return aIndex - bIndex
+      })
       total.value = p.total
     } finally {
       loading.value = false

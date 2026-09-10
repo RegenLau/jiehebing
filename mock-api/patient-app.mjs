@@ -1,4 +1,9 @@
-import { effectiveProjectStatus } from './project-status.mjs';
+import { effectiveProjectStatus } from "./project-status.mjs";
+import { buildMockOcrResult } from "./report-ocr.mjs";
+import {
+  buildPickupReminderTask,
+  calculatePatientStock,
+} from "./pickup-reminder.mjs";
 
 export function registerPatientApp({
   patientRoute,
@@ -57,10 +62,11 @@ export function registerPatientApp({
     latestActualTreatment(patient) || legacyTreatment(patient);
   const medicationStart = (treatment) => {
     if (!treatment?.start_date) return null;
-    const time = treatment.drugs
-      .flatMap((drug) => (Array.isArray(drug.times) ? drug.times : []))
-      .filter((value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value))
-      .sort()[0] || "00:00";
+    const time =
+      treatment.drugs
+        .flatMap((drug) => (Array.isArray(drug.times) ? drug.times : []))
+        .filter((value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value))
+        .sort()[0] || "00:00";
     return {
       date: treatment.start_date,
       time,
@@ -96,8 +102,11 @@ export function registerPatientApp({
       String(confirmation.treatment_id) === String(treatment.id),
     );
   const bootstrap = (patient) => {
-    const currentProject = db.projects.find((row) => row.id === patient.project_id);
-    const projectEnded = !currentProject || effectiveProjectStatus(currentProject, today()) === 2;
+    const currentProject = db.projects.find(
+      (row) => row.id === patient.project_id,
+    );
+    const projectEnded =
+      !currentProject || effectiveProjectStatus(currentProject, today()) === 2;
     const treatment = latestTreatment(patient);
     const start = medicationStart(treatment);
     const medicationCurrent = matchesTreatment(
@@ -114,9 +123,10 @@ export function registerPatientApp({
       )
         stage = "medication_issue";
       else if (patient.medicine_confirmed && medicationCurrent)
-        stage = start && start.start_at > timestamp().slice(0, 16)
-          ? "pending_start"
-          : "home";
+        stage =
+          start && start.start_at > timestamp().slice(0, 16)
+            ? "pending_start"
+            : "home";
       else stage = "medication";
     }
     return {
@@ -214,68 +224,8 @@ export function registerPatientApp({
       total_days: total,
     };
   };
-  const patientStock = (patient, treatment) => {
-    if (!treatment) return [];
-    const group = db.projectGroups.find((row) => row.id === patient.group_id);
-    return treatment.drugs.map((drug) => {
-      const adjustments = (db.stockAdjustments || [])
-        .filter(
-          (row) => row.user_id === patient.id && row.drug_id === drug.drug_id,
-        )
-        .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
-      const adjustment = adjustments[0];
-      const issued = db.dispensings
-        .filter(
-          (row) =>
-            row.user_id === patient.id &&
-            (!adjustment || row.issued_date > adjustment.date),
-        )
-        .reduce(
-          (total, row) =>
-            total +
-            row.items
-              .filter((item) => item.drug_id === drug.drug_id)
-              .reduce((sum, item) => sum + Number(item.quantity), 0),
-          0,
-        );
-      const used = db.plans
-        .filter(
-          (row) =>
-            row.user_id === patient.id &&
-            row.common_medicine_id === drug.drug_id &&
-            row.plan_date < today() &&
-            (!adjustment || row.plan_date > adjustment.date) &&
-            ![2, 3].includes(row.status),
-        )
-        .reduce((total, row) => total + Number(row.dosage_value), 0);
-      const plannedBaseline = treatment.legacy
-        ? quantityFor(patient, treatment, drug.drug_id)
-        : 0;
-      const estimated = Math.max(
-        0,
-        Number(adjustment?.quantity ?? plannedBaseline) + issued - used,
-      );
-      const daily = Number(drug.dose) * drug.times.length;
-      const days = daily > 0 ? Math.floor(estimated / daily) : 0;
-      const advanceDays = Number(
-        treatment.source_scheme?.advance_days ??
-          group?.medication?.advance_days ??
-          0,
-      );
-      return {
-        drug_id: drug.drug_id,
-        name: drug.name,
-        unit: drug.unit,
-        estimated,
-        days,
-        advance_days: advanceDays,
-        needs_pickup: days <= advanceDays,
-        method: treatment.legacy
-          ? "当前演示档案尚无实际发药记录，按分组计划数量和截至昨日的计划用量估算；不能代替实际盘点"
-          : "按实际发药和截至昨日的计划用量估算，明确未服、暂停或取消不扣减；不能代替实际盘点",
-      };
-    });
-  };
+  const patientStock = (patient, treatment) =>
+    calculatePatientStock({ db, patient, treatment, today, shiftDate });
   const medicationSlots = (patient) => {
     const activePlans = db.plans.filter(
       (row) => row.user_id === patient.id && row.status !== 3,
@@ -375,7 +325,7 @@ export function registerPatientApp({
       .filter(
         (row) =>
           row.user_id === patient.id &&
-          !["已完成", "已取消"].includes(row.status) &&
+          ["待完成", "需补充"].includes(row.status) &&
           row.date <= visibleThrough,
       )
       .map((row) => ({ ...row, virtual: false }));
@@ -408,15 +358,25 @@ export function registerPatientApp({
             date: today(),
             due_date: today(),
             description: "记录今天是否有身体不适或症状变化",
+            requirements: "提交有无不适、症状变化和补充说明",
             status: "待完成",
             source: "每日任务",
             virtual: true,
           },
         ];
-    return [...feedback, ...actual, ...planned]
+    const pickupReminder = buildPickupReminderTask({
+      db,
+      patient,
+      treatment,
+      today,
+      shiftDate,
+      visibleThrough,
+    });
+    return [...feedback, ...(pickupReminder ? [pickupReminder] : []), ...actual, ...planned]
       .sort(
         (a, b) =>
-          a.due_date.localeCompare(b.due_date) || a.date.localeCompare(b.date),
+          a.due_date.localeCompare(b.due_date) ||
+          a.date.localeCompare(b.date),
       )
       .map((row) => ({
         ...row,
@@ -424,6 +384,20 @@ export function registerPatientApp({
         form: row.type === "问卷" ? row.snapshot?.snapshot || null : null,
       }));
   };
+  const assignedTasks = (patient) =>
+    db.followupTasks
+      .filter(
+        (row) =>
+          row.user_id === patient.id &&
+          ["待完成", "需补充"].includes(row.status),
+      )
+      .sort((a, b) => b.id - a.id)
+      .map((row) => ({
+        ...row,
+        virtual: false,
+        overdue: row.due_date < today(),
+        form: row.type === "问卷" ? row.snapshot?.snapshot || null : null,
+      }));
   const resolveTask = (patient, taskId) => {
     const numericId = Number(taskId);
     if (Number.isInteger(numericId) && numericId > 0) {
@@ -464,7 +438,9 @@ export function registerPatientApp({
           row.status === "pending" &&
           dateTime(row.date, row.time) >= dateTime(today(), "00:00"),
       ) || null;
-    const tasks = taskSummary(patient, treatment);
+    const tasks = taskSummary(patient, treatment).filter(
+      (row) => row.source !== "患者端任务类型演示",
+    );
     return {
       date: today(),
       patient: {
@@ -570,6 +546,17 @@ export function registerPatientApp({
       tasks: true,
       pickup: true,
     };
+    const taskReminders = [
+      ...(group?.surveys || []).map((item) => ({ ...item, kind: "随访问卷" })),
+      ...(group?.tasks || [])
+        .filter((item) => item.snapshot.system_kind !== "pickup")
+        .map((item) => ({ ...item, kind: "随访任务" })),
+    ].map((item) => ({
+      id: `${item.kind}-${item.id}`,
+      name: item.snapshot.name,
+      kind: item.kind,
+      remind_time: item.remind_time || reminder?.task_remind_time || "09:00",
+    }));
     return {
       reminder: reminder
         ? {
@@ -582,10 +569,12 @@ export function registerPatientApp({
             task_overdue_enabled: reminder.task_overdue_enabled,
             task_remind_time: reminder.task_remind_time,
             pickup_enabled: reminder.pickup_enabled,
-            pickup_advance_days: reminder.pickup_advance_days,
+            pickup_advance_days:
+              group?.medication?.advance_days ?? reminder.pickup_advance_days,
             pickup_remind_time: reminder.pickup_remind_time,
           }
         : null,
+      task_reminders: taskReminders,
       preferences: structuredClone(preferences),
       wechat_subscription: {
         available: false,
@@ -642,7 +631,7 @@ export function registerPatientApp({
     requireHome(patient);
     return {
       date: today(),
-      tasks: taskSummary(patient, latestTreatment(patient)),
+      tasks: assignedTasks(patient),
     };
   });
   patientRoute("GET", "/app/patient/reports", ({ patient }) => ({
@@ -718,12 +707,21 @@ export function registerPatientApp({
         time: timestamp(),
         operator: "患者本人",
       });
+      report.ocr_result = buildMockOcrResult({
+        type: report.type,
+        patient,
+        examDate: report.exam_date,
+        files: report.versions.flatMap((version) => version.files),
+        extractedAt: timestamp(),
+        sequence: report.id,
+      });
+      report.metrics = structuredClone(report.ocr_result.metrics);
       report.status = "待患者确认";
       report.ocr_status = "待患者核对";
       report.ocr_original = {
         type: report.type,
         exam_date: report.exam_date,
-        metrics: structuredClone(report.metrics || []),
+        metrics: structuredClone(report.ocr_result.metrics),
       };
       report.updated_at = timestamp();
       return reportDetail(patient, report.id);
@@ -737,10 +735,7 @@ export function registerPatientApp({
     let task = null;
     if (body.task_id) {
       task = resolveTask(patient, body.task_id);
-      assert(
-        ["检查", "补交检查资料"].includes(task.type),
-        "该任务不支持上传报告",
-      );
+      assert(task.type === "检查", "该任务不支持上传报告");
       assert(!["已完成", "已取消"].includes(task.status), "任务已经结束");
       assert(
         !db.reports.some((row) => row.task_id === task.id),
@@ -756,7 +751,8 @@ export function registerPatientApp({
       task_id: task?.id || null,
       status: "待患者确认",
       ocr_status: "待患者核对",
-      ocr_original: { type, exam_date: body.exam_date, metrics: [] },
+      ocr_result: null,
+      ocr_original: null,
       metrics: [],
       patient_corrections: null,
       versions: [
@@ -765,6 +761,20 @@ export function registerPatientApp({
       history: [],
       created_at: timestamp(),
       updated_at: timestamp(),
+    };
+    row.ocr_result = buildMockOcrResult({
+      type,
+      patient,
+      examDate: body.exam_date,
+      files: documents,
+      extractedAt: timestamp(),
+      sequence: row.id,
+    });
+    row.metrics = structuredClone(row.ocr_result.metrics);
+    row.ocr_original = {
+      type,
+      exam_date: body.exam_date,
+      metrics: structuredClone(row.metrics),
     };
     db.reports.push(row);
     return reportDetail(patient, row.id);
@@ -1015,7 +1025,7 @@ export function registerPatientApp({
     );
     return {
       feedback: row,
-      tasks: taskSummary(patient, latestTreatment(patient)),
+      tasks: assignedTasks(patient),
     };
   });
   patientRoute("POST", "/app/patient/adverse-report", ({ patient, body }) => {
@@ -1184,18 +1194,15 @@ export function registerPatientApp({
     });
     return {
       submission,
-      tasks: taskSummary(patient, latestTreatment(patient)),
+      tasks: assignedTasks(patient),
     };
   });
   patientRoute("POST", "/app/patient/task-complete", ({ patient, body }) => {
     const task = resolveTask(patient, body.task_id);
-    assert(
-      ["复诊", "取药", "其他"].includes(task.type),
-      "该任务需要通过对应页面提交",
-    );
+    assert(task.type === "提醒", "该任务需要通过对应页面提交");
     assert(!["已完成", "已取消"].includes(task.status), "任务已经结束");
-    const note = clean(body.note);
-    assert(note && note.length <= 1000, "请填写完成情况，不超过1000字");
+    const note = clean(body.note) || "患者确认已完成";
+    assert(note.length <= 1000, "完成说明不能超过1000字");
     task.status = "已完成";
     task.result = note;
     task.history ||= [];
@@ -1209,7 +1216,7 @@ export function registerPatientApp({
       task_id: task.id,
       status: task.status,
     });
-    return { task, tasks: taskSummary(patient, latestTreatment(patient)) };
+    return { task, tasks: assignedTasks(patient) };
   });
   patientRoute("POST", "/app/patient/confirm-identity", ({ patient, body }) => {
     assert(typeof body.confirmed === "boolean", "请选择资料是否正确");

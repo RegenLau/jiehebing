@@ -132,7 +132,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
   registerAdverseManagement({core,db,assert,find,clean,timestamp});
   registerFeedback({core,db,assert,find,page,clean,isDate,timestamp,nextId,today,shiftDate});
   registerReports({core,db,assert,find,page,clean,isDate,timestamp,nextId});
-  registerMedicationRecords({core,db,assert,find,clean,isDate,timestamp,nextId,today});
+  registerMedicationRecords({core,db,assert,find,clean,isDate,timestamp,nextId,today,shiftDate});
   registerPatientManagement({core,db,assert,find,page,clean,isDate,timestamp,nextId,today,shiftDate});
   registerPatientApp({patientRoute,db,assert,clean,isDate,timestamp,nextId,today,shiftDate,randomUUID});
   core('GET', 'patient/detail', ({ query }) => {

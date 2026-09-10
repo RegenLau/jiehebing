@@ -1,7 +1,88 @@
-export function registerMedicationRecords({core,db,assert,find,clean,isDate,timestamp,nextId,today}) {
- db.stockAdjustments=[];
- core('POST','medication-plan/record',({body:b,admin})=>{const r=find(db.plans,b.id,'服药计划');assert(r.status!==3,'已取消或暂停计划不能登记');assert([1,2].includes(b.status),'请选择已服或明确未服');assert(r.plan_date<=today(),'不能登记未来服药结果');const reason=clean(b.reason);assert(reason&&reason.length<=1000,'请填写患者反馈来源与说明');r.record_history||=[];r.record_history.push({time:timestamp(),operator:admin.realname||admin.username,before:{status:r.status,checked_at:r.checked_at},after:{status:b.status},reason});r.status=b.status;r.status_text=b.status===1?'已服（人工登记）':'明确未服';r.checked_at=b.status===1?timestamp():'';r.record_reason=reason;return r;});
- core('POST','medication-plan/contact',({body:b,admin})=>{const r=find(db.plans,b.id,'服药计划');assert(clean(b.reason),'请填写联系结果');r.contacts||=[];r.contacts.unshift({time:timestamp(),operator:admin.realname||admin.username,reason:clean(b.reason)});return r;});
- core('GET','patient/stock',({query:q})=>{const p=find(db.patients,q.user_id,'患者'),treatment=db.patientTreatments.filter(t=>t.user_id===p.id).at(-1);if(!treatment)return [];return treatment.drugs.map(d=>{const adjustments=db.stockAdjustments.filter(a=>a.user_id===p.id&&a.drug_id===d.drug_id).sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id),adjustment=adjustments[0];const issued=db.dispensings.filter(r=>r.user_id===p.id&&(!adjustment||r.issued_date>adjustment.date)).reduce((sum,r)=>sum+r.items.filter(i=>i.drug_id===d.drug_id).reduce((n,i)=>n+i.quantity,0),0);const used=db.plans.filter(r=>r.user_id===p.id&&r.common_medicine_id===d.drug_id&&r.plan_date<today()&&(!adjustment||r.plan_date>adjustment.date)&&![2,3].includes(r.status)).reduce((sum,r)=>sum+Number(r.dosage_value),0);const estimated=Math.max(0,(adjustment?.quantity||0)+issued-used);return {drug_id:d.drug_id,name:d.name,unit:d.unit,estimated,days:Math.floor(estimated/(d.dose*d.times.length)),advance_days:treatment.source_scheme.advance_days,needs_pickup:estimated/(d.dose*d.times.length)<=treatment.source_scheme.advance_days,adjustments,method:'按截至昨日的计划用量估算，明确未服/取消不扣减；未打卡仍按计划估算，不能代替实际盘点'};});});
- core('POST','patient/stock-adjust',({body:b,admin})=>{const p=find(db.patients,b.user_id,'患者');const treatment=db.patientTreatments.filter(t=>t.user_id===p.id).at(-1);assert(treatment?.drugs.some(d=>d.drug_id===b.drug_id),'药品不属于当前个体方案');assert(isDate(b.date)&&b.date<today(),'请登记昨日或更早的日终盘点日期');assert(typeof b.quantity==='number'&&Number.isFinite(b.quantity)&&b.quantity>=0,'盘点数量不合法');assert(clean(b.reason),'请填写盘点修正原因');const row={id:nextId(db.stockAdjustments),user_id:p.id,drug_id:b.drug_id,date:b.date,quantity:b.quantity,reason:clean(b.reason),operator:admin.realname||admin.username,time:timestamp()};db.stockAdjustments.push(row);return row;});
+import { calculatePatientStock } from "./pickup-reminder.mjs";
+
+export function registerMedicationRecords({
+  core,
+  db,
+  assert,
+  find,
+  clean,
+  isDate,
+  timestamp,
+  nextId,
+  today,
+  shiftDate,
+}) {
+  db.stockAdjustments = [];
+  core("POST", "medication-plan/record", ({ body: b, admin }) => {
+    const row = find(db.plans, b.id, "服药计划");
+    assert(row.status !== 3, "已取消或暂停计划不能登记");
+    assert([1, 2].includes(b.status), "请选择已服或明确未服");
+    assert(row.plan_date <= today(), "不能登记未来服药结果");
+    const reason = clean(b.reason);
+    assert(reason && reason.length <= 1000, "请填写患者反馈来源与说明");
+    row.record_history ||= [];
+    row.record_history.push({
+      time: timestamp(),
+      operator: admin.realname || admin.username,
+      before: { status: row.status, checked_at: row.checked_at },
+      after: { status: b.status },
+      reason,
+    });
+    row.status = b.status;
+    row.status_text = b.status === 1 ? "已服（人工登记）" : "明确未服";
+    row.checked_at = b.status === 1 ? timestamp() : "";
+    row.record_reason = reason;
+    return row;
+  });
+  core("POST", "medication-plan/contact", ({ body: b, admin }) => {
+    const row = find(db.plans, b.id, "服药计划");
+    assert(clean(b.reason), "请填写联系结果");
+    row.contacts ||= [];
+    row.contacts.unshift({
+      time: timestamp(),
+      operator: admin.realname || admin.username,
+      reason: clean(b.reason),
+    });
+    return row;
+  });
+  core("GET", "patient/stock", ({ query: q }) => {
+    const patient = find(db.patients, q.user_id, "患者");
+    const treatment = db.patientTreatments
+      .filter((row) => row.user_id === patient.id)
+      .at(-1);
+    return calculatePatientStock({ db, patient, treatment, today, shiftDate });
+  });
+  core("POST", "patient/stock-adjust", ({ body: b, admin }) => {
+    const patient = find(db.patients, b.user_id, "患者");
+    const treatment = db.patientTreatments
+      .filter((row) => row.user_id === patient.id)
+      .at(-1);
+    assert(
+      treatment?.drugs.some((drug) => drug.drug_id === b.drug_id),
+      "药品不属于当前个体方案",
+    );
+    assert(
+      isDate(b.date) && b.date < today(),
+      "请登记昨日或更早的日终盘点日期",
+    );
+    assert(
+      typeof b.quantity === "number" &&
+        Number.isFinite(b.quantity) &&
+        b.quantity >= 0,
+      "盘点数量不合法",
+    );
+    assert(clean(b.reason), "请填写盘点修正原因");
+    const row = {
+      id: nextId(db.stockAdjustments),
+      user_id: patient.id,
+      drug_id: b.drug_id,
+      date: b.date,
+      quantity: b.quantity,
+      reason: clean(b.reason),
+      operator: admin.realname || admin.username,
+      time: timestamp(),
+    };
+    db.stockAdjustments.push(row);
+    return row;
+  });
 }

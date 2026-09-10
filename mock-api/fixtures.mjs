@@ -1,3 +1,5 @@
+import { buildMockOcrResult, renderMockReportSvg, supportedReportTypes } from './report-ocr.mjs';
+
 export function shanghaiDate(value) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
 }
@@ -157,7 +159,12 @@ export function createFixtures(now) {
     id, name: `用药方案 ${id}`, description: '具体用药安排由医生评估确认。', version: 'V1.0', status: id === 3 ? 0 : 1,
     drugs: commonMedicines.filter(m => m.status === 1).slice(id - 1, id + 1).map(m => ({ drug_id: m.id, name: m.common_name, specification: m.specification, dose: m.dosage_value, unit: m.dosage_unit, frequency: '每日1次', times: '08:00', precautions: m.medication_guidance }))
   }));
-  const taskTemplates = ['检查', '复诊', '取药'].map((type,i) => ({ id:i+1, name:`${type}模板`, type, status:1, version:'V1.0', description:`按研究安排完成${type}`, requirements: i === 0 ? '完成检查后提交检查日期及报告原图' : '提交完成日期和补充说明' }));
+  const taskTemplates = [
+    { id:1, name:'取药提醒', type:'提醒', requirements:'按患者实际发药量和个体用法用量自动计算', system_kind:'pickup' },
+    { id:2, name:'血常规复查', type:'检查', requirements:'完成血常规检查后提交检查日期及报告原图' },
+    { id:3, name:'生化指标复查', type:'检查', requirements:'完成肝功能、肾功能等生化指标检查后提交检查日期及报告原图' },
+    { id:4, name:'胸部 CT 复查', type:'检查', requirements:'完成胸部 CT 检查后提交检查日期及报告原图' }
+  ].map(template => ({ ...template, status:1, revision:1, version:'V1', description:'' }));
   const reminderSchemes = [
     {
       id: 1,
@@ -221,17 +228,17 @@ export function createFixtures(now) {
     }
   ];
   const groupDefinitions = [
-    { id: 1, project_id: 1, name: '筹备标准随访组', description: '筹备阶段的标准随访管理分组。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(8, 13).map(p => p.id) },
-    { id: 2, project_id: 1, name: '筹备强化随访组', description: '筹备阶段的强化提醒与复查管理分组。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 3], participant_ids: patients.slice(13, 18).map(p => p.id) },
-    { id: 3, project_id: 2, name: '规范用药随访组', description: '开展规范用药、定期复查及随访问卷管理。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(18, 23).map(p => p.id) },
-    { id: 4, project_id: 2, name: '强化管理随访组', description: '开展加强提醒、取药和检查报告管理。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1, 3], participant_ids: patients.slice(23, 29).map(p => p.id) },
-    { id: 5, project_id: 3, name: '历史完成随访组', description: '用于查看已结束项目的历史分组配置。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.slice(0, 4).map(p => p.id) },
-    { id: 6, project_id: 3, name: '历史重点复核组', description: '用于查看已结束项目的重点复核配置。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [1], participant_ids: patients.slice(4, 8).map(p => p.id) },
-    { id: 7, project_id: 4, name: '项目结束演示组', description: '用于验证项目结束后的患者端状态。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [1, 2], participant_ids: patients.filter(p => p.mobile === endedProjectPatientMobile).map(p => p.id) }
+    { id: 1, project_id: 1, name: '筹备标准随访组', description: '筹备阶段的标准随访管理分组。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [2], participant_ids: patients.slice(8, 13).map(p => p.id) },
+    { id: 2, project_id: 1, name: '筹备强化随访组', description: '筹备阶段的强化提醒与复查管理分组。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [3], participant_ids: patients.slice(13, 18).map(p => p.id) },
+    { id: 3, project_id: 2, name: '规范用药随访组', description: '开展规范用药、定期复查及随访问卷管理。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [2], participant_ids: patients.slice(18, 23).map(p => p.id) },
+    { id: 4, project_id: 2, name: '强化管理随访组', description: '开展加强提醒、取药和检查报告管理。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [3], participant_ids: patients.slice(23, 29).map(p => p.id) },
+    { id: 5, project_id: 3, name: '历史完成随访组', description: '用于查看已结束项目的历史分组配置。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [2], participant_ids: patients.slice(0, 4).map(p => p.id) },
+    { id: 6, project_id: 3, name: '历史重点复核组', description: '用于查看已结束项目的重点复核配置。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [4], participant_ids: patients.slice(4, 8).map(p => p.id) },
+    { id: 7, project_id: 4, name: '项目结束演示组', description: '用于验证项目结束后的患者端状态。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [2], participant_ids: patients.filter(p => p.mobile === endedProjectPatientMobile).map(p => p.id) }
   ];
   const schedule = (source, reminder, interval_days, offset_days = 0) => ({
     id: source.id, snapshot: structuredClone(source), anchor: 'enrollment', date: '', offset_days, interval_days, deadline_days: 3,
-    reminders: { start: reminder.task_start_enabled, due: reminder.task_due_enabled, overdue: reminder.task_overdue_enabled }
+    remind_time: reminder.task_remind_time
   });
   const projectGroups = groupDefinitions.map(definition => {
     const scheme = medicationSchemes.find(item => item.id === definition.scheme_id);
@@ -259,56 +266,34 @@ export function createFixtures(now) {
       Object.assign(patient, { project_id: project.id, project_name: project.name, group_id: group.id, group_name: group.name, medication_scheme_id: group.medication.id, medication_scheme_name: group.medication.snapshot.name, owner_id: admins[0].id, owner_name: admins[0].realname });
     }
   }
-  const reportTemplates = [
-    {
-      type: '血常规', file_id: 'report-blood',
-      metrics: [
-        { name: '白细胞计数', value: '5.8', unit: '10^9/L', reference: '3.5-9.5', flag: '' },
-        { name: '血红蛋白', value: '112', unit: 'g/L', reference: '115-150', flag: '偏低' }
-      ]
-    },
-    {
-      type: '肝功能', file_id: 'report-liver',
-      metrics: [
-        { name: '丙氨酸氨基转移酶', value: '68', unit: 'U/L', reference: '7-40', flag: '偏高' },
-        { name: '天门冬氨酸氨基转移酶', value: '54', unit: 'U/L', reference: '13-35', flag: '偏高' }
-      ]
-    },
-    {
-      type: '肾功能', file_id: 'report-kidney',
-      metrics: [
-        { name: '血清肌酐', value: '76', unit: 'μmol/L', reference: '41-81', flag: '' },
-        { name: '尿素', value: '5.1', unit: 'mmol/L', reference: '2.6-7.5', flag: '' }
-      ]
-    },
-    {
-      type: '胸部CT', file_id: 'report-ct',
-      metrics: [{ name: '影像结论', value: '右上肺病灶较前吸收', unit: '', reference: '', flag: '' }]
-    },
-    {
-      type: '痰涂片', file_id: 'report-smear',
-      metrics: [{ name: '抗酸杆菌涂片', value: '阴性', unit: '', reference: '阴性', flag: '' }]
-    },
-    {
-      type: '痰培养', file_id: 'report-culture',
-      metrics: [{ name: '结核分枝杆菌培养', value: '未检出', unit: '', reference: '未检出', flag: '' }]
-    }
-  ];
+  const reportTypes = supportedReportTypes();
   const reportStatuses = ['待核对', '需补充', '已核对'];
   const reports = Array.from({ length: 36 }, (_, i) => {
     const patient = patients[(i * 5) % patients.length];
-    const template = reportTemplates[i % reportTemplates.length];
+    const type = reportTypes[i % reportTypes.length];
     const status = reportStatuses[i % reportStatuses.length];
     const proposedDate = shiftDate(today, -(i % 35));
     const exam_date = proposedDate < patient.enroll_date ? patient.enroll_date : proposedDate;
     const reviewTime = `${exam_date} 16:${String((i * 7) % 60).padStart(2, '0')}:00`;
-    const sourceFile = files.get(template.file_id);
-    const metrics = structuredClone(template.metrics);
+    const fileId = `seed-report-${i + 1}`;
+    const fileName = `${patient.name}-${type}-${exam_date}.svg`;
+    const sourceFiles = [{ url: `/api/mock-files/${fileId}`, name: fileName, type: 'image/svg+xml' }];
+    const ocr_result = buildMockOcrResult({
+      type, patient, examDate: exam_date, files: sourceFiles,
+      extractedAt: `${exam_date} 14:${String((i * 3 + 1) % 60).padStart(2, '0')}:00`,
+      sequence: i + 1
+    });
+    files.set(fileId, {
+      buffer: Buffer.from(renderMockReportSvg({ type, patient, examDate: exam_date, ocrResult: ocr_result })),
+      type: 'image/svg+xml', name: fileName,
+      created_at: `${exam_date} 14:${String((i * 3) % 60).padStart(2, '0')}:00`
+    });
+    const metrics = structuredClone(ocr_result.metrics);
     return {
-      id: i + 1, user_id: patient.id, patient_name: patient.name, type: template.type, exam_date,
-      task_id: null, status, ocr_status: '未接入，人工录入', metrics,
+      id: i + 1, user_id: patient.id, patient_name: patient.name, type, exam_date,
+      task_id: null, status, ocr_status: '解析完成，待人工核对', ocr_result, metrics,
       versions: [{
-        files: [{ url: `/api/mock-files/${template.file_id}`, name: sourceFile.name, type: sourceFile.type }],
+        files: sourceFiles,
         note: '模拟报告资料，仅用于功能演示，具体结果以检验机构出具的报告为准。',
         time: `${exam_date} 14:${String((i * 3) % 60).padStart(2, '0')}:00`,
         operator: '管理员'
@@ -392,7 +377,10 @@ export function createMenu() {
   const medication = result.find(r => r.name === 'MedicationPlan');
   medication.meta.title = '用药管理';
   medication.children.unshift({path:'schemes',name:'MedicationSchemes',component:'/admin/medication-schemes',meta:{title:'用药方案',keepAlive:false}});
-  result.splice(4,0,{path:'/followup',name:'Followup',component:'/index/index',meta:{title:'随访任务',icon:'ri:calendar-check-line'},children:[{path:'feedback',name:'FeedbackRecords',component:'/admin/feedback',meta:{title:'每日反馈记录',keepAlive:false}},{path:'index',name:'FollowupTasks',component:'/admin/followup',meta:{title:'任务列表',keepAlive:false}},{path:'templates',name:'TaskTemplates',component:'/admin/task-templates',meta:{title:'任务模板',keepAlive:false}},{path:'reminder-schemes',name:'ReminderSchemes',component:'/admin/reminder-schemes',meta:{title:'提醒方案',keepAlive:false}}]});
-  result.splice(5,0,{path:'/reports',name:'Reports',component:'/index/index',meta:{title:'检查报告',icon:'ri:file-list-line'},children:[{path:'index',name:'ReportList',component:'/admin/reports',meta:{title:'报告列表',keepAlive:false}}]});
+  result.splice(4,0,{path:'/followup',name:'Followup',component:'/index/index',meta:{title:'随访任务',icon:'ri:calendar-check-line'},children:[{path:'feedback',name:'FeedbackRecords',component:'/admin/feedback',meta:{title:'每日反馈记录',keepAlive:false}},{path:'index',name:'FollowupTasks',component:'/admin/followup',meta:{title:'任务列表',keepAlive:false}},{path:'templates',name:'TaskTemplates',component:'/admin/task-templates',meta:{title:'任务模板',keepAlive:false}}]});
+  result.splice(5,0,{path:'/reports',name:'Reports',component:'/index/index',meta:{title:'检查报告',icon:'ri:file-list-line'},children:[
+    {path:'index',name:'ReportList',component:'/admin/reports',meta:{title:'报告列表',keepAlive:false}},
+    {path:'detail/:id',name:'ReportDetail',component:'/admin/reports/detail',meta:{title:'报告详情',keepAlive:false,isHide:true,activePath:'/reports/index'}}
+  ]});
   return result;
 }

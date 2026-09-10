@@ -32,8 +32,8 @@
             <template #default="{ row }">
               <div class="config-tags">
                 <ElTag effect="plain">随访 {{ row.surveys.length + row.tasks.length }} 项</ElTag>
-                <ElTag :type="row.reminder ? 'success' : 'warning'" effect="plain">
-                  {{ row.reminder?.snapshot.name || '未配置提醒' }}
+                <ElTag :type="reminderScheduleCount(row) ? 'success' : 'warning'" effect="plain">
+                  已设提醒 {{ reminderScheduleCount(row) }} 项
                 </ElTag>
                 <ElTag type="info" effect="plain">
                   患者 {{ row.participant_ids?.length || 0 }} 人
@@ -215,6 +215,10 @@
   function canDeleteGroup(value: unknown) {
     const row = value as GroupRecord
     return row.can_delete ?? (row.participant_ids?.length || 0) === 0
+  }
+  function reminderScheduleCount(value: unknown) {
+    const row = value as GroupRecord
+    return [...(row.surveys || []), ...(row.tasks || [])].filter((item) => item.remind_time).length
   }
   async function removeGroup(value: unknown) {
     const row = value as GroupRecord

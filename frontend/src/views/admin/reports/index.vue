@@ -1,196 +1,183 @@
 <template>
-  <div class="page" :class="{ embedded }"
-    ><div class="toolbar"
-      ><h2 v-if="!embedded">检查报告</h2
-      ><ResearchExport
-        kind="reports"
-        :params="{
-          keyword,
-          status: status || route.query.status,
-          user_id: effectiveUserId || undefined,
-          project_id: projectId,
-          group_id: groupId,
-          start_date: dateRange[0],
-          end_date: dateRange[1]
-        }"
-      /><ElButton type="primary" @click="create">代录报告</ElButton></div
-    ><ElCard shadow="never">
-      <ResearchScopeFilter
-        v-if="!embedded"
-        v-model:project-id="projectId"
-        v-model:group-id="groupId"
-        v-model:date-range="dateRange"
-        @change="search" />
-      <div class="toolbar"
-        ><ElInput
-          v-if="!embedded"
-          v-model="keyword"
-          placeholder="患者或报告类型"
-          clearable
-          @keyup.enter="search"
-        /><ElSelect v-model="status" placeholder="全部状态" clearable @change="search"
-          ><ElOption
-            v-for="s in ['待核对', '需补充', '已核对']"
-            :key="s"
-            :label="s"
-            :value="s" /></ElSelect
-        ><ElButton @click="search">查询</ElButton></div
-      ><ElTable v-loading="loading" :data="rows" border
-        ><ElTableColumn prop="patient_name" label="患者" /><ElTableColumn
-          prop="type"
-          label="报告类型"
-        /><ElTableColumn prop="exam_date" label="检查日期" /><ElTableColumn
-          prop="status"
-          label="状态"
-        /><ElTableColumn label="操作"
-          ><template #default="{ row }"
-            ><ElButton link type="primary" @click="open(row.id)">详情/核对</ElButton></template
-          ></ElTableColumn
-        ></ElTable
-      ><ElPagination
+  <div class="page" :class="{ embedded }">
+    <div class="page-header">
+      <div v-if="!embedded">
+        <h2>检查报告</h2>
+        <p>查看报告原件、OCR 结构化数据及人工核对结果</p>
+      </div>
+      <div class="header-actions">
+        <ResearchExport
+          kind="reports"
+          :params="{
+            keyword,
+            status: status || route.query.status,
+            user_id: effectiveUserId || undefined,
+            project_id: projectId,
+            group_id: groupId,
+            start_date: dateRange[0],
+            end_date: dateRange[1]
+          }"
+        />
+        <ElButton type="primary" @click="create">代录报告</ElButton>
+      </div>
+    </div>
+
+    <ElCard class="list-card" shadow="never">
+      <div class="filter-panel" :class="{ 'filter-panel--embedded': embedded }">
+        <div v-if="!embedded" class="filter-block filter-block--scope">
+          <span class="filter-label">研究范围</span>
+          <ResearchScopeFilter
+            v-model:project-id="projectId"
+            v-model:group-id="groupId"
+            v-model:date-range="dateRange"
+            @change="search"
+          />
+        </div>
+        <div class="filter-block filter-block--query">
+          <label v-if="!embedded" class="filter-field filter-field--keyword">
+            <span>关键字</span>
+            <ElInput
+              v-model="keyword"
+              placeholder="输入患者姓名或报告类型"
+              clearable
+              @clear="search"
+              @keyup.enter="search"
+            />
+          </label>
+          <label class="filter-field filter-field--status">
+            <span>报告状态</span>
+            <ElSelect v-model="status" placeholder="全部状态" clearable @change="search">
+              <ElOption
+                v-for="item in ['待核对', '需补充', '已核对']"
+                :key="item"
+                :label="item"
+                :value="item"
+              />
+            </ElSelect>
+          </label>
+          <ElButton class="search-button" type="primary" plain @click="search">查询</ElButton>
+        </div>
+      </div>
+
+      <ElTable v-loading="loading" :data="rows" border>
+        <ElTableColumn prop="patient_name" label="患者" min-width="120" />
+        <ElTableColumn prop="type" label="报告类型" min-width="140" />
+        <ElTableColumn prop="exam_date" label="检查日期" min-width="120" />
+        <ElTableColumn label="OCR 数据" min-width="120">
+          <template #default="{ row }">
+            <span v-if="row.ocr_result?.summary">{{ row.ocr_result.summary.field_count }} 项</span>
+            <span v-else class="muted-text">待解析</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="状态" min-width="110">
+          <template #default="{ row }">
+            <ElTag :type="statusTagType(row.status)" effect="light">{{ row.status }}</ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <ElButton link type="primary" @click="open(row.id)">查看详情</ElButton>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+      <ElPagination
         v-model:current-page="current"
         :page-size="10"
         :total="total"
         layout="total,prev,pager,next"
         @current-change="load"
-    /></ElCard>
+      />
+    </ElCard>
+
     <ElDialog
-      v-model="visible"
-      :title="form.id ? '报告详情' : '代录报告'"
-      width="900px"
-      :before-close="close"
+      v-model="createVisible"
+      title="代录报告"
+      width="760px"
+      append-to-body
+      :before-close="closeCreate"
       :close-on-click-modal="false"
-      ><ElAlert
-        title="当前报告指标由人工录入；OCR 尚未接入。已核对不代表检查结果正常。"
-        type="info"
-        :closable="false"
-      /><ElForm label-position="top" :disabled="saving"
-        ><template v-if="!form.id"
-          ><ElFormItem label="患者"
-            ><ElSelect
+    >
+      <ElForm class="create-form" label-position="top" :disabled="saving">
+        <ElAlert
+          title="上传后将自动生成本地 Mock OCR 结构化数据，提交前请与原文件逐项核对。"
+          type="info"
+          :closable="false"
+          show-icon
+        />
+        <div class="create-grid">
+          <ElFormItem label="患者">
+            <ElSelect
               v-model="form.user_id"
               filterable
               :disabled="Boolean(effectiveUserId)"
               @change="patientChanged"
             >
-              ><ElOption
-                v-for="p in patients"
-                :key="p.id"
-                :label="p.name + ' · ' + p.mobile"
-                :value="p.id" /></ElSelect></ElFormItem
-          ><ElFormItem label="关联任务（可选）"
-            ><ElSelect v-model="form.task_id" clearable
-              ><ElOption
-                v-for="t in tasks"
-                :key="t.id"
-                :label="t.name + ' · ' + t.date"
-                :value="t.id" /></ElSelect></ElFormItem
-          ><ElFormItem label="报告类型"><ElInput v-model="form.type" /></ElFormItem
-          ><ElFormItem label="检查日期"
-            ><ElDatePicker
-              v-model="form.exam_date"
-              value-format="YYYY-MM-DD" /></ElFormItem></template
-        ><template v-else
-          ><p
-            >{{ form.patient_name }} · {{ form.type }} · {{ form.exam_date }} · {{ form.status }}</p
-          ><div v-for="(v, i) in form.versions" :key="i"
-            ><h4>第 {{ i + 1 }} 次资料 · {{ v.time }}</h4
-            ><p>{{ v.note }}</p
-            ><div class="files"
-              ><template v-for="f in v.files" :key="f.url"
-                ><ElImage
-                  v-if="f.type.startsWith('image/')"
-                  :src="f.url"
-                  :preview-src-list="[f.url]"
-                  fit="contain"
-                /><a v-else :href="f.url" target="_blank" rel="noopener"
-                  >{{ f.name }}（PDF）</a
-                ></template
-              ></div
-            ></div
-          ></template
-        >
-        <template v-if="!form.id || form.status === '需补充'"
-          ><ElFormItem label="上传报告图片/PDF"
-            ><input
+              <ElOption
+                v-for="patient in patients"
+                :key="patient.id"
+                :label="patient.name + ' · ' + patient.mobile"
+                :value="patient.id"
+              />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="关联任务（可选）">
+            <ElSelect v-model="form.task_id" clearable>
+              <ElOption
+                v-for="task in tasks"
+                :key="task.id"
+                :label="task.name + ' · ' + task.date"
+                :value="task.id"
+              />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="报告类型">
+            <ElSelect
+              v-model="form.type"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入报告类型"
+            >
+              <ElOption v-for="item in reportTypes" :key="item" :label="item" :value="item" />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="检查日期">
+            <ElDatePicker v-model="form.exam_date" value-format="YYYY-MM-DD" />
+          </ElFormItem>
+        </div>
+        <div class="upload-card">
+          <ElFormItem label="上传报告图片 / PDF">
+            <input
               type="file"
               accept="image/png,image/jpeg,image/gif,application/pdf"
               multiple
               :disabled="saving"
-              @change="upload" /></ElFormItem
-          ><p>本次已上传 {{ uploads.length }} 份</p
-          ><ElFormItem label="补充说明"><ElInput v-model="note" type="textarea" /></ElFormItem
-        ></template>
-        <template v-if="form.id"
-          ><h3>人工核对指标</h3
-          ><ElTable :data="form.metrics"
-            ><ElTableColumn label="项目"
-              ><template #default="{ row }"
-                ><ElInput
-                  v-model="row.name"
-                  :disabled="form.status !== '待核对'" /></template></ElTableColumn
-            ><ElTableColumn label="检测值"
-              ><template #default="{ row }"
-                ><ElInput
-                  v-model="row.value"
-                  :disabled="form.status !== '待核对'" /></template></ElTableColumn
-            ><ElTableColumn label="单位"
-              ><template #default="{ row }"
-                ><ElInput
-                  v-model="row.unit"
-                  :disabled="form.status !== '待核对'" /></template></ElTableColumn
-            ><ElTableColumn label="参考范围"
-              ><template #default="{ row }"
-                ><ElInput
-                  v-model="row.reference"
-                  :disabled="form.status !== '待核对'" /></template></ElTableColumn
-            ><ElTableColumn label="异常标识" width="130"
-              ><template #default="{ row }"
-                ><ElSelect v-model="row.flag" :disabled="form.status !== '待核对'"
-                  ><ElOption label="未标记" value="" /><ElOption
-                    label="偏低"
-                    value="偏低" /><ElOption label="偏高" value="偏高" /><ElOption
-                    label="异常"
-                    value="异常" /></ElSelect></template></ElTableColumn></ElTable
-          ><ElButton
-            v-if="form.status === '待核对'"
-            @click="form.metrics.push({ name: '', value: '', unit: '', reference: '', flag: '' })"
-            >添加指标</ElButton
-          ><ElFormItem v-if="form.status === '待核对'" label="核对说明/补充原因"
-            ><ElInput v-model="reason" type="textarea" /></ElFormItem
-          ><h3>核对记录</h3
-          ><ElTable :data="form.history"
-            ><ElTableColumn prop="time" label="时间" /><ElTableColumn
-              prop="operator"
-              label="核对人" /><ElTableColumn
-              prop="reason"
-              label="说明" /></ElTable></template></ElForm
-      ><template #footer
-        ><ElButton :disabled="saving" @click="visible = false">关闭</ElButton
-        ><ElButton
-          v-if="!form.id || form.status === '需补充'"
-          type="primary"
-          :loading="saving"
-          @click="saveUpload"
-          >提交资料</ElButton
-        ><template v-if="form.status === '待核对'"
-          ><ElButton :loading="saving" @click="review('需补充')">要求补充</ElButton
-          ><ElButton type="primary" :loading="saving" @click="review('已核对')"
-            >核对通过</ElButton
-          ></template
-        ></template
-      ></ElDialog
-    ></div
-  >
+              @change="upload"
+            />
+          </ElFormItem>
+          <p>已上传 {{ uploads.length }} 份，最多支持 10 份文件</p>
+          <ElFormItem label="补充说明">
+            <ElInput v-model="note" type="textarea" :rows="3" />
+          </ElFormItem>
+        </div>
+      </ElForm>
+      <template #footer>
+        <ElButton :disabled="saving" @click="createVisible = false">取消</ElButton>
+        <ElButton type="primary" :loading="saving" @click="saveCreate">提交资料</ElButton>
+      </template>
+    </ElDialog>
+  </div>
 </template>
+
 <script setup lang="ts">
   import ResearchExport from '@/components/business/research-export/index.vue'
   import ResearchScopeFilter from '@/components/business/research-scope-filter/index.vue'
 
-  import { computed, ref, onMounted, watch } from 'vue'
-  import { useRoute } from 'vue-router'
+  import { computed, onMounted, ref, watch } from 'vue'
+  import { useRoute, useRouter } from 'vue-router'
   import request from '@/utils/http'
   import { fetchPatientList, type PatientRecord } from '@/api/patient'
+
   interface Report {
     id?: number
     user_id?: number
@@ -199,23 +186,17 @@
     type: string
     exam_date: string
     status: string
-    metrics: { name: string; value: string; unit: string; reference: string; flag: string }[]
-    versions: { time: string; note: string; files: { url: string; name: string; type: string }[] }[]
-    history: { time: string; operator: string; reason: string }[]
+    ocr_result?: { summary: { field_count: number } } | null
   }
+
+  const reportTypes = ['血常规', '肝功能', '肾功能', '胸部CT', '痰涂片', '痰培养']
   const props = withDefaults(defineProps<{ embedded?: boolean; userId?: number }>(), {
       embedded: false,
       userId: 0
     }),
-    blank = (): Report => ({
-      type: '',
-      exam_date: '',
-      status: '',
-      metrics: [],
-      versions: [],
-      history: []
-    }),
+    blank = (): Report => ({ type: '', exam_date: '', status: '' }),
     route = useRoute(),
+    router = useRouter(),
     embedded = computed(() => props.embedded),
     effectiveUserId = computed(() => props.userId || Number(route.query.user_id) || 0),
     form = ref(blank()),
@@ -231,14 +212,19 @@
     total = ref(0),
     loading = ref(false),
     saving = ref(false),
-    visible = ref(false),
+    createVisible = ref(false),
     uploads = ref<string[]>([]),
-    note = ref(''),
-    reason = ref('')
+    note = ref('')
+
+  function statusTagType(value: string) {
+    if (value === '已核对') return 'success'
+    if (value === '需补充') return 'danger'
+    return 'warning'
+  }
   async function load() {
     loading.value = true
     try {
-      const p = await request.get<{ list: Report[]; total: number }>({
+      const page = await request.get<{ list: Report[]; total: number }>({
         url: '/app/core/report/index',
         params: {
           keyword: keyword.value,
@@ -252,8 +238,8 @@
           size: 10
         }
       })
-      rows.value = p.list
-      total.value = p.total
+      rows.value = page.list
+      total.value = page.total
     } finally {
       loading.value = false
     }
@@ -262,6 +248,9 @@
     current.value = 1
     void load()
   }
+  function open(id?: number) {
+    if (id) void router.push({ name: 'ReportDetail', params: { id } })
+  }
   async function create() {
     form.value = blank()
     form.value.user_id = effectiveUserId.value || undefined
@@ -269,43 +258,36 @@
     note.value = ''
     tasks.value = []
     const all: PatientRecord[] = []
-    let n = 1
+    let pageNumber = 1
     while (true) {
-      const p = await fetchPatientList({ current: n++, size: 100 })
-      all.push(...p.list)
-      if (all.length >= p.total) break
+      const page = await fetchPatientList({ current: pageNumber++, size: 100 })
+      all.push(...page.list)
+      if (all.length >= page.total) break
     }
     patients.value = all
     if (form.value.user_id) await patientChanged()
-    visible.value = true
+    createVisible.value = true
   }
   async function patientChanged() {
     form.value.task_id = undefined
     const all: typeof tasks.value = []
-    let n = 1
+    let pageNumber = 1
     while (true) {
-      const p = await request.get<{ list: typeof tasks.value; total: number }>({
+      const page = await request.get<{ list: typeof tasks.value; total: number }>({
         url: '/app/core/followup/index',
-        params: { user_id: form.value.user_id, current: n++, size: 100 }
+        params: { user_id: form.value.user_id, current: pageNumber++, size: 100 }
       })
-      all.push(...p.list)
-      if (all.length >= p.total) break
+      all.push(...page.list)
+      if (all.length >= page.total) break
     }
     tasks.value = all.filter(
-      (t) => ['检查', '补交检查资料'].includes(t.type) && !['已完成', '已取消'].includes(t.status)
+      (task) => task.type === '检查' && !['已完成', '已取消'].includes(task.status)
     )
   }
-  async function open(id: number) {
-    form.value = await request.get({ url: '/app/core/report/detail', params: { id } })
-    uploads.value = []
-    note.value = ''
-    reason.value = ''
-    visible.value = true
-  }
-  async function upload(e: Event) {
+  async function upload(event: Event) {
     saving.value = true
     try {
-      for (const file of Array.from((e.target as HTMLInputElement).files || [])) {
+      for (const file of Array.from((event.target as HTMLInputElement).files || [])) {
         const data = new FormData()
         data.append('file', file)
         const result = await request.post<{ url: string }>({
@@ -315,38 +297,26 @@
         uploads.value.push(result.url)
       }
     } finally {
+      ;(event.target as HTMLInputElement).value = ''
       saving.value = false
     }
   }
-  async function saveUpload() {
+  async function saveCreate() {
     saving.value = true
     try {
-      await request.post({
-        url: '/app/core/report/' + (form.value.id ? 'supplement' : 'create'),
+      const report = await request.post<Report>({
+        url: '/app/core/report/create',
         params: { ...form.value, files: uploads.value, note: note.value },
         showSuccessMessage: true
       })
-      visible.value = false
+      createVisible.value = false
       await load()
+      open(report.id)
     } finally {
       saving.value = false
     }
   }
-  async function review(status: string) {
-    saving.value = true
-    try {
-      await request.post({
-        url: '/app/core/report/review',
-        params: { id: form.value.id, status, reason: reason.value, metrics: form.value.metrics },
-        showSuccessMessage: true
-      })
-      visible.value = false
-      await load()
-    } finally {
-      saving.value = false
-    }
-  }
-  function close(done: () => void) {
+  function closeCreate(done: () => void) {
     if (!saving.value) done()
   }
   watch(
@@ -359,50 +329,138 @@
   )
   onMounted(load)
 </script>
+
 <style scoped>
   .page {
     padding: 20px;
   }
-
   .page.embedded {
     padding: 0;
   }
-
-  .page.embedded > .toolbar {
-    justify-content: flex-end;
-  }
-
-  .toolbar {
+  .page-header {
     display: flex;
-    gap: 16px;
-    align-items: center;
+    gap: 20px;
+    align-items: flex-start;
+    justify-content: space-between;
     margin-bottom: 20px;
   }
-
-  .toolbar h2 {
-    flex: 1;
+  .page-header h2,
+  .page-header p {
+    margin: 0;
   }
-
-  .toolbar .el-input {
-    max-width: 260px;
+  .page-header h2 {
+    color: var(--art-text-gray-900);
+    font-size: 22px;
   }
-
-  .toolbar .el-select {
-    width: 160px;
+  .page-header p {
+    margin-top: 6px;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
   }
-
+  .header-actions {
+    display: flex;
+    flex: none;
+    gap: 12px;
+  }
+  .filter-panel {
+    display: grid;
+    gap: 18px;
+    margin-bottom: 20px;
+    padding: 18px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 10px;
+    background: var(--el-fill-color-extra-light);
+  }
+  .filter-panel--embedded {
+    display: flex;
+    justify-content: flex-end;
+    padding: 12px;
+  }
+  .filter-block {
+    display: grid;
+    gap: 10px;
+  }
+  .filter-label,
+  .filter-field > span {
+    color: var(--el-text-color-regular);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .filter-block--scope :deep(.research-scope-filter) {
+    display: grid;
+    grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) minmax(280px, 1.35fr);
+    gap: 12px;
+  }
+  .filter-block--scope :deep(.research-scope-filter .el-select),
+  .filter-block--scope :deep(.research-scope-filter .el-date-editor) {
+    width: 100%;
+  }
+  .filter-block--query {
+    grid-template-columns: minmax(260px, 1fr) minmax(170px, 220px) auto;
+    align-items: end;
+  }
+  .filter-panel--embedded .filter-block--query {
+    grid-template-columns: 180px auto;
+  }
+  .filter-field {
+    display: grid;
+    gap: 8px;
+  }
+  .filter-field :deep(.el-input),
+  .filter-field :deep(.el-select),
+  .create-grid :deep(.el-select),
+  .create-grid :deep(.el-date-editor) {
+    width: 100%;
+  }
+  .search-button {
+    min-width: 88px;
+  }
+  .muted-text {
+    color: var(--el-text-color-secondary);
+  }
   .el-pagination {
     margin-top: 20px;
   }
-
-  .files {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
+  .create-form {
+    display: grid;
+    gap: 20px;
   }
-
-  .files .el-image {
-    width: 160px;
-    height: 160px;
+  .create-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 20px;
+  }
+  .upload-card {
+    padding: 18px;
+    border: 1px dashed var(--el-border-color);
+    border-radius: 10px;
+    background: var(--el-fill-color-extra-light);
+  }
+  .upload-card > p {
+    margin: -6px 0 16px;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+  }
+  @media (max-width: 760px) {
+    .page {
+      padding: 12px;
+    }
+    .page-header {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    .header-actions > * {
+      flex: 1;
+    }
+    .filter-block--scope :deep(.research-scope-filter),
+    .filter-block--query,
+    .filter-panel--embedded .filter-block--query,
+    .create-grid {
+      grid-template-columns: 1fr;
+    }
+    .filter-panel--embedded {
+      display: grid;
+      justify-content: stretch;
+    }
   }
 </style>

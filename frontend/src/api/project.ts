@@ -24,6 +24,7 @@ export interface Drug {
   precautions: string
 }
 export interface Source {
+  system_kind?: 'pickup'
   treatment_days?: number
   pickup_days?: number
   advance_days?: number
@@ -60,7 +61,7 @@ export interface Schedule extends Binding {
   offset_days: number
   interval_days: number
   deadline_days: number
-  reminders: { start: boolean; due: boolean; overdue: boolean }
+  remind_time: string
 }
 export interface Medication extends Binding {
   drugs?: Drug[]

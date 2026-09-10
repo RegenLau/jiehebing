@@ -1,14 +1,30 @@
 export function registerFollowup({core,db,assert,find,page,clean,isDate,timestamp,nextId,today,shiftDate}) {
-  db.followupTasks=[];
-  const types=['检查','复诊','取药','补交检查资料','问卷','其他'];
-  const states=['待完成','已提交','需补充','已完成','已取消'];
+  db.followupTasks||=[];
+  const types=['提醒','检查'];
+  const demoPatient=db.patients.find(patient=>patient.mobile==='13910001019');
+  const typeDetails={
+    提醒:['随访提醒','按研究安排完成随访事项','请按提醒内容完成本次安排'],
+    检查:['检查任务','按研究安排完成检查','提交检查日期及清晰、完整的报告原图']
+  };
+  if(demoPatient)for(const [typeIndex,type]of types.entries()){
+    const [name,description,requirements]=typeDetails[type];
+    const date=shiftDate(today(),typeIndex%3);
+    const due_date=shiftDate(date,2);
+    db.followupTasks.push({
+      id:nextId(db.followupTasks),user_id:demoPatient.id,patient_name:demoPatient.name,
+      project_id:demoPatient.project_id||null,group_id:demoPatient.group_id||null,
+      name,type,date,due_date,description,requirements,status:'待完成',
+      source:'患者端任务类型演示',result:'',history:[],
+      created_at:timestamp()
+    });
+  }
   const log=(r,admin,action,reason,before)=>{r.history||=[];r.history.unshift({time:timestamp(),operator:admin.realname||admin.username,action,reason,before,after:{date:r.date,due_date:r.due_date,status:r.status,result:r.result||''}});};
   const checkDate=(v)=>{assert(isDate(v),'请填写有效日期');return v;};
   const required=(v)=>{const s=clean(v);assert(s&&s.length<=1000,'请填写说明（最多1000字）');return s;};
   core('GET','followup/index',({query:q})=>page([...db.followupTasks].reverse().filter(r=>(!q.user_id||r.user_id===Number(q.user_id))&&(!q.project_id||r.project_id===Number(q.project_id))&&(!q.group_id||r.group_id===Number(q.group_id))&&(!q.start_date||r.date>=q.start_date)&&(!q.end_date||r.date<=q.end_date)&&(!q.keyword||`${r.name} ${r.patient_name}`.includes(clean(q.keyword)))&&(!q.type||r.type===q.type)&&(!q.status||r.status===q.status)&&(!q.date||r.date===q.date)&&(q.overdue!=='1'||r.due_date<today()&&!['已完成','已取消'].includes(r.status))).map(r=>({...r,overdue:r.due_date<today()&&!['已完成','已取消'].includes(r.status)})),q));
   core('GET','followup/detail',({query:q})=>find(db.followupTasks,q.id,'任务'));
   core('POST','followup/create',({body:b,admin})=>{const p=find(db.patients,b.user_id,'患者');assert(types.includes(b.type),'任务类型不合法');const date=checkDate(b.date),due_date=checkDate(b.due_date);assert(date<=due_date,'截止日期不能早于开始日期');const name=required(b.name),description=required(b.description);const row={id:nextId(db.followupTasks),user_id:p.id,patient_name:p.name,project_id:p.project_id||null,group_id:p.group_id||null,name,type:b.type,date,due_date,description,status:'待完成',source:'人工新增',history:[],created_at:timestamp()};db.followupTasks.push(row);log(row,admin,'新增任务',description,{});return row;});
-  core('POST','followup/update',({body:b,admin})=>{const row=find(db.followupTasks,b.id,'任务');assert(!['已完成','已取消'].includes(row.status),'已结束任务不可修改');const reason=required(b.reason),before={date:row.date,due_date:row.due_date,status:row.status};if(b.action==='reschedule'){const date=checkDate(b.date),due_date=checkDate(b.due_date);assert(date<=due_date,'截止日期不能早于开始日期');Object.assign(row,{date,due_date});}else if(b.action==='cancel')row.status='已取消';else if(b.action==='complete'){assert(!['检查','补交检查资料'].includes(row.type),'检查资料任务须通过关联报告核对后完成');row.status='已完成';row.result=reason;}else if(b.action==='supplement'){row.status='需补充';row.result=reason;}else assert(b.action==='contact','操作不支持');log(row,admin,b.action==='contact'?'人工联系':b.action==='reschedule'?'调整日期':b.action==='cancel'?'取消':b.action==='complete'?'人工确认完成':'要求补充',reason,before);return row;});
+  core('POST','followup/update',({body:b,admin})=>{const row=find(db.followupTasks,b.id,'任务');assert(!['已完成','已取消'].includes(row.status),'已结束任务不可修改');const reason=required(b.reason),before={date:row.date,due_date:row.due_date,status:row.status};if(b.action==='reschedule'){const date=checkDate(b.date),due_date=checkDate(b.due_date);assert(date<=due_date,'截止日期不能早于开始日期');Object.assign(row,{date,due_date});}else if(b.action==='cancel')row.status='已取消';else if(b.action==='complete'){assert(row.type!=='检查','检查任务须通过关联报告核对后完成');row.status='已完成';row.result=reason;}else if(b.action==='supplement'){row.status='需补充';row.result=reason;}else assert(b.action==='contact','操作不支持');log(row,admin,b.action==='contact'?'人工联系':b.action==='reschedule'?'调整日期':b.action==='cancel'?'取消':b.action==='complete'?'人工确认完成':'要求补充',reason,before);return row;});
 }
 
 export function generateExecution({db,patient,treatment,group,nextId,shiftDate,timestamp}) {

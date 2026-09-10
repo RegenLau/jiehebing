@@ -509,16 +509,16 @@
                   <p>{{ drug.specification }} · 每次 {{ drug.dose }} {{ drug.unit }}</p>
                   <small>{{ drug.frequency }} · {{ drug.times.join('、') }}</small>
                 </div>
-                <template v-if="drugStock(drug.drug_id)">
+                <template v-if="drugStock(drug.drug_id)?.calculation_ready">
                   <strong :class="{ warning: drugStock(drug.drug_id)?.needs_pickup }">
                     预计余药 {{ drugStock(drug.drug_id)?.estimated }} {{ drug.unit }} · 约
                     {{ drugStock(drug.drug_id)?.days }} 天
                   </strong>
                   <small v-if="drugStock(drug.drug_id)?.needs_pickup" class="stock-warning">
-                    余药预计不足，请按取药任务安排或联系随访人员
+                    已进入取药提醒窗口，请联系医院安排取药
                   </small>
                 </template>
-                <strong v-else>计划数量 {{ drug.quantity }} {{ drug.unit }}</strong>
+                <strong v-else>尚未登记实际发药，暂不计算取药提醒</strong>
                 <details v-if="drug.precautions" class="medicine-guidance">
                   <summary>查看用药指导</summary>
                   <p>{{ drug.precautions }}</p>
@@ -686,7 +686,7 @@
             <template v-else>
               <header class="section-heading">
                 <h1>任务提醒</h1>
-                <p>待完成 {{ taskData?.tasks.length || 0 }} 项</p>
+                <p>共 {{ taskData?.tasks.length || 0 }} 项任务记录</p>
               </header>
               <div v-if="taskData?.tasks.length" class="task-stack">
                 <button
@@ -705,7 +705,7 @@
                   <span class="status-link">{{ taskAction(task.type) }}</span>
                 </button>
               </div>
-              <article v-else class="empty-card">当前没有待办任务</article>
+              <article v-else class="empty-card">当前没有任务</article>
             </template>
           </section>
 
@@ -1067,16 +1067,23 @@
               <article v-if="supportLoading" class="empty-card">正在读取信息</article>
               <template v-else-if="supportData && profileMode === 'reminders'">
                 <article class="support-card">
-                  <h2>{{ supportData.reminder?.name || '研究组暂未配置提醒方案' }}</h2>
-                  <p>{{ supportData.reminder?.description || '如有疑问，请联系随访负责人。' }}</p>
-                  <dl v-if="supportData.reminder">
+                  <h2>研究组提醒设置</h2>
+                  <p>随访问卷和任务按各自设置的时间提醒，用药与取药提醒按治疗安排执行。</p>
+                  <dl>
                     <div>
                       <dt>用药提醒</dt>
                       <dd>{{ reminderMedicationText }}</dd>
                     </div>
-                    <div>
+                    <div v-for="item in supportData.task_reminders" :key="item.id">
+                      <dt>{{ item.kind }}</dt>
+                      <dd class="task-reminder-row"
+                        ><span>{{ item.name }}</span
+                        ><strong>{{ item.remind_time }}</strong></dd
+                      >
+                    </div>
+                    <div v-if="!supportData.task_reminders.length">
                       <dt>任务提醒</dt>
-                      <dd>{{ reminderTaskText }}</dd>
+                      <dd>暂无任务安排</dd>
                     </div>
                     <div>
                       <dt>取药提醒</dt>
@@ -1178,42 +1185,47 @@
               </header>
               <dl>
                 <div>
-                  <dt>安排日期</dt>
+                  <dt>{{ scheduleTask.pickup ? '提醒日期' : '安排日期' }}</dt>
                   <dd>{{ scheduleTask.date }}</dd>
                 </div>
                 <div>
-                  <dt>截止日期</dt>
+                  <dt>{{ scheduleTask.pickup ? '预计不足日' : '截止日期' }}</dt>
                   <dd>{{ scheduleTask.due_date }}</dd>
+                </div>
+                <div v-if="scheduleTask.pickup">
+                  <dt>触发药品</dt>
+                  <dd>{{ scheduleTask.pickup.drug_name }}</dd>
+                </div>
+                <div v-if="scheduleTask.pickup">
+                  <dt>预计余药</dt>
+                  <dd>
+                    {{ scheduleTask.pickup.estimated }} {{ scheduleTask.pickup.unit }} · 约
+                    {{ scheduleTask.pickup.available_days }} 天
+                  </dd>
                 </div>
               </dl>
               <section class="schedule-requirement">
                 <h3>提交要求</h3>
                 <p>{{
-                  scheduleTask.requirements ||
-                  scheduleTask.description ||
-                  '请按计划完成本次安排。'
+                  scheduleTask.requirements || scheduleTask.description || '请按计划完成本次安排。'
                 }}</p>
               </section>
-              <template v-if="['复诊', '取药', '其他'].includes(scheduleTask.type)">
-                <label for="schedule-note">完成情况</label>
-                <textarea
-                  id="schedule-note"
-                  v-model.trim="taskNote"
-                  rows="3"
-                  maxlength="1000"
-                  placeholder="请填写完成日期、地点或其他需要说明的情况"
-                ></textarea>
+              <template v-if="scheduleTask.pickup">
+                <button class="wide-primary" type="button" @click="openPickupContact">
+                  联系医院
+                </button>
+              </template>
+              <template v-else-if="scheduleTask.type === '提醒'">
                 <button
                   class="wide-primary"
                   type="button"
-                  :disabled="taskSubmitting || !taskNote"
+                  :disabled="taskSubmitting"
                   @click="completeTask"
                 >
                   {{ taskSubmitting ? '提交中…' : '确认已完成' }}
                 </button>
               </template>
               <template v-else>
-                <p class="detail-tip">完成检查后，请上传清晰、完整的报告原图。</p>
                 <button class="wide-primary" type="button" @click="startReport(scheduleTask)">
                   上传检查报告
                 </button>
@@ -1398,6 +1410,17 @@
     virtual: boolean
     overdue: boolean
     form: SurveyForm | null
+    pickup?: {
+      drug_id: number
+      drug_name: string
+      estimated: number
+      unit: string
+      daily_quantity: number
+      available_days: number
+      advance_days: number
+      reminder_date: string
+      expected_shortage_date: string
+    }
   }
   interface SurveyOption {
     id: number
@@ -1458,6 +1481,9 @@
       days: number
       advance_days: number
       needs_pickup: boolean
+      calculation_ready: boolean
+      reminder_date: string
+      expected_shortage_date: string
       method: string
     }>
   }
@@ -1500,6 +1526,12 @@
       pickup_advance_days: number
       pickup_remind_time: string
     }
+    task_reminders: Array<{
+      id: string
+      name: string
+      kind: '随访问卷' | '随访任务'
+      remind_time: string
+    }>
     preferences: { medication: boolean; tasks: boolean; pickup: boolean }
     wechat_subscription: { available: boolean; authorized: boolean; note: string }
     contacts: Array<{ id: string; name: string; role: string; phone: string; email: string }>
@@ -1544,7 +1576,6 @@
   const selectedSymptoms = ref<string[]>([])
   const symptomChange = ref('新出现')
   const feedbackNote = ref('')
-  const taskNote = ref('')
   const surveyAnswers = ref<Record<number, SurveyAnswer>>({})
   const symptomOptions = [
     '咳嗽',
@@ -1683,7 +1714,7 @@
     return Math.round(((homeData.value?.medication_today.completed_slots || 0) / total) * 100)
   })
   const reportTasks = computed(() =>
-    (taskData.value?.tasks || []).filter((task) => ['检查', '补交检查资料'].includes(task.type))
+    (taskData.value?.tasks || []).filter((task) => task.type === '检查')
   )
   const adverseMaxTime = computed(() => defaultAdverseTime())
   const supportTitle = computed(() => {
@@ -1697,16 +1728,6 @@
     return reminder.medication_advance_minutes
       ? `服药前 ${reminder.medication_advance_minutes} 分钟`
       : '按服药时点提醒'
-  })
-  const reminderTaskText = computed(() => {
-    const reminder = supportData.value?.reminder
-    if (!reminder) return '未配置'
-    const stages = [
-      reminder.task_start_enabled ? '开始' : '',
-      reminder.task_due_enabled ? '到期' : '',
-      reminder.task_overdue_enabled ? '逾期' : ''
-    ].filter(Boolean)
-    return stages.length ? `${stages.join('、')} · ${reminder.task_remind_time}` : '未开启'
   })
   const reminderPickupText = computed(() => {
     const reminder = supportData.value?.reminder
@@ -1983,22 +2004,18 @@
   function taskIcon(type: string) {
     if (type === '健康反馈') return 'ri:mic-line'
     if (type === '问卷') return 'ri:file-list-3-line'
-    if (type === '取药') return 'ri:capsule-line'
-    if (type === '补交检查资料') return 'ri:file-upload-line'
-    if (type === '复诊') return 'ri:hospital-line'
+    if (type === '提醒') return 'ri:notification-3-line'
     return 'ri:calendar-check-line'
   }
   function taskAction(type: string) {
     if (type === '健康反馈') return '开始反馈'
     if (type === '问卷') return '填写问卷'
-    if (type === '补交检查资料') return '补交资料'
-    if (type === '取药') return '查看提醒'
+    if (type === '提醒') return '查看提醒'
     return '查看安排'
   }
   function openTask(task: PatientTask) {
     stopSpeechInput()
     taskError.value = ''
-    taskNote.value = ''
     if (!['健康反馈', '问卷'].includes(task.type)) {
       scheduleTask.value = task
       selectedTask.value = null
@@ -2025,8 +2042,12 @@
   }
   function closeScheduleDialog() {
     scheduleTask.value = null
-    taskNote.value = ''
     taskError.value = ''
+  }
+  function openPickupContact() {
+    closeScheduleDialog()
+    activeTab.value = 'profile'
+    openSupport('contact')
   }
   function setDiscomfort(hasDiscomfort: boolean) {
     feedbackNoDiscomfort.value = !hasDiscomfort
@@ -2166,13 +2187,13 @@
     }
   }
   async function completeTask() {
-    if (!scheduleTask.value || !taskNote.value) return
+    if (!scheduleTask.value) return
     taskSubmitting.value = true
     taskError.value = ''
     try {
       const result = await api<{ tasks: PatientTask[] }>('/app/patient/task-complete', {
         method: 'POST',
-        body: JSON.stringify({ task_id: scheduleTask.value.id, note: taskNote.value })
+        body: JSON.stringify({ task_id: scheduleTask.value.id })
       })
       await refreshTaskSummary(result.tasks)
     } catch (error) {
@@ -3810,11 +3831,6 @@
     margin-top: 0;
   }
 
-  .task-card.static {
-    min-height: 90px;
-    cursor: default;
-  }
-
   .task-copy .deadline {
     color: #5674a8;
   }
@@ -4049,14 +4065,6 @@
     color: #687386;
   }
 
-  .detail-tip {
-    padding: 12px;
-    line-height: 1.55;
-    color: #805f22 !important;
-    background: #fff5dc;
-    border-radius: 8px;
-  }
-
   .schedule-dialog-backdrop {
     position: fixed;
     inset: 0;
@@ -4149,29 +4157,6 @@
     color: #536071;
     background: #f5f8fc;
     border-radius: 12px;
-  }
-
-  .schedule-dialog > label {
-    display: block;
-    margin-bottom: 8px;
-    font-weight: 650;
-  }
-
-  .schedule-dialog textarea {
-    box-sizing: border-box;
-    width: 100%;
-    min-height: 92px;
-    padding: 11px 12px;
-    resize: vertical;
-    background: #f5f7fa;
-    border: 1px solid #e5e9ef;
-    border-radius: 9px;
-    outline: 0;
-  }
-
-  .schedule-dialog textarea:focus {
-    background: #fff;
-    border-color: #4f86f6;
   }
 
   .adverse-view {
@@ -4853,6 +4838,18 @@
   .support-card dd {
     margin: 0;
     color: #2e3a4b;
+  }
+
+  .task-reminder-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .task-reminder-row strong {
+    flex: none;
+    color: #2468ff;
   }
 
   .preference-card > label {

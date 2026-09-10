@@ -1,16 +1,5 @@
 <template>
   <div>
-    <ElAlert
-      :title="
-        props.reminderName
-          ? `提醒统一采用“${props.reminderName}”`
-          : '尚未关联提醒方案；任务会正常生成并显示在患者待办中'
-      "
-      :type="props.reminderName ? 'info' : 'warning'"
-      :closable="false"
-      show-icon
-      class="reminder-tip"
-    />
     <div class="add-row">
       <ElSelect v-model="selected" :placeholder="`选择${label}`" filterable style="width: 340px">
         <ElOption
@@ -65,6 +54,14 @@
         <ElFormItem label="完成期限（天）"
           ><ElInputNumber v-model="row.deadline_days" :min="1" :max="3650" :precision="0"
         /></ElFormItem>
+        <ElFormItem label="提醒时间">
+          <ElTimePicker
+            v-model="row.remind_time"
+            format="HH:mm"
+            value-format="HH:mm"
+            placeholder="选择时间"
+          />
+        </ElFormItem>
       </div>
     </div>
   </div>
@@ -72,7 +69,7 @@
 <script setup lang="ts">
   import { ref } from 'vue'
   import type { Schedule, Source } from '@/api/project'
-  const props = defineProps<{ sources: Source[]; label: string; reminderName?: string }>()
+  const props = defineProps<{ sources: Source[]; label: string }>()
   const model = defineModel<Schedule[]>({ required: true })
   const selected = ref<number>()
   function add() {
@@ -86,7 +83,7 @@
       offset_days: 0,
       interval_days: 0,
       deadline_days: 1,
-      reminders: { start: true, due: true, overdue: true }
+      remind_time: '09:00'
     })
     selected.value = undefined
   }
@@ -106,9 +103,6 @@
     align-items: center;
     margin-bottom: 12px;
   }
-  .reminder-tip {
-    margin-bottom: 16px;
-  }
   .row-title strong {
     flex: 1;
   }
@@ -127,5 +121,10 @@
   .fields :deep(.el-select),
   .fields :deep(.el-date-editor) {
     width: 100%;
+  }
+  @media (max-width: 700px) {
+    .fields {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

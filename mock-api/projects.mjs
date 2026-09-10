@@ -14,23 +14,32 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
   const project = id => find(db.projects, id, '项目');
   const view = record => projectStatusView(record, today());
   const group = (projectId, id) => { const row = find(db.projectGroups, id, '分组'); assert(row.project_id === project(projectId).id, '分组不属于当前项目', 404); return row; };
-  const groupView = row => ({
-    ...copy(row),
-    can_delete: !(row.participant_ids || []).length && !db.patients.some(patient => patient.group_id === row.id),
-    participants: (row.participant_ids || []).map(id => {
-      const patient = find(db.patients,id,'患者');
-      return {
-        id:patient.id,
-        patient_code:patient.patient_code || '',
-        name:patient.name,
-        mobile:patient.mobile,
-        gender_text:patient.gender_text || '',
-        birth_date:patient.birth_date || '',
-        enroll_date:patient.enroll_date || '',
-        study_state:patient.study_state || '待启用'
-      };
-    })
-  });
+  const groupView = row => {
+    const fallbackTime = row.reminder?.snapshot?.task_remind_time || '09:00';
+    const scheduleView = item => ({
+      ...copy(item),
+      remind_time: /^([01]\d|2[0-3]):[0-5]\d$/.test(item.remind_time) ? item.remind_time : fallbackTime
+    });
+    return {
+      ...copy(row),
+      surveys: (row.surveys || []).map(scheduleView),
+      tasks: (row.tasks || []).map(scheduleView),
+      can_delete: !(row.participant_ids || []).length && !db.patients.some(patient => patient.group_id === row.id),
+      participants: (row.participant_ids || []).map(id => {
+        const patient = find(db.patients,id,'患者');
+        return {
+          id:patient.id,
+          patient_code:patient.patient_code || '',
+          name:patient.name,
+          mobile:patient.mobile,
+          gender_text:patient.gender_text || '',
+          birth_date:patient.birth_date || '',
+          enroll_date:patient.enroll_date || '',
+          study_state:patient.study_state || '待启用'
+        };
+      })
+    };
+  };
   const log = (p, admin, action, note, before, after) => {
     p.updated_at = timestamp();
     const changes = Object.keys(after).filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k])).map(field => ({ field, before: before[field] ?? '', after: after[field] }));
@@ -86,7 +95,8 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     return { id: record.id, name: record.name };
   });
   core('GET', 'project/catalog', () => ({
-    medication_schemes: db.medicationSchemes, task_templates: db.taskTemplates,
+    medication_schemes: db.medicationSchemes,
+    task_templates: db.taskTemplates.filter(template => template.system_kind !== 'pickup'),
     reminder_schemes: db.reminderSchemes,
     surveys: db.surveys.map(s => ({ id: s.id, name: s.name, description: s.description, status: s.status, version: s.updatedAt, questions: s.questions })),
   }));
@@ -162,7 +172,7 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
       const cycle = m.pickup_mode === 'quantity'
         ? Math.min(days, Math.max(1, Math.floor(Math.min(...source.snapshot.drugs.map(d => d.quantity / (Number(d.dose) * d.daily_count))))))
         : number(m.pickup_days,'取药周期',1);
-      const advance = number(m.advance_days,'提前提醒天数',0,m.pickup_mode === 'quantity' ? 3650 : cycle);
+      const advance = number(m.advance_days,'提前提醒天数',0,60);
       const quantities = array(m.quantities,'首次发药',100);
       const drugs = source.snapshot.drugs;
       unique(quantities.map(q=>q.drug_id),'发药药品');
@@ -178,27 +188,22 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
     if (b.reminder !== null && b.reminder !== undefined) {
       reminder = binding(db.reminderSchemes,b.reminder.id,'提醒方案',existing?.reminder);
     }
-    if (medication && reminder) {
-      const pickupAdvance = reminder.snapshot.pickup_enabled ? reminder.snapshot.pickup_advance_days : 0;
-      assert(medication.advance_days === pickupAdvance, '取药提醒提前量应与所选提醒方案一致');
-    }
-    const reminderRules = reminder ? {
-      start: reminder.snapshot.task_start_enabled,
-      due: reminder.snapshot.task_due_enabled,
-      overdue: reminder.snapshot.task_overdue_enabled
-    } : { start:false, due:false, overdue:false };
     const schedules = (items, kind, rows) => {
       array(items,kind); unique(items.map(r=>r.id),kind);
       return items.map(item => {
         const old = existing?.[kind]?.find(r=>r.id === item.id);
         const source = binding(rows,item.id,kind === 'surveys' ? '问卷' : '任务模板',old);
+        if (kind === 'tasks') assert(source.snapshot.system_kind !== 'pickup', '取药提醒由系统按患者实际药量计算，只需设置提前提醒天数');
         assert(['enrollment','treatment','date'].includes(item.anchor),'请选择有效的计时基准');
         const offset_days = number(item.offset_days,'起始偏移天数');
         const interval_days = number(item.interval_days,'重复间隔');
         const deadline_days = number(item.deadline_days,'完成期限',1);
         const date = item.anchor === 'date' ? clean(item.date) : '';
         if (item.anchor === 'date') assert(isDate(date) && interval_days === 0 && offset_days === 0, '指定日期任务必须设置有效日期，偏移和重复间隔为0');
-        return { ...source, anchor:item.anchor, date, offset_days, interval_days, deadline_days, reminders:copy(reminderRules) };
+        const fallbackTime = old?.remind_time || existing?.reminder?.snapshot?.task_remind_time || '09:00';
+        const remind_time = clean(item.remind_time || fallbackTime);
+        assert(/^([01]\d|2[0-3]):[0-5]\d$/.test(remind_time), '请填写有效的提醒时间');
+        return { ...source, anchor:item.anchor, date, offset_days, interval_days, deadline_days, remind_time };
       });
     };
     const surveys = schedules(b.surveys,'surveys',db.surveys);
