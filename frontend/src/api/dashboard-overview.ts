@@ -12,9 +12,9 @@ export interface DashboardOverview {
     completed_total: number
     new_adverse_total: number
   }
-  archive: {
-    archived: number
-    unarchived: number
+  login: {
+    enabled: number
+    disabled: number
   }
   resources: {
     survey_total: number
@@ -24,6 +24,7 @@ export interface DashboardOverview {
   todos: {
     overdue_total: number
     pending_review_total: number
+    pending_report_total: number
   }
   trend: {
     labels: string[]

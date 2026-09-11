@@ -592,7 +592,10 @@ export function createMockServer({ now = () => new Date() } = {}) {
         completed_total: plans.filter((p) => p.status === 1).length,
         new_adverse_total: adverse.length,
       },
-      archive: { archived, unarchived: patients.length - archived },
+      login: {
+        enabled: patients.filter((p) => p.login_enabled).length,
+        disabled: patients.filter((p) => !p.login_enabled).length,
+      },
       resources: {
         survey_total: db.surveys.length,
         article_total: db.articles.length,
@@ -607,6 +610,9 @@ export function createMockServer({ now = () => new Date() } = {}) {
             (range === "today" || p.plan_date >= start),
         ).length,
         pending_review_total: adverse.length,
+        pending_report_total: db.reports.filter(
+          (r) => patientIds.has(r.user_id) && r.status === "待核对",
+        ).length,
       },
       trend: {
         labels: dates.map((d) => d.slice(5)),

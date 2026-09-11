@@ -43,7 +43,11 @@
         :show-date="false"
         @change="loadDashboard"
       />
-      <span>当前统计范围：{{ projectId ? (groupId ? '所选分组' : '所选研究') : '全部研究' }}</span>
+      <span class="scope-note"
+        >患者数为当前范围总人数；计划、完成和上报按所选日期范围统计。当前统计范围：{{
+          projectId ? (groupId ? '所选分组' : '所选研究') : '全部研究'
+        }}</span
+      >
     </div>
 
     <div class="metric-grid">
@@ -69,16 +73,16 @@
       <div class="right-column">
         <article class="panel archive-panel">
           <div class="panel-title"
-            ><h2><Icon icon="ri:donut-chart-line" />建档状态</h2></div
+            ><h2><Icon icon="ri:login-circle-line" />登录状态</h2></div
           >
           <div class="archive-content">
-            <div ref="archiveChartRef" class="chart archive-chart" aria-label="建档状态图" />
+            <div ref="archiveChartRef" class="chart archive-chart" aria-label="患者登录状态图" />
             <div class="legend-list">
               <p
-                ><i class="blue" />已建档 <b>{{ archiveText.archived }}</b></p
+                ><i class="blue" />可登录 <b>{{ archiveText.enabled }}</b></p
               >
               <p
-                ><i class="gray" />未建档 <b>{{ archiveText.unarchived }}</b></p
+                ><i class="gray" />未开通登录 <b>{{ archiveText.disabled }}</b></p
               >
             </div>
           </div>
@@ -90,42 +94,31 @@
           <div ref="adverseChartRef" class="chart adverse-chart" aria-label="不良反应严重程度图" />
         </article>
       </div>
-      <div class="resource-grid">
-        <button
-          v-for="item in resources"
-          :key="item.title"
-          class="resource-card"
-          type="button"
-          @click="navigateTo(item.path)"
-        >
-          <div class="resource-icon" :class="item.tone">
-            <ElIcon><component :is="item.icon" /></ElIcon>
-          </div>
-          <div
-            ><p>{{ item.title }}</p
-            ><strong>{{ item.value }}</strong
-            ><span>{{ item.unit }}</span
-            ><small>{{ item.note }}</small></div
+      <div class="action-panel panel">
+        <div class="panel-title">
+          <h2><Icon icon="ri:task-line" />重点待办</h2>
+          <span>点击进入对应处理列表</span>
+        </div>
+        <div class="todo-grid">
+          <button
+            v-for="item in todos"
+            :key="item.label"
+            class="todo-item"
+            type="button"
+            @click="navigateTo(item.path)"
           >
-        </button>
+            <span class="todo-icon" :class="item.tone"
+              ><ElIcon><component :is="item.icon" /></ElIcon
+            ></span>
+            <span class="todo-copy"
+              ><b>{{ item.label }}</b
+              ><small>{{ item.note }}</small></span
+            >
+            <strong :class="item.tone">{{ item.value }}</strong>
+            <ElIcon class="todo-arrow"><ArrowRight /></ElIcon>
+          </button>
+        </div>
       </div>
-      <article class="panel todo-panel">
-        <div class="panel-title"
-          ><h2><Icon icon="ri:task-line" />重点待办</h2></div
-        >
-        <button
-          v-for="item in todos"
-          :key="item.label"
-          class="todo-item"
-          type="button"
-          @click="navigateTo(item.path)"
-        >
-          <ElIcon :class="item.tone"><component :is="item.icon" /></ElIcon>
-          <span>{{ item.label }}</span
-          ><b :class="item.tone">{{ item.value }}</b
-          ><ElIcon><ArrowRight /></ElIcon>
-        </button>
-      </article>
     </div>
   </section>
 </template>
@@ -148,11 +141,8 @@
     ArrowRight,
     Calendar as CalendarIcon,
     CircleCheckFilled,
-    Document,
     DocumentChecked,
-    FirstAidKit,
     Memo,
-    Reading,
     UserFilled
   } from '@element-plus/icons-vue'
   import { useRouter } from 'vue-router'
@@ -180,9 +170,9 @@
       completed_total: 0,
       new_adverse_total: 0
     },
-    archive: { archived: 0, unarchived: 0 },
+    login: { enabled: 0, disabled: 0 },
     resources: { survey_total: 0, article_total: 0, medicine_total: 0 },
-    todos: { overdue_total: 0, pending_review_total: 0 },
+    todos: { overdue_total: 0, pending_review_total: 0, pending_report_total: 0 },
     trend: {
       labels: ['07-10'],
       expected: [11],
@@ -199,98 +189,79 @@
   )
   const metrics = computed(() => {
     const { metrics: data } = dashboardData.value
-    const archiveRate = data.patient_total
-      ? Number(((data.archived_total / data.patient_total) * 100).toFixed(1))
+    const loginRate = data.patient_total
+      ? Number(((dashboardData.value.login.enabled / data.patient_total) * 100).toFixed(1))
       : 0
     return [
       {
         title: '患者总数',
         value: data.patient_total,
-        detail: `${data.patient_total} / ${data.patient_total}`,
+        detail: '当前研究范围',
         icon: UserFilled,
         tone: 'blue'
       },
       {
-        title: '建档完成率',
-        value: `${archiveRate}%`,
-        detail: `${data.archived_total} / ${data.patient_total}`,
+        title: '登录开通率',
+        value: `${loginRate}%`,
+        detail: `${dashboardData.value.login.enabled} / ${data.patient_total} 人`,
         icon: DocumentChecked,
         tone: 'green'
       },
       {
         title: `${periodLabel.value}计划`,
         value: data.expected_total,
-        detail: `${data.expected_total} / ${data.expected_total}`,
+        detail: '应执行次数',
         icon: CalendarIcon,
         tone: 'blue'
       },
       {
-        title: `${periodLabel.value}完成`,
-        value: data.completed_total,
-        detail: `${data.completed_total} / ${data.expected_total}`,
+        title: `${periodLabel.value}完成率`,
+        value: `${data.expected_total ? ((data.completed_total / data.expected_total) * 100).toFixed(1) : '0.0'}%`,
+        detail: `${data.completed_total} / ${data.expected_total} 次`,
         icon: CircleCheckFilled,
         tone: 'cyan'
       },
       {
         title: `${periodLabel.value}新增上报`,
         value: data.new_adverse_total,
-        detail: `${data.new_adverse_total} / ${data.new_adverse_total}`,
+        detail: '事件条数',
         icon: BellFilled,
         tone: 'orange'
       }
     ]
   })
-  const resources = computed(() => [
-    {
-      title: '问卷模板',
-      value: dashboardData.value.resources.survey_total,
-      unit: '个',
-      note: '问卷总数',
-      icon: Document,
-      tone: 'purple',
-      path: '/survey/index'
-    },
-    {
-      title: '科普文章',
-      value: dashboardData.value.resources.article_total,
-      unit: '篇',
-      note: '文章总数',
-      icon: Reading,
-      tone: 'blue',
-      path: '/health-article/index'
-    },
-    {
-      title: '常用药品',
-      value: dashboardData.value.resources.medicine_total,
-      unit: '种',
-      note: '药品目录',
-      icon: FirstAidKit,
-      tone: 'green',
-      path: '/common-medicine/index'
-    }
-  ])
   const todos = computed(() => [
     {
-      label: '超时未打卡',
+      label: '逾期服药任务',
+      note: '需要优先处理',
       value: dashboardData.value.todos.overdue_total,
       icon: AlarmClock,
       tone: 'red',
       path: `/medication-plan/index?scope=all&status=0&overdue=1${activePeriod.value === 'today' ? '' : `&overdue_range=${activePeriod.value}`}${selectedDate.value ? `&as_of=${selectedDate.value}` : ''}${projectId.value ? `&project_id=${projectId.value}` : ''}${groupId.value ? `&group_id=${groupId.value}` : ''}`
     },
     {
-      label: '数据待复核',
+      label: '待跟进事件',
+      note: '核对不良反应记录',
       value: dashboardData.value.todos.pending_review_total,
       icon: Memo,
       tone: 'orange',
       path: '/adverse-reaction/index'
+    },
+    {
+      label: '待核对报告',
+      note: '进入报告核对列表',
+      value: dashboardData.value.todos.pending_report_total,
+      icon: Document,
+      tone: 'purple',
+      path: '/reports/index'
     }
   ])
   const archiveText = computed(() => {
-    const { archived, unarchived } = dashboardData.value.archive
-    const total = archived + unarchived
+    const { enabled, disabled } = dashboardData.value.login
+    const total = enabled + disabled
     return {
-      archived: `${archived} (${total ? ((archived / total) * 100).toFixed(1) : '0.0'}%)`,
-      unarchived: `${unarchived} (${total ? ((unarchived / total) * 100).toFixed(1) : '0.0'}%)`
+      enabled: `${enabled} (${total ? ((enabled / total) * 100).toFixed(1) : '0.0'}%)`,
+      disabled: `${disabled} (${total ? ((disabled / total) * 100).toFixed(1) : '0.0'}%)`
     }
   })
 
@@ -396,7 +367,7 @@
           label: {
             show: true,
             position: 'center',
-            formatter: `{count|${dashboardData.value.archive.archived + dashboardData.value.archive.unarchived}}\n{name|总数}`,
+            formatter: `{count|${dashboardData.value.login.enabled + dashboardData.value.login.disabled}}\n{name|总数}`,
             rich: {
               count: { fontSize: 27, fontWeight: 700, color: '#1d2638', lineHeight: 34 },
               name: { fontSize: 12, color: '#697386' }
@@ -404,12 +375,12 @@
           },
           data: [
             {
-              value: dashboardData.value.archive.archived,
+              value: dashboardData.value.login.enabled,
               name: '已建档',
               itemStyle: { color: '#4d84ee' }
             },
             {
-              value: dashboardData.value.archive.unarchived,
+              value: dashboardData.value.login.disabled,
               name: '未建档',
               itemStyle: { color: '#dce2ee' }
             }
@@ -660,6 +631,7 @@
   }
   .red {
     color: #f04455;
+    background: #fff0f1;
   }
   .dashboard-grid {
     display: grid;
@@ -749,80 +721,60 @@
   .adverse-chart {
     height: 113px;
   }
-  .resource-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-  }
-  .resource-card {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    min-height: 145px;
-    padding: 20px;
-    color: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-  .resource-card:hover,
-  .todo-item:hover {
-    border-color: #b9cdf7;
-    box-shadow: 0 3px 10px rgb(34 57 94 / 8%);
-  }
-  .resource-icon {
-    width: 60px;
-    height: 60px;
-    font-size: 26px;
-  }
-  .resource-icon :deep(.el-icon) {
-    font-size: 28px;
-  }
-  .resource-card strong {
-    display: inline-block;
-    margin-top: 8px;
-    font-size: 33px;
-    line-height: 1;
-  }
-  .resource-card span {
-    margin-left: 7px;
-    color: #738097;
-    font-size: 14px;
-  }
-  .resource-card small {
-    display: block;
-    margin-top: 14px;
-    color: #738097;
-    font-size: 13px;
-  }
-  .todo-panel {
+  .action-panel {
+    grid-column: 1 / -1;
     padding: 18px;
+  }
+  .todo-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
   }
   .todo-item {
     width: 100%;
-    gap: 12px;
-    min-height: 43px;
-    padding: 0 12px;
+    gap: 10px;
+    min-height: 64px;
+    padding: 10px 12px;
     color: #445067;
     background: #fbfcfe;
     border: 1px solid #e7ebf2;
     border-radius: 7px;
     text-align: left;
   }
-  .todo-item + .todo-item {
-    margin-top: 9px;
+  .todo-icon {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    place-items: center;
+    border-radius: 9px;
+    font-size: 18px;
   }
-  .todo-item > :first-child {
-    font-size: 20px;
+  .todo-copy {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
   }
-  .todo-item b {
+  .todo-copy b {
+    color: #2b3447;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+  .todo-copy small {
+    color: #8994a8;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .todo-item > strong {
     margin-left: auto;
-    background: transparent;
-    box-shadow: none;
-    font-size: 18px;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
   }
-  .todo-item > :last-child {
-    color: #7d899e;
-    font-size: 18px;
+  .todo-arrow {
+    color: #9aa5b8;
+    font-size: 17px;
   }
   @media (max-width: 1300px) {
     .metric-grid {
