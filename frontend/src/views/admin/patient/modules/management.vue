@@ -324,7 +324,7 @@
               :closable="false"
               show-icon
             />
-            <div class="inline-actions tab-form"
+            <div class="inline-actions tab-form stock-refresh-actions"
               ><ElButton @click="loadStock">刷新余药</ElButton></div
             >
             <ElTable :data="stock" border empty-text="请先确认个人用药方案并登记实际发药">
@@ -1042,6 +1042,9 @@
   .history-title,
   .stock-form {
     margin-top: 20px;
+  }
+  .stock-refresh-actions {
+    margin-bottom: 16px;
   }
   .treatment-meta {
     max-width: 760px;

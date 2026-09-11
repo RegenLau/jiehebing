@@ -48,13 +48,7 @@
     </template>
     <template v-else>
       <div class="form-page__header">
-        <div class="form-page__title">
-          <ElButton :icon="ArrowLeft" :disabled="saving" @click="backToList">返回列表</ElButton>
-          <div>
-            <h2>{{ isEditPage ? '编辑用药方案' : '新增用药方案' }}</h2>
-            <p>{{ isEditPage ? '修改方案信息与药品明细' : '填写方案信息并添加药品明细' }}</p>
-          </div>
-        </div>
+        <ElButton :icon="ArrowLeft" :disabled="saving" @click="backToList">返回列表</ElButton>
         <div class="form-page__actions">
           <ElButton :disabled="saving" @click="backToList">取消</ElButton>
           <ElButton type="primary" :loading="saving" :disabled="formLoading" @click="save"
@@ -63,6 +57,10 @@
         </div>
       </div>
       <ElCard v-loading="formLoading" shadow="never" class="form-page__card">
+        <div class="form-page__intro">
+          <h2>{{ isEditPage ? '编辑用药方案' : '新增用药方案' }}</h2>
+          <p>{{ isEditPage ? '修改方案信息与药品明细' : '填写方案信息并添加药品明细' }}</p>
+        </div>
         <ElForm label-position="top" :disabled="saving || formLoading">
           <div class="grid"
             ><ElFormItem label="方案名称（必填）"
@@ -295,19 +293,17 @@
     margin-bottom: 20px;
   }
 
-  .form-page__title {
-    display: flex;
-    gap: 16px;
-    align-items: center;
+  .form-page__intro {
+    margin-bottom: 28px;
   }
 
-  .form-page__title h2,
-  .form-page__title p {
+  .form-page__intro h2,
+  .form-page__intro p {
     margin: 0;
   }
 
-  .form-page__title p {
-    margin-top: 4px;
+  .form-page__intro p {
+    margin-top: 8px;
     font-size: 13px;
     color: var(--el-text-color-secondary);
   }
@@ -332,8 +328,7 @@
   }
 
   @media (width <= 700px) {
-    .form-page__header,
-    .form-page__title {
+    .form-page__header {
       flex-direction: column;
       align-items: stretch;
     }

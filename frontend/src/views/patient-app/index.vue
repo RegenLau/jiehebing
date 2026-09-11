@@ -205,6 +205,9 @@
         </article>
 
         <p class="pending-start-note">开始日期以医生确认的用药方案为准</p>
+        <button class="project-ended-logout pending-start-logout" type="button" @click="logout"
+          >退出登录</button
+        >
       </section>
 
       <section v-else class="main-shell">
@@ -3017,6 +3020,7 @@
     margin: 0;
     font-size: 18px;
     font-weight: 650;
+    text-align: center;
   }
 
   .pending-start-status {
@@ -3129,6 +3133,12 @@
     line-height: 1.5;
     color: #929aa7;
     text-align: center;
+  }
+
+  .pending-start-logout {
+    flex: 0 0 auto;
+    width: 100%;
+    margin-top: 16px;
   }
 
   @media (width <= 350px) {

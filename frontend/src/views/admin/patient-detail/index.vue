@@ -677,6 +677,9 @@
     gap: 12px;
     flex-wrap: wrap;
   }
+  .tab-toolbar {
+    margin-bottom: 16px;
+  }
 
   .patient-base {
     display: grid;

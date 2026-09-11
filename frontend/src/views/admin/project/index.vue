@@ -29,7 +29,7 @@
         ><ElButton :loading="loading" @click="load">刷新</ElButton></div
       >
       <ElTable v-loading="loading" :data="list" border empty-text="暂无符合条件的项目">
-        <ElTableColumn prop="code" label="项目编号" min-width="140" /><ElTableColumn
+        <ElTableColumn prop="code" label="项目编号" min-width="200" /><ElTableColumn
           prop="name"
           label="项目名称"
           min-width="220"
