@@ -1,7 +1,7 @@
 <template>
   <div class="project-page">
     <div class="heading"
-      ><div><h2>研究管理</h2><p>建立研究项目，在研究分组中关联通用方案和随访内容。</p></div
+      ><div><h2>研究项目管理</h2><p>建立研究项目，在研究分组中关联通用方案和随访内容。</p></div
       ><ElButton type="primary" @click="edit()">新增项目</ElButton></div
     >
     <ElCard shadow="never">
