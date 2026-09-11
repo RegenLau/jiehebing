@@ -247,12 +247,26 @@ export function registerPatientApp({
     });
   };
   const taskSummary = (patient, treatment) =>
-    buildPatientTaskSummary({ db, patient, treatment, today, shiftDate });
+    buildPatientTaskSummary({
+      db,
+      patient,
+      treatment,
+      today,
+      shiftDate,
+      timestamp,
+    });
   const patientTasks = (patient) =>
-    buildPatientTasks({ db, patient, today, shiftDate });
+    buildPatientTasks({ db, patient, today, shiftDate, timestamp });
   const resolveTask = (patient, taskId) => {
     const numericId = Number(taskId);
     if (Number.isInteger(numericId) && numericId > 0) {
+      assert(
+        patientTasks(patient).some(
+          (task) => String(task.id) === String(numericId),
+        ),
+        "任务尚未到提醒时间或不存在",
+        404,
+      );
       const row = db.followupTasks.find(
         (task) => task.id === numericId && task.user_id === patient.id,
       );

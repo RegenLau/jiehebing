@@ -431,7 +431,7 @@ test("patient in an ended project sees the terminal page and cannot use business
   );
 });
 
-test("patient task page includes home pending tasks and active back-office records", async (t) => {
+test("patient task page includes only released tasks from the back-office schedule", async (t) => {
   const api = await start(t);
   await api.login();
   const backofficeTasks = await api.all(P + "followup/index", { user_id: 19 });
@@ -456,27 +456,39 @@ test("patient task page includes home pending tasks and active back-office recor
     source: task.source,
     overdue: task.overdue,
   });
-  assert.deepEqual(
-    backofficeTasks.map(comparableTask),
-    tasks.data.tasks.map(comparableTask),
-    "the back-office list uses the same task view as the patient app",
+  const backofficeById = new Map(
+    backofficeTasks.map((task) => [String(task.id), task]),
   );
+  for (const task of tasks.data.tasks)
+    assert.deepEqual(
+      comparableTask(backofficeById.get(String(task.id))),
+      comparableTask(task),
+      "released patient tasks retain the back-office task data",
+    );
   assert.ok(
     backofficeTasks.some((task) => task.type === "健康反馈"),
     "dynamic patient-app tasks are included in the back-office list",
   );
   const types = ["提醒", "检查"];
-  const showcaseTasks = tasks.data.tasks.filter(
+  const backofficeShowcaseTasks = backofficeTasks.filter(
     (task) => task.source === "患者端任务类型演示",
   );
   for (const type of types) {
     assert.equal(
-      showcaseTasks.filter((task) => task.type === type).length,
+      backofficeShowcaseTasks.filter((task) => task.type === type).length,
       1,
-      `${type} is visible once`,
+      `${type} remains available in the back-office schedule`,
     );
   }
-  assert.ok(showcaseTasks.every((task) => task.status === "待完成"));
+  const patientShowcaseTasks = tasks.data.tasks.filter(
+    (task) => task.source === "患者端任务类型演示",
+  );
+  assert.deepEqual(
+    patientShowcaseTasks.map((task) => task.type).sort(),
+    [...types].sort(),
+    "all showcase tasks scheduled for earlier today are visible",
+  );
+  assert.ok(patientShowcaseTasks.every((task) => task.status === "待完成"));
   const home = await api.json("/app/patient/home", { auth: patientToken });
   assert.equal(home.code, 0);
   assert.ok(
@@ -491,10 +503,14 @@ test("patient task page includes home pending tasks and active back-office recor
     "every home pending task is available on the task page",
   );
   assert.ok(
-    backofficeTasks
-      .filter((task) => ["待完成", "需补充"].includes(task.status))
-      .every((task) => taskIds.has(String(task.id))),
-    "every active back-office task is available on the task page",
+    tasks.data.tasks.every((task) => backofficeById.has(String(task.id))),
+    "patient tasks come from the back-office schedule",
+  );
+  assert.ok(
+    backofficeTasks.some(
+      (task) => task.date > tasks.data.date && !taskIds.has(String(task.id)),
+    ),
+    "future back-office tasks are not released to the patient early",
   );
   assert.equal(
     taskIds.size,
@@ -507,7 +523,74 @@ test("patient task page includes home pending tasks and active back-office recor
     ),
   );
   assert.ok(tasks.data.tasks.some((task) => task.type === "健康反馈"));
-  assert.ok(tasks.data.tasks.some((task) => task.type === "问卷"));
+});
+
+test("patient tasks appear when their configured reminder time arrives", async (t) => {
+  let currentNow = "2026-09-08T00:59:59.000Z";
+  const api = await start(t, () => currentNow);
+  await api.login();
+  const backofficeTasks = await api.all(P + "followup/index", { user_id: 19 });
+  const target = backofficeTasks.find(
+    (task) => task.source === "患者端任务类型演示" && task.type === "检查",
+  );
+  const laterReminder = backofficeTasks.find(
+    (task) => task.source === "患者端任务类型演示" && task.type === "提醒",
+  );
+  assert.ok(target);
+  assert.ok(laterReminder);
+  assert.equal(target.date, TODAY);
+  assert.equal(target.remind_time, "09:00");
+  assert.equal(laterReminder.date, TODAY);
+  assert.equal(laterReminder.remind_time, "09:15");
+
+  const login = await api.json("/app/login", {
+    auth: "",
+    body: { mobile: "13910001019" },
+  });
+  const patientToken = login.data.token.access_token;
+  let patientTasks = await api.json("/app/patient/tasks", {
+    auth: patientToken,
+  });
+  assert.ok(
+    !patientTasks.data.tasks.some(
+      (task) => String(task.id) === String(target.id),
+    ),
+    "the task is hidden before 09:00",
+  );
+  const blocked = await api.json("/app/patient/task-complete", {
+    auth: patientToken,
+    body: { task_id: laterReminder.id, note: "提前完成" },
+  });
+  assert.notEqual(blocked.code, 0);
+  assert.match(blocked.message, /尚未到提醒时间/);
+
+  currentNow = "2026-09-08T01:00:00.000Z";
+  patientTasks = await api.json("/app/patient/tasks", {
+    auth: patientToken,
+  });
+  assert.ok(
+    patientTasks.data.tasks.some(
+      (task) => String(task.id) === String(target.id),
+    ),
+    "the task is released at exactly 09:00",
+  );
+  assert.ok(
+    !patientTasks.data.tasks.some(
+      (task) => String(task.id) === String(laterReminder.id),
+    ),
+    "the 09:15 reminder is still hidden at 09:00",
+  );
+
+  currentNow = "2026-09-08T01:15:00.000Z";
+  patientTasks = await api.json("/app/patient/tasks", {
+    auth: patientToken,
+  });
+  assert.ok(
+    patientTasks.data.tasks.some(
+      (task) => String(task.id) === String(laterReminder.id),
+    ),
+    "the reminder is released at exactly 09:15",
+  );
 });
 
 test("manual project end immediately moves its patient to the terminal page", async (t) => {
@@ -857,9 +940,10 @@ test("patient self-confirmation follows identity then current treatment and reop
     scheduledBloodTest.requirements,
     "完成血常规检查后提交检查日期及报告原图",
   );
-  assert.ok(
-    tasks.data.tasks.filter((task) => task.type === "问卷").length >= 2,
-    "two scheduled rounds of the same survey stay separate",
+  assert.equal(
+    tasks.data.tasks.filter((task) => task.type === "问卷").length,
+    1,
+    "future rounds of the same survey stay hidden until their reminder time",
   );
   const feedback = await api.json("/app/patient/feedback", {
     auth: patientToken,
@@ -948,9 +1032,10 @@ test("patient self-confirmation follows identity then current treatment and reop
   });
   assert.equal(surveySubmit.code, 0);
   assert.ok(
-    surveySubmit.data.tasks.some(
+    !surveySubmit.data.tasks.some(
       (task) => task.type === "问卷" && task.date !== surveyTask.date,
     ),
+    "the next survey round stays hidden until its own reminder time",
   );
   assert.notEqual(
     (
@@ -1225,6 +1310,26 @@ test("home pickup reminder dates follow actual dispensing, dose frequency, and s
 
   home = await api.json("/app/patient/home", { auth: patientToken });
   let pickup = home.data.pending_tasks.find(
+    (task) => task.type === "提醒" && task.source === "系统余药计算",
+  );
+  assert.equal(pickup, undefined, "future pickup reminders stay hidden");
+
+  currentNow = "2026-09-11T06:19:59.000Z";
+  patientToken = (
+    await api.json("/app/login", {
+      auth: "",
+      body: { mobile: onboarded.patient.mobile },
+    })
+  ).data.token.access_token;
+  home = await api.json("/app/patient/home", { auth: patientToken });
+  pickup = home.data.pending_tasks.find(
+    (task) => task.type === "提醒" && task.source === "系统余药计算",
+  );
+  assert.equal(pickup, undefined, "pickup reminder stays hidden before 14:20");
+
+  currentNow = "2026-09-11T06:20:00.000Z";
+  home = await api.json("/app/patient/home", { auth: patientToken });
+  pickup = home.data.pending_tasks.find(
     (task) => task.type === "提醒" && task.source === "系统余药计算",
   );
   assert.equal(pickup.date, stock[0].reminder_date);

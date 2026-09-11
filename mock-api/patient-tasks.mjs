@@ -96,14 +96,26 @@ function enrichTask(row, patient, currentDate) {
   };
 }
 
+function isTaskReleased(row, currentDateTime) {
+  if (row.status === "需补充") return true;
+  const remindTime = row.remind_time || row.snapshot?.remind_time || "00:00";
+  const effectiveTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(remindTime)
+    ? remindTime
+    : "00:00";
+  return `${row.date} ${effectiveTime}` <= currentDateTime;
+}
+
 export function buildPatientTaskSummary({
   db,
   patient,
   treatment,
   today,
   shiftDate,
+  timestamp,
+  includeFuture = false,
 }) {
   const currentDate = today();
+  const currentDateTime = includeFuture ? "" : timestamp().slice(0, 16);
   const visibleThrough = shiftDate(currentDate, 14);
   const actual = db.followupTasks
     .filter(
@@ -171,7 +183,8 @@ export function buildPatientTaskSummary({
         left.due_date.localeCompare(right.due_date) ||
         left.date.localeCompare(right.date),
     )
-    .map((row) => enrichTask(row, patient, currentDate));
+    .map((row) => enrichTask(row, patient, currentDate))
+    .filter((row) => includeFuture || isTaskReleased(row, currentDateTime));
 }
 
 function assignedTasks({ db, patient, currentDate }) {
@@ -184,8 +197,16 @@ function assignedTasks({ db, patient, currentDate }) {
     .map((row) => enrichTask({ ...row, virtual: false }, patient, currentDate));
 }
 
-export function buildPatientTasks({ db, patient, today, shiftDate }) {
+export function buildPatientTasks({
+  db,
+  patient,
+  today,
+  shiftDate,
+  timestamp,
+  includeFuture = false,
+}) {
   const currentDate = today();
+  const currentDateTime = includeFuture ? "" : timestamp().slice(0, 16);
   const treatment = latestTreatmentFor({ db, patient, shiftDate });
   const summary = buildPatientTaskSummary({
     db,
@@ -193,6 +214,8 @@ export function buildPatientTasks({ db, patient, today, shiftDate }) {
     treatment,
     today,
     shiftDate,
+    timestamp,
+    includeFuture,
   });
   const summaryIds = new Set(summary.map((row) => String(row.id)));
   return [
@@ -200,15 +223,17 @@ export function buildPatientTasks({ db, patient, today, shiftDate }) {
     ...assignedTasks({ db, patient, currentDate }).filter(
       (row) => !summaryIds.has(String(row.id)),
     ),
-  ].sort(
-    (left, right) =>
-      left.due_date.localeCompare(right.due_date) ||
-      left.date.localeCompare(right.date) ||
-      String(left.id).localeCompare(String(right.id)),
-  );
+  ]
+    .filter((row) => includeFuture || isTaskReleased(row, currentDateTime))
+    .sort(
+      (left, right) =>
+        left.due_date.localeCompare(right.due_date) ||
+        left.date.localeCompare(right.date) ||
+        String(left.id).localeCompare(String(right.id)),
+    );
 }
 
-export function buildLoginPatientTasks({ db, today, shiftDate }) {
+export function buildLoginPatientTasks({ db, today, shiftDate, timestamp }) {
   const currentDate = today();
   const activeProjectIds = new Set(
     db.projects
@@ -222,7 +247,16 @@ export function buildLoginPatientTasks({ db, today, shiftDate }) {
         patient.login_enabled &&
         activeProjectIds.has(patient.project_id),
     )
-    .flatMap((patient) => buildPatientTasks({ db, patient, today, shiftDate }))
+    .flatMap((patient) =>
+      buildPatientTasks({
+        db,
+        patient,
+        today,
+        shiftDate,
+        timestamp,
+        includeFuture: true,
+      }),
+    )
     .sort(
       (left, right) =>
         left.due_date.localeCompare(right.due_date) ||

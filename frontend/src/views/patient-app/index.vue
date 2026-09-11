@@ -1264,7 +1264,7 @@
                   :disabled="taskSubmitting"
                   @click="completeTask"
                 >
-                  {{ taskSubmitting ? '提交中…' : '确认已完成' }}
+                  {{ taskSubmitting ? '提交中…' : '知道了' }}
                 </button>
               </template>
               <template v-else>

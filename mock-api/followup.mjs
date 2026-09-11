@@ -18,6 +18,12 @@ export function registerFollowup({
   const demoPatient = db.patients.find(
     (patient) => patient.mobile === "13910001019",
   );
+  const demoGroup = demoPatient
+    ? db.projectGroups.find((group) => group.id === demoPatient.group_id)
+    : null;
+  const demoRemindTime =
+    demoGroup?.reminder?.snapshot?.task_remind_time || "09:00";
+  const demoTaskTimes = { 检查: demoRemindTime, 提醒: "09:15" };
   const typeDetails = {
     提醒: ["随访提醒", "按研究安排完成随访事项", "请按提醒内容完成本次安排"],
     检查: [
@@ -27,9 +33,9 @@ export function registerFollowup({
     ],
   };
   if (demoPatient)
-    for (const [typeIndex, type] of types.entries()) {
+    for (const type of types) {
       const [name, description, requirements] = typeDetails[type];
-      const date = shiftDate(today(), typeIndex % 3);
+      const date = today();
       const due_date = shiftDate(date, 2);
       db.followupTasks.push({
         id: nextId(db.followupTasks),
@@ -41,6 +47,7 @@ export function registerFollowup({
         type,
         date,
         due_date,
+        remind_time: demoTaskTimes[type],
         description,
         requirements,
         status: "待完成",
@@ -77,7 +84,7 @@ export function registerFollowup({
   };
   core("GET", "followup/index", ({ query: q }) =>
     page(
-      buildLoginPatientTasks({ db, today, shiftDate }).filter(
+      buildLoginPatientTasks({ db, today, shiftDate, timestamp }).filter(
         (r) =>
           (!q.user_id || r.user_id === Number(q.user_id)) &&
           (!q.project_id || r.project_id === Number(q.project_id)) &&
