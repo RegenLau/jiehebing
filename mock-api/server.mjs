@@ -596,6 +596,8 @@ export function createMockServer({ now = () => new Date() } = {}) {
         enabled: patients.filter((p) => p.login_enabled).length,
         disabled: patients.filter((p) => !p.login_enabled).length,
       },
+      // Keep the legacy shape for existing consumers while the workbench uses login.
+      archive: { archived, unarchived: patients.length - archived },
       resources: {
         survey_total: db.surveys.length,
         article_total: db.articles.length,

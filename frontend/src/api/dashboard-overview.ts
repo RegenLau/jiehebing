@@ -43,8 +43,30 @@ export function fetchDashboardOverview(
   date?: string,
   scope: { project_id?: number; group_id?: number } = {}
 ) {
-  return request.get<DashboardOverview>({
-    url: '/app/core/dashboard/overview',
-    params: { range, date, ...scope }
-  })
+  return request
+    .get<
+      DashboardOverview & {
+        archive?: { archived: number; unarchived: number }
+      }
+    >({
+      url: '/app/core/dashboard/overview',
+      params: { range, date, ...scope }
+    })
+    .then((response) => {
+      const enabled =
+        response.login?.enabled ?? response.archive?.archived ?? response.metrics.archived_total
+      const disabled =
+        response.login?.disabled ??
+        response.archive?.unarchived ??
+        Math.max(response.metrics.patient_total - enabled, 0)
+
+      return {
+        ...response,
+        login: { enabled, disabled },
+        todos: {
+          ...response.todos,
+          pending_report_total: response.todos?.pending_report_total ?? 0
+        }
+      }
+    })
 }

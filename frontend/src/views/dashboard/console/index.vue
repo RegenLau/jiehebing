@@ -141,6 +141,7 @@
     ArrowRight,
     Calendar as CalendarIcon,
     CircleCheckFilled,
+    Document,
     DocumentChecked,
     Memo,
     UserFilled
@@ -376,12 +377,12 @@
           data: [
             {
               value: dashboardData.value.login.enabled,
-              name: '已建档',
+              name: '可登录',
               itemStyle: { color: '#4d84ee' }
             },
             {
               value: dashboardData.value.login.disabled,
-              name: '未建档',
+              name: '未开通登录',
               itemStyle: { color: '#dce2ee' }
             }
           ]

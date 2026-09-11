@@ -1,0 +1,31 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - img "logo" [ref=e7]
+      - generic [ref=e13]:
+        - heading "结核病随访管理" [level=2] [ref=e14]
+        - paragraph [ref=e15]: 专业的结核病全程管理工具，助力每一位患者早日康复
+      - generic [ref=e21] [cursor=pointer]
+    - generic [ref=e25]:
+      - generic [ref=e27]:
+        - generic [ref=e29] [cursor=pointer]
+        - button [ref=e32] [cursor=pointer]
+        - generic [ref=e34] [cursor=pointer]
+      - generic [ref=e37]:
+        - heading "欢迎回来" [level=3] [ref=e38]
+        - generic [ref=e39]:
+          - textbox "请输入账号" [ref=e44]: admin
+          - generic [ref=e48]:
+            - textbox "请输入密码" [ref=e49]: Mock123456
+            - generic [ref=e51] [cursor=pointer]
+          - generic [ref=e57]:
+            - textbox "请输入验证码" [ref=e59]: "1234"
+            - img [ref=e61] [cursor=pointer]
+          - generic [ref=e63] [cursor=pointer]:
+            - generic [ref=e64]:
+              - checkbox "记住密码" [checked]
+            - generic [ref=e66]: 记住密码
+          - button "登录" [ref=e68] [cursor=pointer]
+  - generic [ref=e70]:
+    - generic "Toggle devtools panel" [ref=e71] [cursor=pointer]
+    - generic "Toggle Component Inspector" [ref=e77] [cursor=pointer]
