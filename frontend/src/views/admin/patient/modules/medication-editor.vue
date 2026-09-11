@@ -1,25 +1,27 @@
 <template>
   <div class="medication-editor">
-    <ElForm label-position="top" :disabled="disabled" class="treatment-meta">
-      <div class="form-grid">
-        <ElFormItem label="开始用药日期" required>
-          <ElDatePicker
-            :model-value="treatment.start_date"
-            value-format="YYYY-MM-DD"
-            @update:model-value="updateTreatment({ start_date: $event })"
-          />
-        </ElFormItem>
-        <ElFormItem label="治疗天数" required>
-          <ElInputNumber
-            :model-value="treatment.treatment_days"
-            :min="1"
-            :max="3650"
-            :disabled="!adjusted"
-            @update:model-value="updateTreatment({ treatment_days: $event || 1 })"
-          />
-        </ElFormItem>
-      </div>
-    </ElForm>
+    <section class="treatment-meta-panel">
+      <ElForm label-position="top" :disabled="disabled" class="treatment-meta">
+        <div class="form-grid">
+          <ElFormItem label="开始用药日期" required>
+            <ElDatePicker
+              :model-value="treatment.start_date"
+              value-format="YYYY-MM-DD"
+              @update:model-value="updateTreatment({ start_date: $event })"
+            />
+          </ElFormItem>
+          <ElFormItem label="治疗天数" required>
+            <ElInputNumber
+              :model-value="treatment.treatment_days"
+              :min="1"
+              :max="3650"
+              :disabled="!adjusted"
+              @update:model-value="updateTreatment({ treatment_days: $event || 1 })"
+            />
+          </ElFormItem>
+        </div>
+      </ElForm>
+    </section>
 
     <div class="adjustment-row">
       <div><strong>个体调整</strong><p>关闭时完整采用分组方案；打开后只修改当前患者。</p></div>
@@ -309,7 +311,17 @@
   }
 
   .treatment-meta {
-    max-width: 760px;
+    width: 100%;
+  }
+
+  .treatment-meta-panel {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 16px 16px 2px;
+    border: 1px solid var(--el-border-color);
+    border-radius: 8px;
+    background: var(--el-fill-color-lighter);
+    margin-bottom: 20px;
   }
 
   .adjustment-row {

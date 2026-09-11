@@ -7,7 +7,7 @@
           {{ form.name || '-' }} · {{ form.patient_code || '-' }} · {{ form.project_name || '-' }} /
           {{ form.group_name || '-' }}
         </p>
-        <p v-else>一次完成患者资料、研究分组、个人用药方案和可选的首次发药登记。</p>
+        <p v-else>一次完成患者资料、研究分组、个人用药方案和首次发药登记。</p>
       </div>
       <div class="page-actions">
         <ElButton @click="goBack">返回患者列表</ElButton>
@@ -123,10 +123,13 @@
           @reset="resetToGroup"
         />
         <ElDivider />
-        <ElCheckbox v-model="registerInitialDispense" class="dispense-switch">
-          已完成首次发药，同时登记实际数量
-        </ElCheckbox>
-        <div v-if="registerInitialDispense" class="dispense-panel">
+        <section class="dispense-panel">
+          <div class="section-heading dispense-heading">
+            <div>
+              <h3>首次发药</h3>
+              <p>首次发药是取药提醒的计算基线，请填写患者实际领取的药品和数量。</p>
+            </div>
+          </div>
           <ElForm label-position="top" :disabled="saving">
             <div class="form-grid two-columns">
               <ElFormItem label="实际发药日期" required>
@@ -147,7 +150,7 @@
               </div>
             </div>
           </ElForm>
-        </div>
+        </section>
       </section>
 
       <div class="step-actions">
@@ -568,7 +571,6 @@
   const treatments = ref<Treatment[]>([])
   const dispensings = ref<Management['dispensings']>([])
   const history = ref<Management['history']>([])
-  const registerInitialDispense = ref(false)
   const dispense = ref({
     issued_date: todayText(),
     reason: '首次发药',
@@ -848,10 +850,10 @@
   async function saveOnboarding() {
     if (!validateTreatment()) return
     if (
-      registerInitialDispense.value &&
-      (!dispense.value.issued_date ||
-        !dispense.value.reason.trim() ||
-        activeDispenseItems.value.some((item) => item.quantity <= 0))
+      !dispense.value.issued_date ||
+      !dispense.value.reason.trim() ||
+      !activeDispenseItems.value.length ||
+      activeDispenseItems.value.some((item) => item.quantity <= 0)
     ) {
       ElMessage.warning('请完整填写首次发药日期、数量和说明')
       return
@@ -863,9 +865,7 @@
         params: {
           patient: form.value,
           treatment: treatmentPayload(),
-          dispense: registerInitialDispense.value
-            ? { ...dispense.value, items: activeDispenseItems.value }
-            : null
+          dispense: { ...dispense.value, items: activeDispenseItems.value }
         },
         showSuccessMessage: true
       })
@@ -952,13 +952,19 @@
     gap: 16px;
   }
   .page-heading,
-  .section-heading,
   .tab-heading,
   .adjustment-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
+  }
+  .section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
   }
   .page-heading h2,
   .section-heading h3,
@@ -1076,14 +1082,14 @@
     color: var(--el-text-color-secondary);
     background: var(--el-fill-color-lighter);
   }
-  .dispense-switch {
-    margin-bottom: 16px;
-  }
   .dispense-panel,
   .stock-form {
     padding: 16px;
     border: 1px solid var(--el-border-color);
     border-radius: 8px;
+  }
+  .dispense-heading {
+    align-items: flex-start;
   }
   .dispense-items {
     display: grid;

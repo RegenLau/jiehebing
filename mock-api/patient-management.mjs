@@ -61,6 +61,7 @@ export function registerPatientManagement({core,db,assert,find,page,clean,isDate
   core('POST','patient/dispense',saveDispense);
   core('POST','patient/onboard',ctx=>{
     assert(ctx.body?.patient&&ctx.body?.treatment,'请完整填写患者档案和用药安排');
+    assert(ctx.body?.dispense,'请完整填写首次发药信息，保存后才能生成取药提醒');
     assert(ctx.body.patient.id===undefined,'患者已建档，请在患者研究管理中调整');
     const keys=['patients','projectGroups','patientTreatments','dispensings','patientHistory','medicines','plans','followupTasks'];
     const backup=Object.fromEntries(keys.map(key=>[key,structuredClone(db[key])]));

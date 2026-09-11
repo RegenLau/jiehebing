@@ -31,7 +31,7 @@
         ></ElCollapse
       >
       <div class="fields">
-        <ElFormItem label="计时基准"
+        <ElFormItem label="开始计算日期"
           ><ElSelect v-model="row.anchor" @change="resetAnchor(row)"
             ><ElOption label="入组日期" value="enrollment" /><ElOption
               label="开始用药日期"
@@ -40,17 +40,21 @@
         <ElFormItem v-if="row.anchor === 'date'" label="执行日期"
           ><ElDatePicker v-model="row.date" value-format="YYYY-MM-DD"
         /></ElFormItem>
-        <ElFormItem v-else label="起始偏移（天，0为当日）"
-          ><ElInputNumber v-model="row.offset_days" :min="0" :max="3650" :precision="0"
-        /></ElFormItem>
-        <ElFormItem label="重复间隔（天，0为单次）"
+        <ElFormItem v-else label="首次执行（开始计算日期后第几天）"
+          ><ElInputNumber v-model="row.offset_days" :min="0" :max="3650" :precision="0" /><span
+            class="unit-suffix"
+            >天</span
+          ></ElFormItem
+        >
+        <ElFormItem label="执行频率（每几天执行一次）"
           ><ElInputNumber
             v-model="row.interval_days"
             :min="0"
             :max="3650"
             :precision="0"
             :disabled="row.anchor === 'date'"
-        /></ElFormItem>
+          /><span class="unit-suffix">天</span></ElFormItem
+        >
         <ElFormItem label="完成期限（天）"
           ><ElInputNumber v-model="row.deadline_days" :min="1" :max="3650" :precision="0"
         /></ElFormItem>
@@ -78,7 +82,7 @@
     model.value.push({
       id: source.id,
       snapshot: JSON.parse(JSON.stringify(source)),
-      anchor: 'enrollment',
+      anchor: 'treatment',
       date: '',
       offset_days: 0,
       interval_days: 0,
@@ -121,6 +125,11 @@
   .fields :deep(.el-select),
   .fields :deep(.el-date-editor) {
     width: 100%;
+  }
+
+  .unit-suffix {
+    margin-left: 8px;
+    color: var(--el-text-color-regular);
   }
   @media (max-width: 700px) {
     .fields {
