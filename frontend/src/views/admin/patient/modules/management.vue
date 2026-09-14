@@ -99,9 +99,19 @@
               <ElDatePicker v-model="form.enroll_date" type="date" value-format="YYYY-MM-DD" />
             </ElFormItem>
           </div>
-          <div class="confirmation-box">
-            <ElCheckbox v-model="form.offline_confirmed">已在线下确认符合研究入组条件</ElCheckbox>
-            <ElCheckbox v-model="form.consent_confirmed">已登记知情同意</ElCheckbox>
+          <div class="confirmation-box" role="group" aria-label="研究入组必选确认">
+            <div class="confirmation-option">
+              <span class="required-mark" aria-hidden="true">*</span>
+              <ElCheckbox v-model="form.offline_confirmed" aria-required="true">
+                已在线下确认符合研究入组条件
+              </ElCheckbox>
+            </div>
+            <div class="confirmation-option">
+              <span class="required-mark" aria-hidden="true">*</span>
+              <ElCheckbox v-model="form.consent_confirmed" aria-required="true">
+                已登记知情同意
+              </ElCheckbox>
+            </div>
           </div>
         </ElForm>
       </section>
@@ -798,8 +808,12 @@
         ElMessage.warning('只能选择待开始或进行中的研究项目')
         return
       }
-      if (!form.value.offline_confirmed || !form.value.consent_confirmed) {
-        ElMessage.warning('请确认线下入组和知情同意均已登记')
+      if (!form.value.offline_confirmed) {
+        ElMessage.warning('请勾选“已在线下确认符合研究入组条件”')
+        return
+      }
+      if (!form.value.consent_confirmed) {
+        ElMessage.warning('请勾选“已登记知情同意”')
         return
       }
       if (!groupRecord.value?.medication) {
@@ -1014,6 +1028,14 @@
     border: 1px solid var(--el-border-color);
     border-radius: 8px;
     background: var(--el-fill-color-lighter);
+  }
+  .confirmation-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .required-mark {
+    color: var(--el-color-danger);
   }
   .confirmation-status {
     display: grid;

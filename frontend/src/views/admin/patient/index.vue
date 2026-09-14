@@ -53,20 +53,9 @@
             <p class="cell-note">{{ row.group_name || '未分组' }}</p>
           </template>
         </ElTableColumn>
-        <ElTableColumn label="个人用药" min-width="190">
+        <ElTableColumn label="用药方案" min-width="190">
           <template #default="{ row }">
-            <ElTag
-              :type="
-                row.arrangement_type === '个体调整'
-                  ? 'warning'
-                  : row.arrangement_ready
-                    ? 'success'
-                    : 'info'
-              "
-            >
-              {{ row.arrangement_type || '待确认方案' }}
-            </ElTag>
-            <p class="cell-note">{{ row.medication_scheme_name || '尚未关联用药方案' }}</p>
+            <span>{{ row.medication_scheme_name || '尚未关联用药方案' }}</span>
           </template>
         </ElTableColumn>
         <ElTableColumn label="研究状态" width="110">
@@ -80,6 +69,21 @@
           <template #default="{ row }">
             <ElTag :type="row.last_login_at ? 'success' : 'info'">
               {{ row.last_login_at ? '已登录' : '未登录' }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="方案确认" width="130">
+          <template #default="{ row }">
+            <ElTag
+              :type="
+                row.arrangement_type === '个体调整'
+                  ? 'warning'
+                  : row.arrangement_ready
+                    ? 'success'
+                    : 'info'
+              "
+            >
+              {{ row.arrangement_type || '待确认方案' }}
             </ElTag>
           </template>
         </ElTableColumn>
