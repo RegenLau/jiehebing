@@ -141,7 +141,7 @@
         type="warning"
         :closable="false"
         show-icon
-        title="项目手动结束后，项目里的患者将不能使用患者端小程序。"
+        title="项目手动结束后，将停止生成常规研究任务；历史记录仍会保留。"
       />
       <ElForm label-position="top" :disabled="statusSaving"
         ><ElFormItem label="结束原因"

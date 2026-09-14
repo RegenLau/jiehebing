@@ -1,4 +1,4 @@
-import { buildLoginPatientTasks } from "./patient-tasks.mjs";
+import { buildManagedPatientTasks } from "./patient-tasks.mjs";
 
 export function registerFollowup({
   core,
@@ -51,7 +51,7 @@ export function registerFollowup({
         description,
         requirements,
         status: "待完成",
-        source: "患者端任务类型演示",
+        source: "系统任务演示",
         result: "",
         history: [],
         created_at: timestamp(),
@@ -84,7 +84,7 @@ export function registerFollowup({
   };
   core("GET", "followup/index", ({ query: q }) =>
     page(
-      buildLoginPatientTasks({ db, today, shiftDate, timestamp }).filter(
+      buildManagedPatientTasks({ db, today, shiftDate, timestamp }).filter(
         (r) =>
           (!q.user_id || r.user_id === Number(q.user_id)) &&
           (!q.project_id || r.project_id === Number(q.project_id)) &&
@@ -108,7 +108,7 @@ export function registerFollowup({
           "人工新增": "临时添加",
           "每日任务": "系统生成",
           "系统余药计算": "系统生成",
-          "患者端任务类型演示": "系统生成",
+          "系统任务演示": "系统生成",
         };
         return {
           ...row,

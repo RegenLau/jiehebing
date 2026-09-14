@@ -34,7 +34,7 @@ export function createFixtures(now) {
     id: 4, code: 'TB-RESEARCH-004', name: '项目结束状态演示',
     center: '结核病研究中心', investigator: '项目负责人', phone: '010-00000000',
     start_date: shiftDate(today, -180), end_date: shiftDate(today, -1),
-    protocol_version: 'V1.0', effective_date: shiftDate(today, -190), purpose: '用于验证研究项目结束后的患者端访问状态。', notes: '',
+    protocol_version: 'V1.0', effective_date: shiftDate(today, -190), purpose: '用于验证已结束项目的后台展示与历史数据保留。', notes: '',
     research_type: 'open', status: 2, created_at: time, updated_at: time,
     history: [{ action: '初始化', operator: '系统', time, note: '创建已结束项目演示数据' }]
   });
@@ -62,17 +62,12 @@ export function createFixtures(now) {
     const offset = isPendingStartPatient ? 1 : isEndedProjectPatient ? -180 : i < 12 ? -(40 + i) : i < 16 ? -(i - 11) : -(i + 3);
     const enroll_date = shiftDate(today, offset);
     const isDemoPatient = mobile === demoPatientMobile;
-    const isConfirmedPatient = isDemoPatient || isPendingStartPatient || isEndedProjectPatient;
     return {
       id: i + 1, patient_code: `TB-P-${String(i + 1).padStart(3, '0')}`, name, mobile, gender,
       gender_text: gender === 1 ? '男' : '女', birth_date, age: ageOnDate(birth_date, today),
-      is_archived: 1, login_enabled: true, last_login_at: isConfirmedPatient ? time : '', created_via: 'admin', study_state: isEndedProjectPatient ? '已完成' : isDemoPatient ? '治疗中' : '待启用',
+      is_archived: 1, created_via: 'admin', study_state: isEndedProjectPatient ? '已完成' : isDemoPatient ? '治疗中' : '待启用',
       enroll_date, offline_confirmed: true, consent_confirmed: true,
-      identity_confirmed: isConfirmedPatient, medicine_confirmed: isConfirmedPatient, status: 1,
-      ...(isConfirmedPatient ? {
-        identity_confirmation: { status: 'confirmed', confirmed: true, note: '', confirmed_at: time },
-        medication_confirmation: { status: 'confirmed', confirmed: true, treatment_id: `legacy-${i + 1}`, note: '', confirmed_at: time }
-      } : {}),
+      status: 1,
       created_at: `${enroll_date} 06:00:00`, updated_at: time
     };
   });
@@ -234,7 +229,7 @@ export function createFixtures(now) {
     { id: 4, project_id: 2, name: '强化管理随访组', description: '开展加强提醒、取药和检查报告管理。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [3], participant_ids: patients.slice(23, 29).map(p => p.id) },
     { id: 5, project_id: 3, name: '历史完成随访组', description: '用于查看已结束项目的历史分组配置。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [2], participant_ids: patients.slice(0, 4).map(p => p.id) },
     { id: 6, project_id: 3, name: '历史重点复核组', description: '用于查看已结束项目的重点复核配置。', scheme_id: 2, reminder_scheme_id: 2, task_ids: [4], participant_ids: patients.slice(4, 8).map(p => p.id) },
-    { id: 7, project_id: 4, name: '项目结束演示组', description: '用于验证项目结束后的患者端状态。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [2], participant_ids: patients.filter(p => p.mobile === endedProjectPatientMobile).map(p => p.id) }
+    { id: 7, project_id: 4, name: '项目结束演示组', description: '用于验证已结束项目的后台只读状态。', scheme_id: 1, reminder_scheme_id: 1, task_ids: [2], participant_ids: patients.filter(p => p.mobile === endedProjectPatientMobile).map(p => p.id) }
   ];
   const schedule = (source, reminder, interval_days, offset_days = 0) => ({
     id: source.id, snapshot: structuredClone(source), anchor: 'enrollment', date: '', offset_days, interval_days, deadline_days: 3,

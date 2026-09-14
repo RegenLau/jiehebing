@@ -292,7 +292,7 @@ export function buildPatientTasks({
     );
 }
 
-export function buildLoginPatientTasks({ db, today, shiftDate, timestamp }) {
+export function buildManagedPatientTasks({ db, today, shiftDate, timestamp }) {
   const currentDate = today();
   const activeProjectIds = new Set(
     db.projects
@@ -300,12 +300,7 @@ export function buildLoginPatientTasks({ db, today, shiftDate, timestamp }) {
       .map((project) => project.id),
   );
   return db.patients
-    .filter(
-      (patient) =>
-        patient.created_via === "admin" &&
-        patient.login_enabled &&
-        activeProjectIds.has(patient.project_id),
-    )
+    .filter((patient) => activeProjectIds.has(patient.project_id))
     .flatMap((patient) =>
       buildPatientTasks({
         db,

@@ -12,9 +12,9 @@ export interface DashboardOverview {
     completed_total: number
     new_adverse_total: number
   }
-  login: {
-    enabled: number
-    disabled: number
+  study: {
+    active: number
+    ended: number
   }
   resources: {
     survey_total: number
@@ -44,25 +44,17 @@ export function fetchDashboardOverview(
   scope: { project_id?: number; group_id?: number } = {}
 ) {
   return request
-    .get<
-      DashboardOverview & {
-        archive?: { archived: number; unarchived: number }
-      }
-    >({
+    .get<DashboardOverview & { archive?: { archived: number; unarchived: number } }>({
       url: '/app/core/dashboard/overview',
       params: { range, date, ...scope }
     })
     .then((response) => {
-      const enabled =
-        response.login?.enabled ?? response.archive?.archived ?? response.metrics.archived_total
-      const disabled =
-        response.login?.disabled ??
-        response.archive?.unarchived ??
-        Math.max(response.metrics.patient_total - enabled, 0)
-
       return {
         ...response,
-        login: { enabled, disabled },
+        study: response.study ?? {
+          active: Math.max(response.metrics.patient_total - response.metrics.archived_total, 0),
+          ended: response.metrics.archived_total
+        },
         todos: {
           ...response.todos,
           pending_report_total: response.todos?.pending_report_total ?? 0

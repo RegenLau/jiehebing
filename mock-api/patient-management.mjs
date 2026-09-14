@@ -5,7 +5,7 @@ import { refreshPatientStudyState } from './patient-study-state.mjs';
 import { executionSnapshotFor, snapshotGroupExecution } from './execution-snapshot.mjs';
 
 export function registerPatientManagement({core,db,assert,find,page,clean,isDate,timestamp,nextId,today,shiftDate}) {
-  db.patientTreatments=[];db.dispensings=[];db.patientHistory=[];db.patientConfirmationIssues||=[];db.patientExecutionSnapshots||=[];db.onboardingRequests||=[];
+  db.patientTreatments=[];db.dispensings=[];db.patientHistory=[];db.patientExecutionSnapshots||=[];db.onboardingRequests||=[];
   const states=['待启用','治疗中','暂停用药','已完成','提前退出','失访'];
   const manualTransitions={
     '待启用':['提前退出','失访'],
@@ -31,10 +31,9 @@ export function registerPatientManagement({core,db,assert,find,page,clean,isDate
     let study={};let target=null;
     if(b.project_id||b.group_id){const p=find(db.projects,b.project_id,'项目');if(!old)assert(effectiveProjectStatus(p,today())!==2,'项目已结束，不能新增患者');target=find(db.projectGroups,b.group_id,'分组');assert(target.project_id===p.id,'分组不属于当前项目');assert(target.medication,'该研究分组尚未配置用药方案');assert(!old?.project_id||old.project_id===p.id&&old.group_id===target.id,'已登记入组归属不可直接覆盖，请在研究流程中处理');assert(b.offline_confirmed===true&&b.consent_confirmed===true,'请登记线下入组及知情同意确认');const owner=find(db.admins,b.owner_id,'负责人员');assert(owner.status===1,'负责账号已停用');study={project_id:p.id,project_name:p.name,group_id:target.id,group_name:target.name,medication_scheme_id:target.medication.id,medication_scheme_name:target.medication.snapshot.name,owner_id:owner.id,owner_name:owner.realname||owner.username,enroll_date:date(b.enroll_date,'入组日期'),offline_confirmed:true,consent_confirmed:true};}
     if(target&&old)assert(!db.projectGroups.some(g=>g.project_id===target.project_id&&g.id!==target.id&&g.participant_ids.includes(old.id)),'患者已在本项目其他分组');
-    const row=old||{id:nextId(db.patients),created_at:timestamp(),status:1,study_state:'待启用',identity_confirmed:false,medicine_confirmed:false,last_login_at:''},before=old?structuredClone(old):{};
+    const row=old||{id:nextId(db.patients),created_at:timestamp(),status:1,study_state:'待启用'},before=old?structuredClone(old):{};
     for(const field of ['hospital_name','department_name','visit_type','visit_type_text','consent_date'])delete row[field];
-    Object.assign(row,{name,mobile,gender:b.gender,gender_text:b.gender===1?'男':'女',birth_date,age,is_archived:1,login_enabled:true,created_via:'admin',patient_code:old?.patient_code||`TB-${String(row.id).padStart(5,'0')}`,enroll_date:old?.enroll_date||'',...study,revision:(old?.revision||0)+1,updated_at:timestamp()});
-    if(old&&['name','mobile','gender','birth_date'].some(field=>before[field]!==row[field])){row.identity_confirmed=false;row.identity_confirmation=null;for(const issue of db.patientConfirmationIssues.filter(item=>item.user_id===row.id&&item.type==='identity'&&item.status==='待处理'))Object.assign(issue,{status:'已处理',resolved_at:timestamp(),resolved_by:admin.realname||admin.username});}
+    Object.assign(row,{name,mobile,gender:b.gender,gender_text:b.gender===1?'男':'女',birth_date,age,is_archived:1,created_via:'admin',patient_code:old?.patient_code||`TB-${String(row.id).padStart(5,'0')}`,enroll_date:old?.enroll_date||'',...study,revision:(old?.revision||0)+1,updated_at:timestamp()});
     if(!old){db.patients.push(row);if(target)db.patientExecutionSnapshots.push({user_id:row.id,...snapshotGroupExecution(target)});}
     if(target&&!target.participant_ids.includes(row.id)){assert(!db.projectGroups.some(g=>g.project_id===target.project_id&&g.id!==target.id&&g.participant_ids.includes(row.id)),'患者已在本项目其他分组');target.participant_ids.push(row.id);target.participants||=[];target.participants.push({id:row.id,name,mobile});target.revision++;}
     log(row,admin,old?'编辑档案':'新增档案',reason||'医生建档',before,row);return row;
@@ -117,10 +116,6 @@ export function registerPatientManagement({core,db,assert,find,page,clean,isDate
       treatment_days,version_days:dateSpan(start_date,course_end_date),effective_at,drugs,created_at:createdAt,reason
     };
     db.patientTreatments.push(row);
-    if(start_date===today()){
-      p.medicine_confirmed=false;p.medication_confirmation=null;
-      for(const issue of db.patientConfirmationIssues.filter(item=>item.user_id===p.id&&item.type==='medication'&&item.status==='待处理'))Object.assign(issue,{status:'已处理',resolved_at:createdAt,resolved_by:admin.realname||admin.username});
-    }
     generateExecution({db,patient:p,treatment:row,group,nextId,shiftDate,timestamp});
     refreshPatientStudyState({db,patient:p,date:today()});
     log(p,admin,adjusted?'调整个体方案':'确认个体方案',reason,prior||{},row);
@@ -163,7 +158,7 @@ export function registerPatientManagement({core,db,assert,find,page,clean,isDate
     refreshPatientStudyState({db,patient,date:today()});
     const current=currentTreatmentFor({db,patient,date:today()});
     const upcoming=upcomingTreatmentFor({db,patient,date:today()});
-    return {patient,current_treatment_id:current?.id||null,upcoming_treatment_id:upcoming?.id||null,treatments:db.patientTreatments.filter(r=>r.user_id===patient.id).map(row=>({...row,version_state:row.superseded_before_start?'已替换':treatmentStateFor(row,today())==='current'?'当前生效':treatmentStateFor(row,today())==='pending'?'待生效':'历史版本'})),dispensings:db.dispensings.filter(r=>r.user_id===patient.id),confirmation_issues:db.patientConfirmationIssues.filter(r=>r.user_id===patient.id),history:db.patientHistory.filter(r=>r.user_id===patient.id)};
+    return {patient,current_treatment_id:current?.id||null,upcoming_treatment_id:upcoming?.id||null,treatments:db.patientTreatments.filter(r=>r.user_id===patient.id).map(row=>({...row,version_state:row.superseded_before_start?'已替换':treatmentStateFor(row,today())==='current'?'当前生效':treatmentStateFor(row,today())==='pending'?'待生效':'历史版本'})),dispensings:db.dispensings.filter(r=>r.user_id===patient.id),history:db.patientHistory.filter(r=>r.user_id===patient.id)};
   });
   core('POST','patient/save',savePatient);
   core('POST','patient/treatment',saveTreatment);

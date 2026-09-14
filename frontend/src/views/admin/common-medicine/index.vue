@@ -107,7 +107,7 @@
       destroy-on-close
     >
       <ElAlert
-        title="保存后，患者端“用药方案－我的药品”将展示这份指导。"
+        title="保存后，这份内容可作为用药方案中的标准用药指导。"
         type="info"
         :closable="false"
         show-icon

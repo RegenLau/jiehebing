@@ -20,7 +20,6 @@
         <div><span>性别：</span>{{ patient.gender_text || '-' }}</div>
         <div><span>出生日期：</span>{{ patient.birth_date || '-' }}</div>
         <div><span>年龄：</span>{{ patient.age ?? '-' }}</div>
-        <div><span>患者端登录：</span>{{ patient.login_enabled ? '可登录' : '不可登录' }}</div>
         <div><span>研究项目：</span>{{ patient.project_name || '-' }}</div>
         <div><span>研究分组：</span>{{ patient.group_name || '-' }}</div>
         <div><span>用药方案：</span>{{ patient.medication_scheme_name || '-' }}</div>
@@ -366,7 +365,6 @@
     birth_date: '',
     age: 0,
     is_archived: 0,
-    login_enabled: false,
     created_via: '',
     enroll_date: '',
     status: 0,

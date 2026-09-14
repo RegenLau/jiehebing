@@ -225,6 +225,15 @@ test("captcha, login failures, bearer authentication, and unknown routes are iso
   const missing = await api.raw(P + "does-not-exist");
   assert.equal(missing.status, 404);
   assert.equal((await missing.json()).code, 404);
+  for (const [path, options] of [
+    ["/app/login", { body: { mobile: "13910001019" } }],
+    ["/app/logout", { body: {} }],
+    ["/app/patient/bootstrap", {}],
+  ]) {
+    const removed = await api.raw(path, { auth: "", ...options });
+    assert.equal(removed.status, 404, `${path} is not part of the admin delivery`);
+    assert.equal((await removed.json()).code, 404);
+  }
   assert.equal(
     (await api.json(P + "patient/detail", { query: { user_id: 99999999 } }))
       .code,
@@ -238,1249 +247,7 @@ test("captcha, login failures, bearer authentication, and unknown routes are iso
   );
 });
 
-test("patient mini-program login only accepts mobile numbers added by the admin", async (t) => {
-  const api = await start(t);
-  await api.login();
-  const initial = await api.all(P + "patient/index");
-  assert.ok(
-    initial.every(
-      (patient) => patient.created_via === "admin" && patient.login_enabled,
-    ),
-  );
-  assert.ok(initial.some((patient) => patient.last_login_at));
-  assert.ok(initial.some((patient) => !patient.last_login_at));
-  assert.ok(
-    initial.every(
-      (patient) =>
-        patient.birth_date &&
-        !("hospital_name" in patient) &&
-        !("department_name" in patient) &&
-        !("consent_date" in patient),
-    ),
-  );
-
-  const missing = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: "13910009999" },
-  });
-  assert.equal(missing.code, 407);
-  assert.match(missing.message, /后台患者档案/);
-  assert.equal(
-    (await api.all(P + "patient/index")).length,
-    initial.length,
-    "failed login never creates a patient",
-  );
-
-  const group = (await api.ok(P + "project/detail", { query: { id: 1 } }))
-    .groups[0];
-  const patient = await api.ok(P + "patient/save", {
-    body: {
-      name: "新建登录患者",
-      mobile: "13910009999",
-      gender: 2,
-      birth_date: "1990-06-18",
-      project_id: 1,
-      group_id: group.id,
-      owner_id: 1,
-      enroll_date: TODAY,
-      offline_confirmed: true,
-      consent_confirmed: true,
-    },
-  });
-  assert.equal(patient.login_enabled, true);
-  assert.equal(patient.last_login_at, "");
-  assert.equal(patient.age, 36);
-  assert.ok(
-    !("hospital_name" in patient) &&
-      !("department_name" in patient) &&
-      !("consent_date" in patient),
-  );
-
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: patient.mobile },
-  });
-  assert.equal(login.code, 0);
-  assert.equal(login.data.user.id, patient.id);
-  const loggedInPatient = (await api.all(P + "patient/index")).find(
-    (row) => row.id === patient.id,
-  );
-  assert.match(loggedInPatient.last_login_at, /^\d{4}-\d{2}-\d{2} /);
-  const token = login.data.token.access_token;
-  const archive = await api.json("/app/patient/archive-detail", {
-    auth: token,
-  });
-  assert.equal(archive.code, 0);
-  assert.equal(archive.data.birth_date, patient.birth_date);
-
-  const linkedMobile = "13910009997";
-  const linkedPatient = await api.ok(P + "patient/save", {
-    body: {
-      ...patient,
-      name: "后台改名患者",
-      mobile: linkedMobile,
-      reason: "验证患者端与后台档案联动",
-    },
-  });
-  assert.equal(linkedPatient.id, patient.id);
-
-  const linkedBootstrap = await api.json("/app/patient/bootstrap", {
-    auth: token,
-  });
-  assert.equal(linkedBootstrap.code, 0);
-  assert.equal(linkedBootstrap.data.patient.id, patient.id);
-  assert.equal(linkedBootstrap.data.patient.name, "后台改名患者");
-  assert.equal(linkedBootstrap.data.patient.mobile, linkedMobile);
-
-  const project = await api.ok(P + "project/detail", { query: { id: 1 } });
-  const linkedParticipant = project.groups
-    .flatMap((record) => record.participants)
-    .find((record) => record.id === patient.id);
-  assert.equal(linkedParticipant.name, linkedPatient.name);
-  assert.equal(linkedParticipant.mobile, linkedPatient.mobile);
-
-  assert.equal(
-    (
-      await api.json("/app/login", {
-        auth: "",
-        body: { mobile: patient.mobile },
-      })
-    ).code,
-    407,
-  );
-  const linkedLogin = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: linkedMobile },
-  });
-  assert.equal(linkedLogin.code, 0);
-  assert.equal(linkedLogin.data.user.id, patient.id);
-  await api.json("/app/logout", {
-    auth: linkedLogin.data.token.access_token,
-    body: {},
-  });
-  assert.equal(
-    (await api.json("/app/logout", { auth: token, body: {} })).code,
-    0,
-  );
-  assert.equal(
-    (await api.json("/app/patient/archive-detail", { auth: token })).code,
-    402,
-  );
-});
-
-test("seeded pending-start patient stays confirmed before the medication start date", async (t) => {
-  const api = await start(t);
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: "13910001029" },
-  });
-  assert.equal(login.code, 0);
-  const patientToken = login.data.token.access_token;
-  const bootstrap = await api.json("/app/patient/bootstrap", {
-    auth: patientToken,
-  });
-  assert.equal(bootstrap.code, 0);
-  assert.equal(bootstrap.data.stage, "pending_start");
-  assert.equal(bootstrap.data.patient.identity_confirmed, true);
-  assert.equal(bootstrap.data.patient.medicine_confirmed, true);
-  assert.deepEqual(bootstrap.data.medication_start, {
-    date: "2026-09-09",
-    time: "08:00",
-    start_at: "2026-09-09 08:00",
-  });
-  const blocked = await api.json("/app/patient/home", {
-    auth: patientToken,
-  });
-  assert.notEqual(blocked.code, 0);
-  assert.match(blocked.message, /用药计划尚未开始/);
-});
-
-test("patient in an ended project sees the terminal page and cannot use business APIs", async (t) => {
-  const api = await start(t);
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: "13910001030" },
-  });
-  assert.equal(login.code, 0);
-  const patientToken = login.data.token.access_token;
-  const bootstrap = await api.json("/app/patient/bootstrap", {
-    auth: patientToken,
-  });
-  assert.equal(bootstrap.code, 0);
-  assert.equal(bootstrap.data.stage, "project_ended");
-  assert.deepEqual(bootstrap.data.project_end, {
-    project_id: 4,
-    project_name: "项目结束状态演示",
-    end_date: "2026-09-07",
-    ended_manually: false,
-  });
-  for (const path of [
-    "/app/patient/home",
-    "/app/patient/medication",
-    "/app/patient/tasks",
-    "/app/patient/reports",
-    "/app/patient/support",
-  ]) {
-    const blocked = await api.json(path, { auth: patientToken });
-    assert.equal(blocked.code, 410);
-    assert.match(blocked.message, /项目已结束/);
-  }
-  assert.equal(
-    (await api.json("/app/logout", { auth: patientToken, body: {} })).code,
-    0,
-  );
-});
-
-test("patient task page includes only released tasks from the back-office schedule", async (t) => {
-  const api = await start(t);
-  await api.login();
-  const backofficeTasks = await api.all(P + "followup/index", { user_id: 19 });
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: "13910001019" },
-  });
-  assert.equal(login.code, 0);
-  const patientToken = login.data.token.access_token;
-  const tasks = await api.json("/app/patient/tasks", { auth: patientToken });
-  assert.equal(tasks.code, 0);
-  const comparableTask = (task) => ({
-    id: String(task.id),
-    user_id: task.user_id,
-    patient_name: task.patient_name,
-    name: task.name,
-    type: task.type,
-    date: task.date,
-    due_date: task.due_date,
-    remind_time: task.remind_time || "",
-    status: task.status,
-    source: task.source,
-    overdue: task.overdue,
-  });
-  const backofficeById = new Map(
-    backofficeTasks.map((task) => [String(task.id), task]),
-  );
-  for (const task of tasks.data.tasks)
-    assert.deepEqual(
-      comparableTask(backofficeById.get(String(task.id))),
-      comparableTask(task),
-      "released patient tasks retain the back-office task data",
-    );
-  assert.ok(
-    backofficeTasks.some((task) => task.type === "健康反馈"),
-    "dynamic patient-app tasks are included in the back-office list",
-  );
-  const types = ["提醒", "检查"];
-  const backofficeShowcaseTasks = backofficeTasks.filter(
-    (task) => task.source === "患者端任务类型演示",
-  );
-  for (const type of types) {
-    assert.equal(
-      backofficeShowcaseTasks.filter((task) => task.type === type).length,
-      1,
-      `${type} remains available in the back-office schedule`,
-    );
-  }
-  const patientShowcaseTasks = tasks.data.tasks.filter(
-    (task) => task.source === "患者端任务类型演示",
-  );
-  assert.deepEqual(
-    patientShowcaseTasks.map((task) => task.type).sort(),
-    [...types].sort(),
-    "all showcase tasks scheduled for earlier today are visible",
-  );
-  assert.ok(patientShowcaseTasks.every((task) => task.status === "待完成"));
-  const home = await api.json("/app/patient/home", { auth: patientToken });
-  assert.equal(home.code, 0);
-  assert.ok(
-    home.data.pending_tasks.every(
-      (task) => task.source !== "患者端任务类型演示",
-    ),
-    "showcase tasks do not inflate the home pending-task list",
-  );
-  const taskIds = new Set(tasks.data.tasks.map((task) => String(task.id)));
-  assert.ok(
-    home.data.pending_tasks.every((task) => taskIds.has(String(task.id))),
-    "every home pending task is available on the task page",
-  );
-  assert.ok(
-    tasks.data.tasks.every((task) => backofficeById.has(String(task.id))),
-    "patient tasks come from the back-office schedule",
-  );
-  assert.ok(
-    backofficeTasks.some(
-      (task) => task.date > tasks.data.date && !taskIds.has(String(task.id)),
-    ),
-    "future back-office tasks are not released to the patient early",
-  );
-  assert.equal(
-    taskIds.size,
-    tasks.data.tasks.length,
-    "tasks are not duplicated",
-  );
-  assert.ok(
-    tasks.data.tasks.every(
-      (task) => !["已完成", "已提交", "已取消"].includes(task.status),
-    ),
-  );
-  assert.ok(tasks.data.tasks.some((task) => task.type === "健康反馈"));
-});
-
-test("patient tasks appear when their configured reminder time arrives", async (t) => {
-  let currentNow = "2026-09-08T00:59:59.000Z";
-  const api = await start(t, () => currentNow);
-  await api.login();
-  const backofficeTasks = await api.all(P + "followup/index", { user_id: 19 });
-  const target = backofficeTasks.find(
-    (task) => task.source === "患者端任务类型演示" && task.type === "检查",
-  );
-  const laterReminder = backofficeTasks.find(
-    (task) => task.source === "患者端任务类型演示" && task.type === "提醒",
-  );
-  assert.ok(target);
-  assert.ok(laterReminder);
-  assert.equal(target.date, TODAY);
-  assert.equal(target.remind_time, "09:00");
-  assert.equal(laterReminder.date, TODAY);
-  assert.equal(laterReminder.remind_time, "09:15");
-
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: "13910001019" },
-  });
-  const patientToken = login.data.token.access_token;
-  let patientTasks = await api.json("/app/patient/tasks", {
-    auth: patientToken,
-  });
-  assert.ok(
-    !patientTasks.data.tasks.some(
-      (task) => String(task.id) === String(target.id),
-    ),
-    "the task is hidden before 09:00",
-  );
-  const blocked = await api.json("/app/patient/task-complete", {
-    auth: patientToken,
-    body: { task_id: laterReminder.id, note: "提前完成" },
-  });
-  assert.notEqual(blocked.code, 0);
-  assert.match(blocked.message, /尚未到提醒时间/);
-
-  currentNow = "2026-09-08T01:00:00.000Z";
-  patientTasks = await api.json("/app/patient/tasks", {
-    auth: patientToken,
-  });
-  assert.ok(
-    patientTasks.data.tasks.some(
-      (task) => String(task.id) === String(target.id),
-    ),
-    "the task is released at exactly 09:00",
-  );
-  assert.ok(
-    !patientTasks.data.tasks.some(
-      (task) => String(task.id) === String(laterReminder.id),
-    ),
-    "the 09:15 reminder is still hidden at 09:00",
-  );
-
-  currentNow = "2026-09-08T01:15:00.000Z";
-  patientTasks = await api.json("/app/patient/tasks", {
-    auth: patientToken,
-  });
-  assert.ok(
-    patientTasks.data.tasks.some(
-      (task) => String(task.id) === String(laterReminder.id),
-    ),
-    "the reminder is released at exactly 09:15",
-  );
-});
-
-test("manual project end immediately moves its patient to the terminal page", async (t) => {
-  const api = await start(t);
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: "13910001019" },
-  });
-  assert.equal(login.code, 0);
-  const patientToken = login.data.token.access_token;
-  assert.equal(
-    (await api.json("/app/patient/bootstrap", { auth: patientToken })).data
-      .stage,
-    "home",
-  );
-  await api.login();
-  await api.ok(P + "project/change-status", {
-    body: {
-      id: 2,
-      status: 2,
-      expected_status: 1,
-      reason: "提前结束演示",
-    },
-  });
-  const bootstrap = await api.json("/app/patient/bootstrap", {
-    auth: patientToken,
-  });
-  assert.equal(bootstrap.code, 0);
-  assert.equal(bootstrap.data.stage, "project_ended");
-  assert.equal(bootstrap.data.project_end.ended_manually, true);
-  assert.equal(
-    (await api.json("/app/patient/home", { auth: patientToken })).code,
-    410,
-  );
-});
-
-test("patient self-confirmation follows identity then current treatment and reopens after doctor changes", async (t) => {
-  const api = await start(t);
-  await api.login();
-  const group = (await api.ok(P + "project/detail", { query: { id: 1 } }))
-    .groups[0];
-  const created = await api.ok(P + "patient/onboard", {
-    body: {
-      patient: {
-        name: "患者确认测试",
-        mobile: "13910009998",
-        gender: 2,
-        birth_date: "1990-06-18",
-        project_id: 1,
-        group_id: group.id,
-        owner_id: 1,
-        enroll_date: TODAY,
-        offline_confirmed: true,
-        consent_confirmed: true,
-      },
-      treatment: { start_date: TODAY, reason: "采用分组方案", adjusted: false },
-      dispense: {
-        issued_date: TODAY,
-        reason: "首次发药",
-        items: group.medication.snapshot.drugs.map((drug) => ({
-          drug_id: drug.drug_id,
-          quantity: 30,
-        })),
-      },
-    },
-  });
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: created.patient.mobile },
-  });
-  assert.equal(login.code, 0);
-  const patientToken = login.data.token.access_token;
-  assert.equal(
-    (await api.json("/app/patient/bootstrap", { auth: "invalid-token" })).code,
-    402,
-  );
-
-  let bootstrap = await api.json("/app/patient/bootstrap", {
-    auth: patientToken,
-  });
-  assert.equal(bootstrap.code, 0);
-  assert.equal(bootstrap.data.stage, "identity");
-  assert.equal(bootstrap.data.treatment.drugs[0].quantity, 30);
-  assert.notEqual(
-    (
-      await api.json("/app/patient/confirm-medication", {
-        auth: patientToken,
-        body: {
-          confirmed: true,
-          treatment_id: bootstrap.data.treatment.id,
-        },
-      })
-    ).code,
-    0,
-  );
-  assert.notEqual(
-    (
-      await api.json("/app/patient/confirm-identity", {
-        auth: patientToken,
-        body: { confirmed: false },
-      })
-    ).code,
-    0,
-  );
-
-  bootstrap = await api.json("/app/patient/confirm-identity", {
-    auth: patientToken,
-    body: {
-      confirmed: false,
-      note: "姓名中的字写错了",
-    },
-  });
-  assert.equal(bootstrap.data.stage, "identity_issue");
-  let management = await api.ok(P + "patient/management", {
-    query: { user_id: created.patient.id },
-  });
-  assert.equal(management.confirmation_issues.at(-1).status, "待处理");
-
-  const changed = await api.ok(P + "patient/save", {
-    body: {
-      ...created.patient,
-      name: "患者确认测试已改",
-      reason: "处理患者反馈",
-    },
-  });
-  assert.equal(changed.identity_confirmed, false);
-  bootstrap = await api.json("/app/patient/bootstrap", { auth: patientToken });
-  assert.equal(bootstrap.data.stage, "identity");
-  assert.equal(bootstrap.data.patient.name, "患者确认测试已改");
-  management = await api.ok(P + "patient/management", {
-    query: { user_id: created.patient.id },
-  });
-  assert.equal(management.confirmation_issues.at(-1).status, "已处理");
-
-  bootstrap = await api.json("/app/patient/confirm-identity", {
-    auth: patientToken,
-    body: { confirmed: true },
-  });
-  assert.equal(bootstrap.data.stage, "medication");
-  assert.notEqual(
-    (await api.json("/app/patient/home", { auth: patientToken })).code,
-    0,
-  );
-  const firstTreatmentId = bootstrap.data.treatment.id;
-  assert.notEqual(
-    (
-      await api.json("/app/patient/confirm-medication", {
-        auth: patientToken,
-        body: {
-          confirmed: false,
-          treatment_id: firstTreatmentId,
-        },
-      })
-    ).code,
-    0,
-  );
-  bootstrap = await api.json("/app/patient/confirm-medication", {
-    auth: patientToken,
-    body: {
-      confirmed: false,
-      treatment_id: firstTreatmentId,
-      note: "服药时间与医生线下说明不一致",
-    },
-  });
-  assert.equal(bootstrap.data.stage, "medication_issue");
-
-  await api.ok(P + "patient/treatment", {
-    body: {
-      user_id: created.patient.id,
-      start_date: TODAY,
-      reason: "处理患者用药疑问",
-      adjusted: false,
-    },
-  });
-  bootstrap = await api.json("/app/patient/bootstrap", { auth: patientToken });
-  assert.equal(bootstrap.data.stage, "medication");
-  assert.notEqual(
-    String(bootstrap.data.treatment.id),
-    String(firstTreatmentId),
-  );
-  assert.notEqual(
-    (
-      await api.json("/app/patient/confirm-medication", {
-        auth: patientToken,
-        body: {
-          confirmed: true,
-          treatment_id: firstTreatmentId,
-        },
-      })
-    ).code,
-    0,
-  );
-
-  bootstrap = await api.json("/app/patient/confirm-medication", {
-    auth: patientToken,
-    body: {
-      confirmed: true,
-      treatment_id: bootstrap.data.treatment.id,
-    },
-  });
-  assert.equal(bootstrap.data.stage, "home");
-  const home = await api.json("/app/patient/home", { auth: patientToken });
-  assert.equal(home.code, 0);
-  assert.equal(home.data.patient.id, created.patient.id);
-  assert.equal(home.data.progress.current_day, 1);
-  assert.equal(home.data.progress.total_days, created.treatment.treatment_days);
-  assert.ok(home.data.next_medication.drugs.length > 0);
-  assert.equal(home.data.next_medication.date, TODAY);
-  assert.equal(home.data.medication_today.total_slots, 1);
-  assert.ok(home.data.pending_tasks.some((task) => task.type === "健康反馈"));
-  assert.ok(home.data.pending_tasks.some((task) => task.type === "问卷"));
-  assert.equal(home.data.pending_task_count, home.data.pending_tasks.length);
-  let medication = await api.json("/app/patient/medication", {
-    auth: patientToken,
-  });
-  assert.equal(medication.code, 0);
-  assert.equal(medication.data.slots.length, 1);
-  assert.equal(
-    medication.data.medicines.length,
-    created.treatment.drugs.length,
-  );
-  assert.equal(medication.data.stock.length, created.treatment.drugs.length);
-  assert.ok(
-    medication.data.stock.every((row) => row.estimated === 30 && row.days > 0),
-  );
-  assert.match(medication.data.stock[0].method, /明确未服、暂停或取消不扣减/);
-  let support = await api.json("/app/patient/support", { auth: patientToken });
-  assert.equal(support.code, 0);
-  assert.equal(support.data.reminder.name, group.reminder.snapshot.name);
-  assert.equal(
-    support.data.task_reminders.length,
-    group.surveys.length + group.tasks.length,
-  );
-  assert.ok(
-    support.data.task_reminders.every((item) =>
-      /^([01]\d|2[0-3]):[0-5]\d$/.test(item.remind_time),
-    ),
-  );
-  assert.ok(
-    support.data.contacts.some(
-      (contact) => contact.role === "随访负责人" && contact.phone,
-    ),
-  );
-  assert.ok(support.data.articles.length > 0);
-  assert.equal(support.data.wechat_subscription.available, false);
-  assert.notEqual(
-    (
-      await api.json("/app/patient/reminder-preferences", {
-        auth: patientToken,
-        body: { medication: true, tasks: true },
-      })
-    ).code,
-    0,
-  );
-  support = await api.json("/app/patient/reminder-preferences", {
-    auth: patientToken,
-    body: { medication: true, tasks: false, pickup: true },
-  });
-  assert.equal(support.code, 0);
-  assert.deepEqual(support.data.preferences, {
-    medication: true,
-    tasks: false,
-    pickup: true,
-  });
-  assert.notEqual(
-    (
-      await api.json("/app/patient/medication-slot", {
-        auth: patientToken,
-        body: { id: "2099-01-01|08:00", taken_plan_ids: [] },
-      })
-    ).code,
-    0,
-  );
-  const currentSlot = medication.data.slots[0];
-  assert.ok(currentSlot.drugs.length > 1);
-  medication = await api.json("/app/patient/medication-slot", {
-    auth: patientToken,
-    body: {
-      id: currentSlot.id,
-      taken_plan_ids: [currentSlot.drugs[0].plan_id],
-      note: "其余药品服后不适，本次未服",
-    },
-  });
-  assert.equal(medication.code, 0);
-  assert.equal(medication.data.slots[0].status, "partial");
-  assert.equal(medication.data.slots[0].completed_count, 1);
-  assert.notEqual(
-    (
-      await api.json("/app/patient/medication-slot", {
-        auth: patientToken,
-        body: {
-          id: currentSlot.id,
-          taken_plan_ids: currentSlot.drugs.map((drug) => drug.plan_id),
-          note: "",
-        },
-      })
-    ).code,
-    0,
-    "correction requires a reason",
-  );
-  medication = await api.json("/app/patient/medication-slot", {
-    auth: patientToken,
-    body: {
-      id: currentSlot.id,
-      taken_plan_ids: currentSlot.drugs.map((drug) => drug.plan_id),
-      note: "核对后确认本次均已服用",
-    },
-  });
-  assert.equal(medication.code, 0);
-  assert.equal(medication.data.slots[0].status, "completed");
-  assert.ok(
-    medication.data.slots[0].drugs.every(
-      (drug) => drug.record_history.length === 2,
-    ),
-  );
-  assert.equal(
-    (
-      await api.json("/app/patient/medication-slot", {
-        auth: patientToken,
-        body: {
-          id: currentSlot.id,
-          taken_plan_ids: currentSlot.drugs.map((drug) => drug.plan_id),
-          note: "",
-        },
-      })
-    ).code,
-    0,
-    "repeat check-in is idempotent",
-  );
-  const afterCheckin = await api.json("/app/patient/home", {
-    auth: patientToken,
-  });
-  assert.equal(afterCheckin.data.medication_today.completed_slots, 1);
-  assert.equal(afterCheckin.data.medication_today.pending_slots, 0);
-  assert.equal(afterCheckin.data.next_medication.date, "2026-09-09");
-  let tasks = await api.json("/app/patient/tasks", { auth: patientToken });
-  assert.equal(tasks.code, 0);
-  assert.ok(
-    afterCheckin.data.pending_tasks.some((task) => task.type === "健康反馈"),
-  );
-  assert.ok(tasks.data.tasks.some((task) => task.type === "健康反馈"));
-  const scheduledBloodTest = tasks.data.tasks.find(
-    (task) => task.name === "血常规复查",
-  );
-  assert.equal(scheduledBloodTest.description, "");
-  assert.equal(
-    scheduledBloodTest.requirements,
-    "完成血常规检查后提交检查日期及报告原图",
-  );
-  assert.equal(
-    tasks.data.tasks.filter((task) => task.type === "问卷").length,
-    1,
-    "future rounds of the same survey stay hidden until their reminder time",
-  );
-  const feedback = await api.json("/app/patient/feedback", {
-    auth: patientToken,
-    body: {
-      no_discomfort: false,
-      symptoms: [{ name: "体重下降", change: "首次记录" }],
-      note: "患者记录体重变化",
-    },
-  });
-  assert.equal(feedback.code, 0);
-  assert.equal(feedback.data.feedback.symptoms[0].name, "体重下降");
-  assert.ok(!feedback.data.tasks.some((task) => task.type === "健康反馈"));
-  assert.notEqual(
-    (
-      await api.json("/app/patient/feedback", {
-        auth: patientToken,
-        body: { no_discomfort: true, symptoms: [], note: "" },
-      })
-    ).code,
-    0,
-  );
-  assert.notEqual(
-    (
-      await api.json("/app/patient/adverse-report", {
-        auth: patientToken,
-        body: {
-          occurred_at: `${TODAY} 11:30:00`,
-          symptoms: [],
-          description: "服药后出现不适",
-          severity: 2,
-        },
-      })
-    ).code,
-    0,
-  );
-  assert.notEqual(
-    (
-      await api.json("/app/patient/adverse-report", {
-        auth: patientToken,
-        body: {
-          occurred_at: `${TODAY} 12:30:00`,
-          symptoms: ["恶心呕吐"],
-          description: "发生时间晚于当前时间",
-          severity: 2,
-        },
-      })
-    ).code,
-    0,
-  );
-  const adverseReport = await api.json("/app/patient/adverse-report", {
-    auth: patientToken,
-    body: {
-      occurred_at: `${TODAY} 11:30:00`,
-      symptoms: ["皮疹", "恶心呕吐"],
-      description: "服药后半小时出现皮疹并伴随恶心",
-      severity: 3,
-    },
-  });
-  assert.equal(adverseReport.code, 0);
-  assert.equal(adverseReport.data.processing_status, "待处理");
-  assert.equal(adverseReport.data.severity_text, "重度");
-  const patientAdverseRows = await api.ok(P + "adverse-reaction/index", {
-    query: { user_id: created.patient.id },
-  });
-  assert.ok(
-    patientAdverseRows.list.some((row) => row.id === adverseReport.data.id),
-  );
-  tasks = await api.json("/app/patient/tasks", { auth: patientToken });
-  const surveyTask = tasks.data.tasks.find((task) => task.type === "问卷");
-  const surveyAnswers = surveyTask.form.questions.map((question) => ({
-    question_id: question.id,
-    option_ids:
-      question.type === "TEXT"
-        ? []
-        : [
-            question.options[
-              question.type === "CHECKBOX" ? question.options.length - 1 : 0
-            ].id,
-          ],
-    text_value: question.type === "TEXT" ? "按计划继续随访" : "",
-    extra_inputs: {},
-  }));
-  const surveySubmit = await api.json("/app/patient/survey-submit", {
-    auth: patientToken,
-    body: { task_id: surveyTask.id, answers: surveyAnswers },
-  });
-  assert.equal(surveySubmit.code, 0);
-  assert.ok(
-    !surveySubmit.data.tasks.some(
-      (task) => task.type === "问卷" && task.date !== surveyTask.date,
-    ),
-    "the next survey round stays hidden until its own reminder time",
-  );
-  assert.notEqual(
-    (
-      await api.json("/app/patient/survey-submit", {
-        auth: patientToken,
-        body: { task_id: surveyTask.id, answers: surveyAnswers },
-      })
-    ).code,
-    0,
-  );
-  assert.ok(
-    !surveySubmit.data.tasks.some(
-      (task) => task.name === "取药提醒" && task.type === "提醒",
-    ),
-    "pickup is no longer generated from a fixed group schedule",
-  );
-  const inspectionTask = surveySubmit.data.tasks.find(
-    (task) => task.type === "检查",
-  );
-  const uploadForm = new FormData();
-  uploadForm.append(
-    "file",
-    new Blob(["mock report image"], { type: "image/png" }),
-    "blood-routine.png",
-  );
-  const uploadResponse = await api.raw("/app/patient/file-upload", {
-    auth: patientToken,
-    body: uploadForm,
-    method: "POST",
-  });
-  const upload = await uploadResponse.json();
-  assert.equal(upload.code, 0);
-  let report = await api.json("/app/patient/report-submit", {
-    auth: patientToken,
-    body: {
-      task_id: inspectionTask.id,
-      type: "血常规报告",
-      exam_date: TODAY,
-      files: [upload.data.url],
-      note: "患者首次上传",
-    },
-  });
-  assert.equal(report.code, 0);
-  assert.equal(report.data.status, "待患者确认");
-  assert.equal(report.data.versions.length, 1);
-  assert.equal(report.data.ocr_result.status, "completed");
-  assert.ok(report.data.ocr_result.metrics.length >= 8);
-  assert.deepEqual(
-    report.data.ocr_result.sections.map((section) => section.key),
-    ["report", "patient", "sample"],
-  );
-  assert.equal(
-    (
-      await api.ok(P + "followup/detail", {
-        query: { id: report.data.task_id },
-      })
-    ).status,
-    "待完成",
-  );
-  report = await api.json("/app/patient/report-confirm", {
-    auth: patientToken,
-    body: {
-      id: report.data.id,
-      type: "血常规报告",
-      exam_date: TODAY,
-      metrics: [
-        {
-          name: "白细胞计数",
-          value: "5.8",
-          unit: "10^9/L",
-          reference: "3.5-9.5",
-          flag: "偏高",
-        },
-      ],
-      note: "患者核对并补充指标",
-    },
-  });
-  assert.equal(report.data.status, "待核对");
-  assert.equal(report.data.ocr_status, "患者已核对");
-  assert.equal(report.data.metrics[0].unit, "10^9/L");
-  assert.equal(report.data.metrics[0].reference, "3.5-9.5");
-  assert.equal(report.data.metrics[0].flag, "偏高");
-  assert.equal(
-    (
-      await api.ok(P + "followup/detail", {
-        query: { id: report.data.task_id },
-      })
-    ).status,
-    "已提交",
-  );
-  const reviewed = await api.ok(P + "report/review", {
-    body: {
-      id: report.data.id,
-      status: "需补充",
-      reason: "请补充完整页面",
-      supplement_requirements: "请补充报告完整页面",
-      metrics: report.data.metrics,
-    },
-  });
-  assert.equal(reviewed.status, "需补充");
-  report = await api.json("/app/patient/report-submit", {
-    auth: patientToken,
-    body: {
-      report_id: report.data.id,
-      files: [upload.data.url],
-      note: "补充完整页面",
-    },
-  });
-  assert.equal(report.data.status, "待患者确认");
-  assert.equal(report.data.versions.length, 2);
-  report = await api.json("/app/patient/report-confirm", {
-    auth: patientToken,
-    body: {
-      id: report.data.id,
-      type: report.data.type,
-      exam_date: report.data.exam_date,
-      metrics: report.data.metrics,
-      note: "确认补充资料",
-    },
-  });
-  const finalReport = await api.ok(P + "report/review", {
-    body: {
-      id: report.data.id,
-      status: "已核对",
-      reason: "资料完整，已完成核对",
-      metrics: report.data.metrics,
-    },
-  });
-  assert.equal(finalReport.status, "已核对");
-  assert.equal(
-    (
-      await api.ok(P + "followup/detail", {
-        query: { id: report.data.task_id },
-      })
-    ).status,
-    "已完成",
-  );
-  const ownReports = await api.json("/app/patient/reports", {
-    auth: patientToken,
-  });
-  assert.equal(ownReports.code, 0);
-  assert.equal(ownReports.data.reports.length, 1);
-  management = await api.ok(P + "patient/management", {
-    query: { user_id: created.patient.id },
-  });
-  assert.ok(
-    management.history.some(
-      (row) => row.operator === "患者本人" && row.action === "患者确认用药安排",
-    ),
-  );
-  assert.ok(
-    management.history.some(
-      (row) => row.operator === "患者本人" && row.action === "患者更正服药记录",
-    ),
-  );
-  assert.ok(
-    management.history.some(
-      (row) =>
-        row.operator === "患者本人" && row.action === "患者提交每日健康反馈",
-    ),
-  );
-  assert.ok(
-    management.history.some(
-      (row) => row.operator === "患者本人" && row.action === "患者提交随访问卷",
-    ),
-  );
-  assert.ok(
-    management.history.some(
-      (row) => row.operator === "患者本人" && row.action === "患者上报不良反应",
-    ),
-  );
-
-  await api.ok(P + "patient/treatment", {
-    body: {
-      user_id: created.patient.id,
-      start_date: TODAY,
-      reason: "医生再次调整前确认",
-      adjusted: false,
-    },
-  });
-  assert.equal(
-    (await api.json("/app/patient/bootstrap", { auth: patientToken })).data
-      .stage,
-    "medication",
-  );
-});
-
-test("home pickup reminder dates follow actual dispensing, dose frequency, and stock corrections", async (t) => {
-  let currentNow = NOW;
-  const api = await start(t, () => currentNow);
-  await api.login();
-  let group = (await api.ok(P + "project/detail", { query: { id: 1 } }))
-    .groups[0];
-  const pickupRequirements = "请携带既往取药凭证，并先联系随访医院确认时间。";
-  const pickupRemindTime = "14:20";
-  group = await api.ok(P + "project/group-save", {
-    body: {
-      ...group,
-      pickup_requirements: pickupRequirements,
-      pickup_remind_time: pickupRemindTime,
-    },
-  });
-  const patient = await api.ok(P + "patient/save", {
-    body: {
-      name: "动态取药提醒测试",
-      mobile: "13910009997",
-      gender: 1,
-      birth_date: "1985-04-16",
-      project_id: 1,
-      group_id: group.id,
-      owner_id: 1,
-      enroll_date: TODAY,
-      offline_confirmed: true,
-      consent_confirmed: true,
-    },
-  });
-  const treatment = await api.ok(P + "patient/treatment", {
-    body: {
-      user_id: patient.id,
-      start_date: TODAY,
-      reason: "采用分组方案",
-      adjusted: false,
-    },
-  });
-  const onboarded = { patient, treatment };
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: onboarded.patient.mobile },
-  });
-  let patientToken = login.data.token.access_token;
-  await api.json("/app/patient/confirm-identity", {
-    auth: patientToken,
-    body: { confirmed: true },
-  });
-  const bootstrap = await api.json("/app/patient/bootstrap", {
-    auth: patientToken,
-  });
-  await api.json("/app/patient/confirm-medication", {
-    auth: patientToken,
-    body: { confirmed: true, treatment_id: bootstrap.data.treatment.id },
-  });
-
-  let stock = await api.ok(P + "patient/stock", {
-    query: { user_id: onboarded.patient.id },
-  });
-  assert.ok(stock.every((row) => !row.calculation_ready));
-  let home = await api.json("/app/patient/home", { auth: patientToken });
-  assert.ok(
-    !home.data.pending_tasks.some(
-      (task) => task.type === "提醒" && task.source === "系统余药计算",
-    ),
-    "no pickup reminder is calculated before an actual dispensing or stock count",
-  );
-
-  await api.ok(P + "patient/dispense", {
-    body: {
-      user_id: onboarded.patient.id,
-      issued_date: TODAY,
-      reason: "首次实际发药",
-      items: onboarded.treatment.drugs.map((drug, index) => ({
-        drug_id: drug.drug_id,
-        quantity: index === 0 ? 8 : 20,
-      })),
-    },
-  });
-  stock = await api.ok(P + "patient/stock", {
-    query: { user_id: onboarded.patient.id },
-  });
-  assert.ok(stock.every((row) => row.calculation_ready));
-  assert.equal(stock[0].estimated, 8);
-  assert.equal(stock[0].daily_quantity, 1);
-  assert.equal(stock[0].days, 8);
-  assert.equal(stock[0].reminder_date, "2026-09-11");
-  assert.equal(stock[0].expected_shortage_date, "2026-09-16");
-
-  home = await api.json("/app/patient/home", { auth: patientToken });
-  let pickup = home.data.pending_tasks.find(
-    (task) => task.type === "提醒" && task.source === "系统余药计算",
-  );
-  assert.equal(pickup, undefined, "future pickup reminders stay hidden");
-
-  currentNow = "2026-09-11T06:19:59.000Z";
-  patientToken = (
-    await api.json("/app/login", {
-      auth: "",
-      body: { mobile: onboarded.patient.mobile },
-    })
-  ).data.token.access_token;
-  home = await api.json("/app/patient/home", { auth: patientToken });
-  pickup = home.data.pending_tasks.find(
-    (task) => task.type === "提醒" && task.source === "系统余药计算",
-  );
-  assert.equal(pickup, undefined, "pickup reminder stays hidden before 14:20");
-
-  currentNow = "2026-09-11T06:20:00.000Z";
-  home = await api.json("/app/patient/home", { auth: patientToken });
-  pickup = home.data.pending_tasks.find(
-    (task) => task.type === "提醒" && task.source === "系统余药计算",
-  );
-  assert.equal(pickup.date, stock[0].reminder_date);
-  assert.equal(pickup.due_date, stock[0].expected_shortage_date);
-  assert.equal(pickup.pickup.drug_id, stock[0].drug_id);
-  assert.equal(pickup.pickup.advance_days, group.medication.advance_days);
-  assert.equal(pickup.requirements, pickupRequirements);
-  assert.equal(pickup.remind_time, pickupRemindTime);
-  assert.equal(pickup.pickup.remind_time, pickupRemindTime);
-  assert.notEqual(
-    (
-      await api.json("/app/patient/task-complete", {
-        auth: patientToken,
-        body: { task_id: pickup.id },
-      })
-    ).code,
-    0,
-    "a calculated reminder cannot be completed as an actual dispensing",
-  );
-
-  currentNow = "2026-09-09T04:00:00.000Z";
-  await api.login();
-  patientToken = (
-    await api.json("/app/login", {
-      auth: "",
-      body: { mobile: onboarded.patient.mobile },
-    })
-  ).data.token.access_token;
-  await api.ok(P + "patient/stock-adjust", {
-    body: {
-      user_id: onboarded.patient.id,
-      drug_id: stock[0].drug_id,
-      date: TODAY,
-      quantity: 3,
-      reason: "患者复核实际余药",
-    },
-  });
-  stock = await api.ok(P + "patient/stock", {
-    query: { user_id: onboarded.patient.id },
-  });
-  assert.equal(stock[0].estimated, 3);
-  assert.equal(stock[0].reminder_date, "2026-09-07");
-  assert.equal(stock[0].expected_shortage_date, "2026-09-12");
-  home = await api.json("/app/patient/home", { auth: patientToken });
-  pickup = home.data.pending_tasks.find(
-    (task) => task.type === "提醒" && task.source === "系统余药计算",
-  );
-  assert.equal(pickup.date, "2026-09-07");
-
-  await api.ok(P + "patient/dispense", {
-    body: {
-      user_id: onboarded.patient.id,
-      issued_date: "2026-09-09",
-      reason: "再次实际发药",
-      items: onboarded.treatment.drugs.map((drug) => ({
-        drug_id: drug.drug_id,
-        quantity: 30,
-      })),
-    },
-  });
-  home = await api.json("/app/patient/home", { auth: patientToken });
-  assert.ok(
-    !home.data.pending_tasks.some(
-      (task) => task.type === "提醒" && task.source === "系统余药计算",
-    ),
-    "a new dispensing moves the reminder outside the visible window",
-  );
-});
-
-test("confirmed patient enters on the medication start date without waiting for its first time", async (t) => {
-  let currentNow = "2026-09-08T15:59:59.000Z";
-  const api = await start(t, () => currentNow);
-  await api.login();
-  const group = (await api.ok(P + "project/detail", { query: { id: 1 } }))
-    .groups[0];
-  const startDate = "2026-09-09";
-  const created = await api.ok(P + "patient/onboard", {
-    body: {
-      patient: {
-        name: "待开始服药患者",
-        mobile: "13910009997",
-        gender: 1,
-        birth_date: "1988-05-12",
-        project_id: 1,
-        group_id: group.id,
-        owner_id: 1,
-        enroll_date: TODAY,
-        offline_confirmed: true,
-        consent_confirmed: true,
-      },
-      treatment: {
-        start_date: startDate,
-        reason: "次日开始服药",
-        adjusted: false,
-      },
-      dispense: {
-        issued_date: TODAY,
-        reason: "首次发药",
-        items: group.medication.snapshot.drugs.map((drug) => ({
-          drug_id: drug.drug_id,
-          quantity: 30,
-        })),
-      },
-    },
-  });
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: created.patient.mobile },
-  });
-  const patientToken = login.data.token.access_token;
-  let bootstrap = await api.json("/app/patient/confirm-identity", {
-    auth: patientToken,
-    body: { confirmed: true },
-  });
-  bootstrap = await api.json("/app/patient/confirm-medication", {
-    auth: patientToken,
-    body: {
-      confirmed: true,
-      treatment_id: bootstrap.data.treatment.id,
-    },
-  });
-
-  assert.equal(bootstrap.data.stage, "pending_start");
-  assert.deepEqual(bootstrap.data.medication_start, {
-    date: startDate,
-    time: "08:00",
-    start_at: `${startDate} 08:00`,
-  });
-  for (const path of [
-    "/app/patient/home",
-    "/app/patient/medication",
-    "/app/patient/tasks",
-  ]) {
-    const blocked = await api.json(path, { auth: patientToken });
-    assert.notEqual(blocked.code, 0);
-    assert.match(blocked.message, /用药计划尚未开始/);
-  }
-
-  currentNow = "2026-09-08T16:00:00.000Z";
-  bootstrap = await api.json("/app/patient/bootstrap", { auth: patientToken });
-  assert.equal(bootstrap.data.stage, "home");
-  assert.equal(
-    (await api.json("/app/patient/home", { auth: patientToken })).code,
-    0,
-  );
-});
-
-test("patient pages and medication records remain consistent with each assigned group scheme", async (t) => {
+test("admin patient views and medication records remain consistent with each assigned group scheme", async (t) => {
   const api = await start(t);
   await api.login();
   const patients = await api.all(P + "patient/index");
@@ -1651,7 +418,7 @@ test("medication and reaction filters include full history and precise overdue w
   }
 });
 
-test("patient medication, reports and survey submissions follow a consistent enrollment timeline", async (t) => {
+test("admin medication, report and survey records follow a consistent enrollment timeline", async (t) => {
   const api = await start(t);
   await api.login();
   const patients = await api.all(P + "patient/index");
@@ -1773,7 +540,7 @@ test("patient medication, reports and survey submissions follow a consistent enr
   );
 });
 
-test("dashboard metrics, trends, resources and todos can be recomputed from public detail APIs", async (t) => {
+test("dashboard metrics, trends, resources and todos can be recomputed from admin detail APIs", async (t) => {
   const api = await start(t);
   await api.login();
   const patients = await api.all(P + "patient/index");
@@ -1814,6 +581,13 @@ test("dashboard metrics, trends, resources and todos can be recomputed from publ
     assert.deepEqual(view.archive, {
       archived,
       unarchived: patients.length - archived,
+    });
+    const ended = patients.filter((row) =>
+      ["已完成", "提前退出", "失访"].includes(row.study_state),
+    ).length;
+    assert.deepEqual(view.study, {
+      active: patients.length - ended,
+      ended,
     });
     assert.deepEqual(view.resources, resourceCounts);
     const pendingAdverse = await api.all(P + "adverse-reaction/index", {
@@ -2132,40 +906,28 @@ test("health article edits, medicine status and cache clear persist within the s
   );
 });
 
-test("common medicine guidance is centrally saved and immediately served to patients", async (t) => {
+test("common medicine guidance is centrally saved and available in patient management", async (t) => {
   const api = await start(t);
   await api.login();
-  const patientLogin = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: "13910001019" },
-  });
-  assert.equal(patientLogin.code, 0);
-  const patientToken = patientLogin.data.token.access_token;
-  const before = await api.json("/app/patient/medication", {
-    auth: patientToken,
-  });
-  assert.equal(before.code, 0);
-  const target = before.data.medicines[0];
+  const before = await api.all(P + "patient/medicine-list", { user_id: 19 });
+  const target = before[0];
   assert.ok(target);
   const guidance =
     "<p><strong>服药提醒</strong></p><ul><li>请按医护人员确认的方案用药。</li></ul>";
   const saved = await api.ok(P + "common-medicine/save-guidance", {
-    body: { id: target.drug_id, medication_guidance: guidance },
+    body: { id: target.common_medicine_id, medication_guidance: guidance },
   });
   assert.equal(saved.medication_guidance, guidance);
   const listed = await api.all(P + "common-medicine/index", {
     keyword: saved.common_name,
   });
   assert.equal(
-    listed.find((row) => row.id === target.drug_id)?.medication_guidance,
+    listed.find((row) => row.id === target.common_medicine_id)?.medication_guidance,
     guidance,
   );
-  const after = await api.json("/app/patient/medication", {
-    auth: patientToken,
-  });
-  assert.equal(after.code, 0);
+  const after = await api.all(P + "patient/medicine-list", { user_id: 19 });
   assert.equal(
-    after.data.medicines.find((row) => row.drug_id === target.drug_id)
+    after.find((row) => row.common_medicine_id === target.common_medicine_id)
       ?.medication_guidance,
     guidance,
   );
@@ -3768,7 +2530,6 @@ test("patient registration, treatment and dispensing preserve independent record
   assert.equal(p.study_state, "待启用");
   assert.equal(p.birth_date, body.birth_date);
   assert.equal(p.age, 40);
-  assert.equal(p.login_enabled, true);
   assert.ok(
     !("hospital_name" in p) &&
       !("department_name" in p) &&
@@ -3849,20 +2610,10 @@ test("patient registration, treatment and dispensing preserve independent record
     source.drugs.map((d) => d.drug_id),
   );
   assert.equal(treatment.treatment_days, 30);
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: p.mobile },
+  const activated = await api.ok(P + "patient/detail", {
+    query: { user_id: p.id },
   });
-  const patientToken = login.data.token.access_token;
-  await api.json("/app/patient/confirm-identity", {
-    auth: patientToken,
-    body: { confirmed: true },
-  });
-  const activated = await api.json("/app/patient/confirm-medication", {
-    auth: patientToken,
-    body: { confirmed: true, treatment_id: treatment.id },
-  });
-  assert.equal(activated.data.patient.study_state, "治疗中");
+  assert.equal(activated.study_state, "治疗中");
   const disp = await api.ok(P + "patient/dispense", {
     body: {
       user_id: p.id,
@@ -4060,36 +2811,20 @@ test("treatment versions preserve executed facts, current selection and course e
       },
     },
   });
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: created.patient.mobile },
-  });
-  const patientToken = login.data.token.access_token;
-  let bootstrap = await api.json("/app/patient/confirm-identity", {
-    auth: patientToken,
-    body: { confirmed: true },
-  });
-  bootstrap = await api.json("/app/patient/confirm-medication", {
-    auth: patientToken,
-    body: { confirmed: true, treatment_id: bootstrap.data.treatment.id },
-  });
-  assert.equal(bootstrap.data.stage, "home");
-
   const todayPlans = await api.all(P + "medication-plan/index", {
     scope: "today",
     user_id: created.patient.id,
   });
   const morningTime = todayPlans.map((row) => row.plan_time).sort()[0];
-  const recorded = await api.json("/app/patient/medication-slot", {
-    auth: patientToken,
-    body: {
-      id: `${TODAY}|${morningTime}`,
-      taken_plan_ids: todayPlans
-        .filter((row) => row.plan_time === morningTime)
-        .map((row) => row.id),
-    },
-  });
-  assert.equal(recorded.code, 0);
+  await Promise.all(
+    todayPlans
+      .filter((row) => row.plan_time === morningTime)
+      .map((row) =>
+        api.ok(P + "medication-plan/record", {
+          body: { id: row.id, status: 1, reason: "工作人员根据随访结果登记" },
+        }),
+      ),
+  );
   const adjustedDrugs = created.treatment.drugs.map((drug, index) =>
     index ? drug : { ...drug, dose: Number(drug.dose) + 0.5 },
   );
@@ -4123,10 +2858,6 @@ test("treatment versions preserve executed facts, current selection and course e
     "the new same-day version must not recreate a past completed slot",
   );
 
-  bootstrap = await api.json("/app/patient/confirm-medication", {
-    auth: patientToken,
-    body: { confirmed: true, treatment_id: adjusted.id },
-  });
   const future = await api.ok(P + "patient/treatment", {
     body: {
       user_id: created.patient.id,
@@ -4140,9 +2871,6 @@ test("treatment versions preserve executed facts, current selection and course e
     },
   });
   assert.equal(future.end_date, created.treatment.end_date);
-  bootstrap = await api.json("/app/patient/bootstrap", { auth: patientToken });
-  assert.equal(bootstrap.data.stage, "home");
-  assert.equal(bootstrap.data.treatment.id, adjusted.id);
   const management = await api.ok(P + "patient/management", {
     query: { user_id: created.patient.id },
   });
@@ -4206,22 +2934,10 @@ test("generated execution follows group dates and retains safety tasks when medi
     drugs: source.drugs,
   };
   await api.ok(P + "patient/treatment", { body });
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: p.mobile },
-  });
-  const patientToken = login.data.token.access_token;
-  await api.json("/app/patient/confirm-identity", {
-    auth: patientToken,
-    body: { confirmed: true },
-  });
   const treatment = await api.ok(P + "patient/management", {
     query: { user_id: p.id },
   });
-  await api.json("/app/patient/confirm-medication", {
-    auth: patientToken,
-    body: { confirmed: true, treatment_id: treatment.current_treatment_id },
-  });
+  assert.ok(treatment.current_treatment_id);
   const plans = await api.all(P + "medication-plan/index", {
     scope: "all",
     user_id: p.id,
@@ -4518,7 +3234,7 @@ test("report supplementation preserves originals and completes only its matching
   );
 });
 
-test("an expired report task reappears for the patient when the report needs supplementation", async (t) => {
+test("an expired report task returns to the admin follow-up list when supplementation is required", async (t) => {
   const api = await start(t);
   await api.login();
   const task = await api.ok(P + "followup/create", {
@@ -4549,17 +3265,9 @@ test("an expired report task reappears for the patient when the report needs sup
       files: [uploaded.url],
     },
   });
-  const login = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: "13910001019" },
-  });
-  assert.equal(login.code, 0);
-  const patientToken = login.data.token.access_token;
-  let patientTasks = await api.json("/app/patient/tasks", {
-    auth: patientToken,
-  });
+  let patientTasks = await api.all(P + "followup/index", { user_id: 19 });
   assert.ok(
-    !patientTasks.data.tasks.some((row) => row.id === task.id),
+    !patientTasks.some((row) => row.id === task.id && row.status === "待完成"),
     "a submitted report task is no longer pending",
   );
 
@@ -4572,20 +3280,11 @@ test("an expired report task reappears for the patient when the report needs sup
       metrics: [],
     },
   });
-  patientTasks = await api.json("/app/patient/tasks", { auth: patientToken });
-  const returnedTask = patientTasks.data.tasks.find(
-    (row) => row.id === task.id,
-  );
+  patientTasks = await api.all(P + "followup/index", { user_id: 19 });
+  const returnedTask = patientTasks.find((row) => row.id === task.id);
   assert.equal(returnedTask?.status, "需补充");
   assert.equal(returnedTask?.overdue, true);
-  assert.ok(returnedTask?.due_date < patientTasks.data.date);
-  const home = await api.json("/app/patient/home", { auth: patientToken });
-  assert.ok(
-    home.data.pending_tasks.some(
-      (row) => row.id === task.id && row.status === "需补充",
-    ),
-    "the expired task returns to the patient home pending list",
-  );
+  assert.ok(returnedTask?.due_date < TODAY);
 });
 
 test("report list starts with representative mock records for every research group", async (t) => {
@@ -5027,158 +3726,6 @@ test("enrolled patient execution stays on its snapshot while later patients use 
   ).list.find((row) => row.binding_kind === "tasks");
   assert.equal(firstTask.date, "2026-09-09");
   assert.equal(secondTask.date, "2026-09-13");
-});
-
-test("two survey rounds keep independent answers in patient detail and export", async (t) => {
-  let currentNow = "2026-09-08T04:00:00.000Z";
-  const api = await start(t, () => currentNow);
-  await api.login();
-  const catalog = await api.ok(P + "project/catalog");
-  const scheme = catalog.medication_schemes.find((row) => row.status === 1);
-  const survey = catalog.surveys.find((row) => row.status === 1);
-  const createdGroup = await api.ok(P + "project/group-create", {
-    body: { project_id: 1, name: "多轮问卷验证组" },
-  });
-  const group = await api.ok(P + "project/group-save", {
-    body: {
-      ...createdGroup,
-      medication: {
-        id: scheme.id,
-        treatment_days: 10,
-        pickup_days: 10,
-        advance_days: 2,
-        quantities: scheme.drugs.map((drug) => ({
-          drug_id: drug.drug_id,
-          quantity: 10,
-        })),
-      },
-      reminder: null,
-      surveys: [
-        {
-          id: survey.id,
-          anchor: "treatment",
-          date: "",
-          offset_days: 0,
-          interval_days: 1,
-          deadline_days: 1,
-          remind_time: "00:00",
-        },
-      ],
-      tasks: [],
-      participant_ids: [],
-    },
-  });
-  const requestBody = {
-    client_request_id: "survey-rounds-onboard",
-    patient: {
-      name: "多轮问卷患者",
-      mobile: "13920000003",
-      gender: 2,
-      birth_date: "1990-04-18",
-      project_id: 1,
-      group_id: group.id,
-      owner_id: 1,
-      enroll_date: TODAY,
-      offline_confirmed: true,
-      consent_confirmed: true,
-    },
-    treatment: {
-      start_date: TODAY,
-      reason: "确认分组方案",
-      adjusted: false,
-    },
-    dispense: {
-      issued_date: TODAY,
-      reason: "首次发药",
-      client_request_id: "survey-rounds-onboard",
-      items: scheme.drugs.map((drug) => ({
-        drug_id: drug.drug_id,
-        quantity: 10,
-      })),
-    },
-  };
-  const created = await api.ok(P + "patient/onboard", { body: requestBody });
-  const patientLogin = await api.json("/app/login", {
-    auth: "",
-    body: { mobile: created.patient.mobile },
-  });
-  let patientToken = patientLogin.data.token.access_token;
-  const identityConfirmation = await api.json("/app/patient/confirm-identity", {
-    auth: patientToken,
-    body: { confirmed: true },
-  });
-  assert.equal(identityConfirmation.code, 0);
-  const medicationConfirmation = await api.json("/app/patient/confirm-medication", {
-    auth: patientToken,
-    body: { confirmed: true, treatment_id: created.treatment.id },
-  });
-  assert.equal(medicationConfirmation.code, 0);
-  const submitRound = async (expectedDate, textValue) => {
-    const taskResponse = await api.json("/app/patient/tasks", {
-      auth: patientToken,
-    });
-    assert.equal(taskResponse.code, 0, taskResponse.message);
-    const task = taskResponse.data.tasks.find(
-      (row) => row.type === "问卷" && row.date === expectedDate,
-    );
-    assert.ok(task);
-    const answers = task.form.questions.map((question) => ({
-      question_id: question.id,
-      option_ids:
-        question.type === "TEXT" ? [] : [question.options[0].id],
-      text_value: question.type === "TEXT" ? textValue : "",
-      extra_inputs: {},
-    }));
-    const submitted = await api.json("/app/patient/survey-submit", {
-      auth: patientToken,
-      body: { task_id: task.id, answers },
-    });
-    assert.equal(submitted.code, 0);
-    return task;
-  };
-  const firstTask = await submitRound(TODAY, "第一轮回答");
-  currentNow = "2026-09-09T04:00:00.000Z";
-  await api.login();
-  patientToken = (
-    await api.json("/app/login", {
-      auth: "",
-      body: { mobile: created.patient.mobile },
-    })
-  ).data.token.access_token;
-  const secondTask = await submitRound("2026-09-09", "第二轮回答");
-  assert.notEqual(String(firstTask.id), String(secondTask.id));
-
-  const statuses = (
-    await api.ok(P + "patient/survey-status", {
-      query: { user_id: created.patient.id },
-    })
-  ).filter((row) => row.template_id === survey.id && row.answered);
-  assert.equal(statuses.length, 2);
-  assert.equal(new Set(statuses.map((row) => row.answer_id)).size, 2);
-  const details = await Promise.all(
-    statuses.map((row) =>
-      api.ok(P + "patient/survey-answer-detail", {
-        query: { answer_id: row.answer_id },
-      }),
-    ),
-  );
-  const detailText = details.flatMap((detail) =>
-    detail.questions.map((question) => question.text_value),
-  );
-  assert.ok(detailText.includes("第一轮回答"));
-  assert.ok(detailText.includes("第二轮回答"));
-  const exportRows = workbookRows(
-    Buffer.from(
-      await (
-        await api.raw(P + "survey/export", {
-          query: { id: survey.id, group_id: group.id },
-        })
-      ).arrayBuffer(),
-    ),
-  );
-  assert.equal(exportRows.length, 3);
-  assert.ok(exportRows.flat().includes("第一轮回答"));
-  assert.ok(exportRows.flat().includes("第二轮回答"));
 });
 
 test("report review preserves OCR originals while allowing deletions and corrected conclusions", async (t) => {

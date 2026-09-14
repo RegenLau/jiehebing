@@ -73,16 +73,16 @@
       <div class="right-column">
         <article class="panel archive-panel">
           <div class="panel-title"
-            ><h2><Icon icon="ri:login-circle-line" />登录状态</h2></div
+            ><h2><Icon icon="ri:user-follow-line" />研究状态</h2></div
           >
           <div class="archive-content">
-            <div ref="archiveChartRef" class="chart archive-chart" aria-label="患者登录状态图" />
+            <div ref="archiveChartRef" class="chart archive-chart" aria-label="患者研究状态图" />
             <div class="legend-list">
               <p
-                ><i class="blue" />可登录 <b>{{ archiveText.enabled }}</b></p
+                ><i class="blue" />在研 <b>{{ studyText.active }}</b></p
               >
               <p
-                ><i class="gray" />未开通登录 <b>{{ archiveText.disabled }}</b></p
+                ><i class="gray" />已结束 <b>{{ studyText.ended }}</b></p
               >
             </div>
           </div>
@@ -171,7 +171,7 @@
       completed_total: 0,
       new_adverse_total: 0
     },
-    login: { enabled: 0, disabled: 0 },
+    study: { active: 0, ended: 0 },
     resources: { survey_total: 0, article_total: 0, medicine_total: 0 },
     todos: { overdue_total: 0, pending_review_total: 0, pending_report_total: 0 },
     trend: {
@@ -190,8 +190,8 @@
   )
   const metrics = computed(() => {
     const { metrics: data } = dashboardData.value
-    const loginRate = data.patient_total
-      ? Number(((dashboardData.value.login.enabled / data.patient_total) * 100).toFixed(1))
+    const activeRate = data.patient_total
+      ? Number(((dashboardData.value.study.active / data.patient_total) * 100).toFixed(1))
       : 0
     return [
       {
@@ -202,9 +202,9 @@
         tone: 'blue'
       },
       {
-        title: '登录开通率',
-        value: `${loginRate}%`,
-        detail: `${dashboardData.value.login.enabled} / ${data.patient_total} 人`,
+        title: '在研患者占比',
+        value: `${activeRate}%`,
+        detail: `${dashboardData.value.study.active} / ${data.patient_total} 人`,
         icon: DocumentChecked,
         tone: 'green'
       },
@@ -257,12 +257,12 @@
       path: `/reports/index?status=${encodeURIComponent('待核对')}${projectId.value ? `&project_id=${projectId.value}` : ''}${groupId.value ? `&group_id=${groupId.value}` : ''}`
     }
   ])
-  const archiveText = computed(() => {
-    const { enabled, disabled } = dashboardData.value.login
-    const total = enabled + disabled
+  const studyText = computed(() => {
+    const { active, ended } = dashboardData.value.study
+    const total = active + ended
     return {
-      enabled: `${enabled} (${total ? ((enabled / total) * 100).toFixed(1) : '0.0'}%)`,
-      disabled: `${disabled} (${total ? ((disabled / total) * 100).toFixed(1) : '0.0'}%)`
+      active: `${active} (${total ? ((active / total) * 100).toFixed(1) : '0.0'}%)`,
+      ended: `${ended} (${total ? ((ended / total) * 100).toFixed(1) : '0.0'}%)`
     }
   })
 
@@ -368,7 +368,7 @@
           label: {
             show: true,
             position: 'center',
-            formatter: `{count|${dashboardData.value.login.enabled + dashboardData.value.login.disabled}}\n{name|总数}`,
+            formatter: `{count|${dashboardData.value.study.active + dashboardData.value.study.ended}}\n{name|总数}`,
             rich: {
               count: { fontSize: 27, fontWeight: 700, color: '#1d2638', lineHeight: 34 },
               name: { fontSize: 12, color: '#697386' }
@@ -376,13 +376,13 @@
           },
           data: [
             {
-              value: dashboardData.value.login.enabled,
-              name: '可登录',
+              value: dashboardData.value.study.active,
+              name: '在研',
               itemStyle: { color: '#4d84ee' }
             },
             {
-              value: dashboardData.value.login.disabled,
-              name: '未开通登录',
+              value: dashboardData.value.study.ended,
+              name: '已结束',
               itemStyle: { color: '#dce2ee' }
             }
           ]

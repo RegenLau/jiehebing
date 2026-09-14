@@ -12,8 +12,6 @@ import { registerTaskTemplates } from "./task-templates.mjs";
 import { registerMedicationSchemes } from "./medication-schemes.mjs";
 import { registerReminderSchemes } from "./reminder-schemes.mjs";
 import { registerProjects } from "./projects.mjs";
-import { registerPatientApp } from "./patient-app.mjs";
-import { effectiveProjectStatus } from "./project-status.mjs";
 import { snapshotGroupExecution } from "./execution-snapshot.mjs";
 import { refreshPatientStudyState } from "./patient-study-state.mjs";
 import {
@@ -91,13 +89,6 @@ function sendJson(res, data, message = "success") {
   });
   res.end(JSON.stringify({ code: 200, message, data }));
 }
-function sendPatientJson(res, data, message = "成功") {
-  res.writeHead(200, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-  });
-  res.end(JSON.stringify({ code: 0, message, data }));
-}
 function spreadsheet(res, name, headers, rows, columnWidths = []) {
   const book = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -146,7 +137,6 @@ export function createMockServer({ now = () => new Date() } = {}) {
     );
   }
   const sessions = new Map();
-  const patientSessions = new Map();
   const captchas = new Map();
   const nextId = (rows) => Math.max(0, ...rows.map((r) => r.id)) + 1;
   const invalidateSessions = (id) => {
@@ -270,13 +260,10 @@ export function createMockServer({ now = () => new Date() } = {}) {
       ;
   };
   const routes = new Map();
-  const patientRoutes = new Map();
   const route = (method, path, handler) =>
     routes.set(`${method} ${path}`, handler);
   const core = (method, path, handler) =>
     route(method, `/app/core/${path}`, handler);
-  const patientRoute = (method, path, handler) =>
-    patientRoutes.set(`${method} ${path}`, handler);
   core("GET", "system/user", ({ admin }) => userInfo(admin));
   core("GET", "system/menu", () => createMenu());
   core("GET", "system/dictAll", () => ({
@@ -436,18 +423,6 @@ export function createMockServer({ now = () => new Date() } = {}) {
     nextId,
     today,
     shiftDate,
-  });
-  registerPatientApp({
-    patientRoute,
-    db,
-    assert,
-    clean,
-    isDate,
-    timestamp,
-    nextId,
-    today,
-    shiftDate,
-    randomUUID,
   });
   core("GET", "patient/detail", ({ query }) => {
     const patient = find(db.patients, query.user_id, "患者");
@@ -742,11 +717,14 @@ export function createMockServer({ now = () => new Date() } = {}) {
         completed_total: plans.filter((p) => p.status === 1).length,
         new_adverse_total: adverse.length,
       },
-      login: {
-        enabled: patients.filter((p) => p.login_enabled).length,
-        disabled: patients.filter((p) => !p.login_enabled).length,
+      study: {
+        active: patients.filter(
+          (p) => !["已完成", "提前退出", "失访"].includes(p.study_state),
+        ).length,
+        ended: patients.filter((p) =>
+          ["已完成", "提前退出", "失访"].includes(p.study_state),
+        ).length,
       },
-      // Keep the legacy shape for existing consumers while the workbench uses login.
       archive: { archived, unarchived: patients.length - archived },
       resources: {
         survey_total: db.surveys.length,
@@ -1247,11 +1225,6 @@ export function createMockServer({ now = () => new Date() } = {}) {
         sessions.delete(token);
         return sendJson(res, []);
       }
-      if (req.method === "POST" && path === "/app/logout") {
-        const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
-        patientSessions.delete(token);
-        return sendPatientJson(res, [], "退出成功");
-      }
       if (req.method === "GET" && path.startsWith("/mock-files/")) {
         const file = db.files.get(path.slice("/mock-files/".length));
         if (!file)
@@ -1269,7 +1242,6 @@ export function createMockServer({ now = () => new Date() } = {}) {
       const publicAdminLogin =
         req.method === "POST" &&
         ["/app/core/login", "/app/admin/login"].includes(path);
-      const publicPatientLogin = req.method === "POST" && path === "/app/login";
       if (publicCaptcha) {
         for (const [id, expires] of captchas)
           if (expires <= clock().getTime()) captchas.delete(id);
@@ -1284,42 +1256,10 @@ export function createMockServer({ now = () => new Date() } = {}) {
         });
       }
       const handler = routes.get(`${req.method} ${path}`);
-      const patientHandler = patientRoutes.get(`${req.method} ${path}`);
-      if (
-        !publicAdminLogin &&
-        !publicPatientLogin &&
-        !handler &&
-        !patientHandler
-      )
+      if (!publicAdminLogin && !handler)
         throw new ApiError("该功能暂不可用，请稍后重试", 404, 404);
       let admin;
-      let patient;
-      if (patientHandler) {
-        const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
-        const session = patientSessions.get(token);
-        patient = db.patients.find(
-          (p) =>
-            p.id === session?.id &&
-            p.login_enabled &&
-            p.created_via === "admin",
-        );
-        assert(
-          session && session.expires > clock().getTime() && patient,
-          "登录已过期，请重新登录",
-          402,
-        );
-        if (path !== "/app/patient/bootstrap") {
-          const assignedProject = db.projects.find(
-            (project) => project.id === patient.project_id,
-          );
-          assert(
-            assignedProject &&
-              effectiveProjectStatus(assignedProject, today()) !== 2,
-            "项目已结束，当前无法继续使用患者端小程序",
-            410,
-          );
-        }
-      } else if (!publicAdminLogin && !publicPatientLogin) {
+      if (!publicAdminLogin) {
         const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
         const session = sessions.get(token);
         admin = db.admins.find((a) => a.id === session?.id);
@@ -1359,43 +1299,6 @@ export function createMockServer({ now = () => new Date() } = {}) {
         assert(
           body && typeof body === "object" && !Array.isArray(body),
           "请求数据格式不正确",
-        );
-      }
-      if (publicPatientLogin) {
-        const mobile = clean(body.mobile);
-        assert(/^1\d{10}$/.test(mobile), "请填写11位手机号");
-        const patient = db.patients.find(
-          (p) =>
-            p.mobile === mobile && p.login_enabled && p.created_via === "admin",
-        );
-        assert(
-          patient,
-          "未查询到后台患者档案，请联系工作人员添加后再登录",
-          407,
-        );
-        patient.last_login_at = timestamp();
-        const token = randomUUID();
-        patientSessions.set(token, {
-          id: patient.id,
-          expires: clock().getTime() + 7200000,
-        });
-        return sendPatientJson(
-          res,
-          {
-            user: {
-              id: patient.id,
-              name: patient.name,
-              mobile: patient.mobile,
-              birth_date: patient.birth_date,
-            },
-            token: {
-              token_type: "Bearer",
-              access_token: token,
-              refresh_token: "",
-              expires_in: 7200,
-            },
-          },
-          "登录成功",
         );
       }
       if (publicAdminLogin) {
@@ -1440,9 +1343,8 @@ export function createMockServer({ now = () => new Date() } = {}) {
         body,
         query: Object.fromEntries(url.searchParams),
         admin,
-        patient,
       };
-      const result = await (patientHandler || handler)(context);
+      const result = await handler(context);
       if (req.method === "POST" && admin)
         db.operationLogs.push({
           id: nextId(db.operationLogs),
@@ -1453,18 +1355,11 @@ export function createMockServer({ now = () => new Date() } = {}) {
           ip_location: "本机",
         });
       if (!res.writableEnded) {
-        if (patientHandler)
-          sendPatientJson(
-            res,
-            result ?? [],
-            req.method === "POST" ? "提交成功" : "获取成功",
-          );
-        else
-          sendJson(
-            res,
-            result ?? [],
-            req.method === "POST" ? "操作成功" : "success",
-          );
+        sendJson(
+          res,
+          result ?? [],
+          req.method === "POST" ? "操作成功" : "success",
+        );
       }
     } catch (error) {
       if (!res.writableEnded) {

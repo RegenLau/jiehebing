@@ -1,4 +1,4 @@
-import { buildLoginPatientTasks } from "./patient-tasks.mjs";
+import { buildManagedPatientTasks } from "./patient-tasks.mjs";
 
 export function registerResearchExport({
   core,
@@ -32,7 +32,6 @@ export function registerResearchExport({
         "研究分组",
         "研究状态",
         "入组日期",
-        "登录状态",
       ];
       rows = db.patients
         .filter(
@@ -54,7 +53,6 @@ export function registerResearchExport({
           p.group_name || "",
           p.study_state || "待启用",
           p.enroll_date,
-          p.last_login_at ? "已登录" : "未登录",
         ]);
     } else if (q.kind === "tasks") {
       headers = [
@@ -74,7 +72,7 @@ export function registerResearchExport({
         "说明",
         "结果",
       ];
-      rows = buildLoginPatientTasks({ db, today, shiftDate })
+      rows = buildManagedPatientTasks({ db, today, shiftDate })
         .filter((r) => {
           const p = patientFor(r.user_id);
           return (

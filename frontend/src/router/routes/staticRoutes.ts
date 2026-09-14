@@ -37,12 +37,6 @@ export const staticRoutes: AppRouteRecordRaw[] = [
     meta: { title: 'menus.forgetPassword.title', isHideTab: true }
   },
   {
-    path: '/patient-app',
-    name: 'PatientApp',
-    component: () => import('@views/patient-app/index.vue'),
-    meta: { title: '患者端', isHideTab: true, isFullPage: true }
-  },
-  {
     path: '/403',
     name: 'Exception403',
     component: () => import('@views/exception/403/index.vue'),

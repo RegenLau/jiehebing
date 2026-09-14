@@ -21,12 +21,7 @@ export function refreshPatientStudyState({ db, patient, date }) {
     treatments.every((row) => row.end_date && row.end_date < date)
   )
     nextState = "已完成";
-  else if (
-    current &&
-    patient.identity_confirmed &&
-    patient.medicine_confirmed
-  )
-    nextState = "治疗中";
+  else if (current) nextState = "治疗中";
   else if (!treatments.length || (!current && upcoming)) nextState = "待启用";
 
   patient.study_state = nextState;

@@ -17,14 +17,14 @@
 
     <ElCard v-if="!form.id" v-loading="loading" shadow="never" class="onboarding-card">
       <ElSteps :active="createStep" finish-status="success" align-center>
-        <ElStep title="基本信息" description="姓名与登录手机号" />
+        <ElStep title="基本信息" description="姓名与联系方式" />
         <ElStep title="研究分组" description="归属与线下确认" />
         <ElStep title="用药与发药" description="核对个人安排" />
       </ElSteps>
 
       <section v-show="createStep === 0" class="step-content">
         <div class="section-heading">
-          <div><h3>患者基本信息</h3><p>手机号是患者端登录凭证，保存前请与患者核对。</p></div>
+          <div><h3>患者基本信息</h3><p>手机号用于患者联系与档案检索，保存前请核对。</p></div>
         </div>
         <ElForm label-position="top" :disabled="saving">
           <div class="form-grid two-columns">
@@ -195,17 +195,6 @@
           <ElDescriptionsItem label="研究分组">{{ form.group_name }}</ElDescriptionsItem>
           <ElDescriptionsItem label="入组日期">{{ form.enroll_date }}</ElDescriptionsItem>
           <ElDescriptionsItem label="负责人员">{{ form.owner_name || '-' }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="患者端登录">
-            <ElTag :type="form.login_enabled ? 'success' : 'info'">{{
-              form.login_enabled ? '可登录' : '不可登录'
-            }}</ElTag>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="基础信息核对">{{
-            form.identity_confirmed ? '已核对' : '待患者核对'
-          }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="用药核对">{{
-            form.medicine_confirmed ? '已核对' : '待患者核对'
-          }}</ElDescriptionsItem>
         </ElDescriptions>
         <ElForm v-else label-position="top" :disabled="saving">
           <div class="form-grid three-columns">
@@ -534,9 +523,6 @@
     enroll_date: string
     offline_confirmed: boolean
     consent_confirmed: boolean
-    identity_confirmed: boolean
-    medicine_confirmed: boolean
-    login_enabled?: boolean
     study_state?: string
     reason: string
   }
@@ -595,8 +581,6 @@
     enroll_date: todayText(),
     offline_confirmed: false,
     consent_confirmed: false,
-    identity_confirmed: false,
-    medicine_confirmed: false,
     reason: ''
   })
   const blankTreatment = (): Treatment => ({

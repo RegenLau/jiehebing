@@ -229,9 +229,7 @@
     while (true) {
       const p = await fetchPatientList({ current: n++, size: 100 })
       fetched += p.list.length
-      all.push(
-        ...p.list.filter((patient) => patient.created_via === 'admin' && patient.login_enabled)
-      )
+      all.push(...p.list)
       if (fetched >= p.total || p.list.length === 0) break
     }
     patients.value = all

@@ -3,7 +3,7 @@
     <div class="toolbar">
       <div>
         <h2>患者管理</h2>
-        <p>患者须由后台建档，方可使用档案手机号登录患者端小程序。</p>
+        <p>由后台统一维护患者档案、研究分组、用药安排和随访记录。</p>
       </div>
       <div class="actions"
         ><ElInput
@@ -65,13 +65,6 @@
               row.study_state || '待启用'
             }}</ElTag></template
           >
-        </ElTableColumn>
-        <ElTableColumn label="登录状态" width="110">
-          <template #default="{ row }">
-            <ElTag :type="row.last_login_at ? 'success' : 'info'">
-              {{ row.last_login_at ? '已登录' : '未登录' }}
-            </ElTag>
-          </template>
         </ElTableColumn>
         <ElTableColumn label="方案确认" width="130">
           <template #default="{ row }">
