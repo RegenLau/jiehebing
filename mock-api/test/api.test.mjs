@@ -3127,7 +3127,7 @@ test("saved group configuration validates sources and members without changing p
   const a = await create(1, "A"),
     b = await create(1, "B"),
     other = await create(2, "A");
-  const schedule = (id) => ({
+  const schedule = (id, overrides = {}) => ({
     id,
     anchor: "enrollment",
     date: "",
@@ -3135,6 +3135,7 @@ test("saved group configuration validates sources and members without changing p
     interval_days: 7,
     deadline_days: 3,
     remind_time: "08:30",
+    ...overrides,
   });
   const config = {
     ...a,
@@ -3152,7 +3153,13 @@ test("saved group configuration validates sources and members without changing p
     },
     reminder: { id: reminder.id },
     surveys: [schedule(survey.id)],
-    tasks: [schedule(taskTemplate.id)],
+    tasks: [
+      schedule(taskTemplate.id, {
+        anchor: "treatment",
+        date: "not-a-date",
+        offset_days: 2,
+      }),
+    ],
     participant_ids: [1, 2],
   };
   const saved = await api.ok(P + "project/group-save", { body: config });
@@ -3171,6 +3178,9 @@ test("saved group configuration validates sources and members without changing p
   assert.equal(saved.medication.advance_days, 15);
   assert.equal(saved.pickup_requirements, config.pickup_requirements);
   assert.equal(saved.pickup_remind_time, config.pickup_remind_time);
+  assert.equal(saved.tasks[0].anchor, "treatment");
+  assert.equal(saved.tasks[0].date, "");
+  assert.equal(saved.tasks[0].offset_days, 2);
   assert.equal(saved.tasks[0].remind_time, "08:30");
   const people = await api.ok(P + "project/participants", {
     query: { project_id: 1 },

@@ -205,8 +205,8 @@ export function registerProjects({ core, db, assert, find, page, clean, isDate, 
         const source = binding(rows,item.id,kind === 'surveys' ? '问卷' : '任务模板',old);
         if (kind === 'tasks') assert(source.snapshot.system_kind !== 'pickup', '取药提醒由系统按患者实际药量计算，只需设置提前提醒天数');
         assert(['enrollment','treatment','date'].includes(item.anchor),'请选择有效的计时基准');
-        const offset_days = number(item.offset_days,'起始偏移天数');
-        const interval_days = number(item.interval_days,'重复间隔');
+        const offset_days = number(item.offset_days,'第一次执行天数');
+        const interval_days = number(item.interval_days,'执行频率天数');
         const deadline_days = number(item.deadline_days,'完成期限',1);
         const date = item.anchor === 'date' ? clean(item.date) : '';
         if (item.anchor === 'date') assert(isDate(date) && interval_days === 0 && offset_days === 0, '指定日期任务必须设置有效日期，偏移和重复间隔为0');
