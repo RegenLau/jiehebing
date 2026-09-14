@@ -1306,32 +1306,7 @@
       </section>
 
       <footer v-if="stage === 'identity' || stage === 'medication'" class="sticky-actions">
-        <template v-if="issueMode">
-          <label for="issue-note">{{
-            issueMode === 'identity' ? '请说明哪项资料有误' : '请说明您对用药安排的疑问'
-          }}</label>
-          <textarea
-            id="issue-note"
-            v-model.trim="issueNote"
-            maxlength="300"
-            rows="3"
-            placeholder="请尽量写清楚，便于工作人员核对"
-          ></textarea>
-          <div class="footer-row">
-            <button class="secondary-button" type="button" @click="cancelIssue">取消</button>
-            <button
-              class="primary-button"
-              type="button"
-              :disabled="submitting || !issueNote"
-              @click="submitIssue"
-              >提交问题</button
-            >
-          </div>
-        </template>
-        <div v-else class="footer-row">
-          <button class="secondary-button" type="button" @click="openIssue">
-            {{ stage === 'identity' ? '信息有误' : '用药有疑问' }}
-          </button>
+        <div class="footer-row">
           <button
             class="primary-button"
             type="button"
@@ -1701,8 +1676,6 @@
     }>
   })
   const confirmedDrugs = ref<number[]>([])
-  const issueMode = ref<null | 'identity' | 'medication'>(null)
-  const issueNote = ref('')
   const navItems: Array<{ key: MainTab; label: string; icon: string }> = [
     { key: 'home', label: '首页', icon: 'ri:home-5-line' },
     { key: 'medication', label: '用药', icon: 'ri:medicine-bottle-line' },
@@ -1812,8 +1785,6 @@
     data.value = result
     stage.value = result.stage
     confirmedDrugs.value = []
-    issueMode.value = null
-    issueNote.value = ''
     errorMessage.value = ''
     if (result.stage === 'home') void loadHome()
   }
@@ -1963,15 +1934,6 @@
       ? confirmedDrugs.value.filter((item) => item !== id)
       : [...confirmedDrugs.value, id]
   }
-  function openIssue() {
-    issueMode.value = stage.value === 'identity' ? 'identity' : 'medication'
-    issueNote.value = ''
-    errorMessage.value = ''
-  }
-  function cancelIssue() {
-    issueMode.value = null
-    issueNote.value = ''
-  }
   async function postConfirmation(path: string, body: object) {
     submitting.value = true
     errorMessage.value = ''
@@ -1989,21 +1951,6 @@
     } else if (stage.value === 'medication' && data.value?.treatment) {
       void postConfirmation('/app/patient/confirm-medication', {
         confirmed: true,
-        treatment_id: data.value.treatment.id
-      })
-    }
-  }
-  function submitIssue() {
-    if (!issueNote.value) return
-    if (issueMode.value === 'identity') {
-      void postConfirmation('/app/patient/confirm-identity', {
-        confirmed: false,
-        note: issueNote.value
-      })
-    } else if (issueMode.value === 'medication' && data.value?.treatment) {
-      void postConfirmation('/app/patient/confirm-medication', {
-        confirmed: false,
-        note: issueNote.value,
         treatment_id: data.value.treatment.id
       })
     }
@@ -2758,59 +2705,26 @@
     border-top: 1px solid #edf0f5;
   }
 
-  .sticky-actions label {
-    display: block;
-    margin-bottom: 8px;
-    font-weight: 600;
-  }
-
-  .sticky-actions textarea {
-    box-sizing: border-box;
-    width: 100%;
-    padding: 10px 12px;
-    margin-bottom: 10px;
-    resize: none;
-    background: #f4f6f9;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    outline: 0;
-  }
-
-  .sticky-actions textarea:focus {
-    border-color: #4f8bff;
-  }
-
   .footer-row {
     display: grid;
-    grid-template-columns: 116px 1fr;
-    gap: 10px;
-  }
-
-  .primary-button,
-  .secondary-button {
-    min-height: 48px;
-    padding: 0 14px;
-    font-weight: 600;
-    cursor: pointer;
-    border-radius: 12px;
+    grid-template-columns: 1fr;
   }
 
   .primary-button {
+    min-height: 48px;
+    padding: 0 14px;
+    font-weight: 600;
     color: #fff;
+    cursor: pointer;
     background: #2468ff;
     border: 1px solid #2468ff;
+    border-radius: 12px;
   }
 
   .primary-button:disabled {
     cursor: not-allowed;
     background: #9ebcff;
     border-color: #9ebcff;
-  }
-
-  .secondary-button {
-    color: #526071;
-    background: #fff;
-    border: 1px solid #dce2ea;
   }
 
   .form-error {

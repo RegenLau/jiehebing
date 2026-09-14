@@ -61,10 +61,6 @@
             >
               {{ drug.enabled ? '本次停用' : '恢复使用' }}
             </ElButton>
-            <div class="card-supply">
-              <span>按分组默认药品量预计可用</span>
-              <strong>{{ drug.enabled ? supplyText(drug) : '本次停用' }}</strong>
-            </div>
           </div>
         </header>
         <div class="drug-card-body">
@@ -78,21 +74,6 @@
                 readonly
                 :aria-label="`药品${index + 1}规格`"
               />
-            </ElFormItem>
-            <ElFormItem label="药品量">
-              <div class="quantity-input">
-                <ElInputNumber
-                  :model-value="quantityFor(drug)"
-                  :controls="false"
-                  disabled
-                  :aria-label="`药品${index + 1}分组默认药品量`"
-                />
-                <ElInput
-                  :model-value="drug.unit"
-                  disabled
-                  :aria-label="`药品${index + 1}分组默认单位`"
-                />
-              </div>
             </ElFormItem>
           </div>
 
@@ -250,20 +231,11 @@
       .split(/[，,]/)
       .map((time) => time.trim())
       .filter(Boolean).length
-  const quantityFor = (drug: TreatmentDrug) =>
-    props.group?.medication?.quantities.find((item) => item.drug_id === drug.drug_id)?.quantity ??
-    drug.quantity ??
-    0
   const reminderTiming = (drug: TreatmentDrug, slot: number) => {
     const source = props.group?.medication?.snapshot.drugs?.find(
       (item) => item.drug_id === drug.drug_id
     )
     return drug.reminders?.[slot]?.timing || source?.reminders?.[slot]?.timing || '餐后'
-  }
-  const supplyText = (drug: TreatmentDrug) => {
-    const days = quantityFor(drug) / (Number(drug.dose) * timeCount(drug.times))
-    if (!Number.isFinite(days) || days <= 0) return '待完善用量'
-    return days < 1 ? '不足 1 天' : `约 ${Math.floor(days)} 天`
   }
   const updateDailyCount = (index: number, count: number) => {
     const drug = props.treatment.drugs[index]
@@ -381,21 +353,6 @@
     margin-left: auto;
   }
 
-  .card-supply {
-    display: flex;
-    gap: 12px;
-    align-items: baseline;
-    margin-left: 10px;
-    font-size: 13px;
-    color: var(--el-text-color-secondary);
-    white-space: nowrap;
-  }
-
-  .card-supply strong {
-    font-size: 18px;
-    color: var(--el-color-primary);
-  }
-
   .drug-card-heading h3 {
     font-size: 18px;
     font-weight: 600;
@@ -407,19 +364,8 @@
 
   .drug-identity {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr;
+    grid-template-columns: 2fr 1fr;
     gap: 20px;
-  }
-
-  .quantity-input {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 72px;
-    gap: 8px;
-    width: 100%;
-  }
-
-  .quantity-input :deep(.el-input-number) {
-    width: 100%;
   }
 
   .dose-line {
@@ -541,10 +487,6 @@
       grid-template-columns: 1fr 1fr;
     }
 
-    .drug-identity > :first-child {
-      grid-column: 1 / -1;
-    }
-
     .reminder-row {
       grid-template-columns: 0.5fr 1fr;
     }
@@ -578,12 +520,12 @@
       width: 100%;
     }
 
-    .card-supply {
-      margin-left: auto;
-    }
-
     .dose-line {
       grid-template-columns: 1fr 1fr;
+    }
+
+    .drug-identity {
+      grid-template-columns: 1fr;
     }
 
     .reminder-heading {

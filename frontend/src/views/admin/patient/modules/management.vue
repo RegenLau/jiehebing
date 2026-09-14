@@ -404,7 +404,7 @@
             </ElForm>
           </ElTabPane>
 
-          <ElTabPane label="状态与核对" name="state">
+          <ElTabPane label="患者状态" name="state">
             <div class="status-summary"
               >当前研究状态：<ElTag>{{ form.study_state || '待启用' }}</ElTag></div
             >
@@ -424,36 +424,6 @@
               </div>
               <ElButton type="primary" :loading="saving" @click="saveState">登记状态变更</ElButton>
             </ElForm>
-          </ElTabPane>
-
-          <ElTabPane label="患者端确认" name="confirmation">
-            <div class="tab-heading">
-              <div>
-                <h3>患者端确认</h3>
-                <p>确认结果由患者本人提交；医生修改资料或用药安排后会自动要求重新确认。</p>
-              </div>
-            </div>
-            <div class="confirmation-box confirmation-status">
-              <span>基础信息</span>
-              <ElTag :type="form.identity_confirmed ? 'success' : 'warning'">{{
-                form.identity_confirmed ? '患者已确认' : '待患者确认'
-              }}</ElTag>
-              <span>当前用药</span>
-              <ElTag :type="form.medicine_confirmed ? 'success' : 'warning'">{{
-                form.medicine_confirmed ? '患者已确认' : '待患者确认'
-              }}</ElTag>
-            </div>
-            <ElTable
-              :data="confirmationIssues"
-              border
-              empty-text="暂无患者反馈"
-              class="issue-table"
-            >
-              <ElTableColumn prop="created_at" label="提交时间" min-width="170" />
-              <ElTableColumn prop="type_text" label="反馈类型" min-width="140" />
-              <ElTableColumn prop="note" label="患者说明" min-width="220" />
-              <ElTableColumn prop="status" label="处理状态" width="110" />
-            </ElTable>
           </ElTabPane>
 
           <ElTabPane label="操作记录" name="history">
@@ -536,7 +506,6 @@
     patient: Patient
     treatments: Treatment[]
     dispensings: { issued_date: string; items: DispenseItem[]; operator: string; reason: string }[]
-    confirmation_issues: { created_at: string; type_text: string; note: string; status: string }[]
     history: { time: string; operator: string; action: string; reason: string }[]
   }
 
@@ -576,7 +545,6 @@
   const groupRecord = ref<GroupRecord | null>(null)
   const owners = ref<{ id: number; realname: string; username: string; status: number }[]>([])
   const treatment = ref<Treatment>(blankTreatment())
-  const confirmationIssues = ref<Management['confirmation_issues']>([])
   const personalAdjustment = ref(false)
   const treatments = ref<Treatment[]>([])
   const dispensings = ref<Management['dispensings']>([])
@@ -586,8 +554,8 @@
     reason: '首次发药',
     items: [] as DispenseItem[]
   })
-  const states = ['待启用', '治疗中', '暂停用药', '已完成', '提前退出', '失访']
-  const state = ref('治疗中')
+  const states = ['提前退出']
+  const state = ref('提前退出')
   const effectiveDate = ref(todayText())
   const stateReason = ref('')
   const stock = ref<
@@ -727,7 +695,6 @@
     treatments.value = data.treatments
     dispensings.value = data.dispensings
     history.value = data.history
-    confirmationIssues.value = data.confirmation_issues || []
     await loadGroups(false)
     groupRecord.value = groups.value.find((item) => item.id === form.value.group_id) || null
     applyLatestTreatment()
@@ -742,7 +709,6 @@
       treatments.value = []
       dispensings.value = []
       history.value = []
-      confirmationIssues.value = []
       stock.value = []
       treatment.value = blankTreatment()
       await Promise.all([
@@ -1036,14 +1002,6 @@
   }
   .required-mark {
     color: var(--el-color-danger);
-  }
-  .confirmation-status {
-    display: grid;
-    grid-template-columns: max-content max-content max-content max-content;
-    margin-top: 16px;
-  }
-  .issue-table {
-    margin-top: 16px;
   }
   .step-actions {
     position: sticky;
