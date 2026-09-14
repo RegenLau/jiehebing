@@ -63,11 +63,9 @@
             row.processing_status || '待处理'
           }}</template></ElTableColumn
         ><ElTableColumn prop="created_at" label="上报时间" min-width="180" />
-        <ElTableColumn label="操作" width="180" fixed="right">
+        <ElTableColumn label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <ElButton link type="primary" @click="openDetail(row as AdverseReactionRecord)"
-              >查看</ElButton
-            ><ElButton link type="primary" @click="assessment?.open(row.id)">评估/跟进</ElButton>
+            <ElButton link type="primary" @click="assessment?.open(row.id)">查看并处理</ElButton>
           </template>
         </ElTableColumn>
       </ElTable>
@@ -85,29 +83,6 @@
         />
       </div>
     </ElCard>
-
-    <ElDialog v-model="detailVisible" title="不良反应详情" width="720px">
-      <div v-if="currentRecord" class="detail-content">
-        <div class="detail-grid">
-          <div><span>患者姓名：</span>{{ currentRecord.patient_name || '-' }}</div>
-          <div><span>手机号：</span>{{ currentRecord.patient_mobile || '-' }}</div>
-          <div><span>参与项目：</span>{{ currentRecord.project_name || '未参与项目' }}</div>
-          <div><span>入组名称：</span>{{ currentRecord.group_name || '未入组' }}</div>
-          <div><span>发生时间：</span>{{ currentRecord.occurred_at || '-' }}</div>
-          <div>
-            <span>严重程度：</span>
-            <ElTag :type="severityTagType(currentRecord.severity)">
-              {{ currentRecord.severity_text || '-' }}
-            </ElTag>
-          </div>
-          <div class="full"><span>主要症状：</span>{{ currentRecord.symptom_summary || '-' }}</div>
-          <div class="full">
-            <span>症状描述：</span>{{ currentRecord.symptom_description || '无' }}
-          </div>
-          <div class="full"><span>处理建议：</span>{{ currentRecord.advice_text || '无' }}</div>
-        </div>
-      </div>
-    </ElDialog>
   </div>
 </template>
 
@@ -136,9 +111,7 @@
 
   const loading = ref(false)
   const exportLoading = ref(false)
-  const detailVisible = ref(false)
   const list = ref<AdverseReactionRecord[]>([])
-  const currentRecord = ref<AdverseReactionRecord>()
   const searchForm = reactive({
     patient_name: '',
     severity: undefined as number | undefined
@@ -182,11 +155,6 @@
   const handleSizeChange = () => {
     pagination.current = 1
     loadList()
-  }
-
-  const openDetail = (row: AdverseReactionRecord) => {
-    currentRecord.value = row
-    detailVisible.value = true
   }
 
   const readBlobMessage = async (blob: Blob) => {
@@ -271,32 +239,10 @@
     margin-top: 16px;
   }
 
-  .detail-content {
-    min-height: 120px;
-  }
-
-  .detail-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px 20px;
-
-    span {
-      color: #6b7280;
-    }
-
-    .full {
-      grid-column: 1 / -1;
-    }
-  }
-
   @media (max-width: 768px) {
     .toolbar {
       flex-direction: column;
       align-items: flex-start;
-    }
-
-    .detail-grid {
-      grid-template-columns: 1fr;
     }
   }
 </style>

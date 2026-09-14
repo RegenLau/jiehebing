@@ -7,7 +7,7 @@
       <div class="actions">
         <ElInput
           v-model.trim="searchForm.keyword"
-          placeholder="请输入模板名称或编码"
+          placeholder="请输入问卷标题或编号"
           clearable
           style="width: 240px"
           @keyup.enter="handleSearch"
@@ -25,16 +25,16 @@
         </ElSelect>
         <ElButton type="primary" @click="handleSearch">查询</ElButton>
         <ElButton @click="loadList" :loading="loading">刷新</ElButton>
-        <ElButton type="primary" @click="openCreate">新增问卷</ElButton>
+        <ElButton type="primary" @click="creator?.open()">新增问卷</ElButton>
       </div>
     </div>
 
-    <Editor ref="editor" @saved="loadList" />
+    <CreateDialog ref="creator" @saved="handleCreated" />
     <ElCard shadow="never">
       <ElTable :data="list" v-loading="loading" border>
         <ElTableColumn prop="id" label="ID" width="80" />
-        <ElTableColumn prop="name" label="问卷名称" min-width="180" />
-        <ElTableColumn prop="code" label="模板编码" min-width="180" />
+        <ElTableColumn prop="name" label="问卷标题" min-width="180" />
+        <ElTableColumn prop="code" label="问卷编号" min-width="180" />
 
         <ElTableColumn prop="questionCount" label="题目数" width="90" />
         <ElTableColumn prop="answerCount" label="答卷份数" width="100" />
@@ -50,7 +50,7 @@
         <ElTableColumn label="操作" min-width="260" fixed="right">
           <template #default="{ row }">
             <ElButton link type="primary" @click="openDetail(row as SurveyRecord)">详情</ElButton
-            ><ElButton link type="primary" @click="editor?.open(row.id)">编辑</ElButton
+            ><ElButton link type="primary" @click="openEdit(row as SurveyRecord)">编辑</ElButton
             ><ElButton link type="warning" @click="toggleStatus(row as SurveyRecord)">{{
               row.status === 1 ? '停用' : '启用'
             }}</ElButton>
@@ -83,14 +83,15 @@
     <ElDialog v-model="detailVisible" title="问卷详情" width="900px">
       <div v-loading="detailLoading" class="detail-content" v-if="detailData">
         <div class="detail-base">
-          <div><span>问卷名称：</span>{{ detailData.name }}</div>
-          <div><span>模板编码：</span>{{ detailData.code }}</div>
+          <div><span>问卷标题：</span>{{ detailData.name }}</div>
+          <div><span>问卷编号：</span>{{ detailData.code }}</div>
           <div><span>建档后第几天可填：</span>{{ detailData.fillableDay }}</div>
           <div><span>状态：</span>{{ detailData.status === 1 ? '启用' : '停用' }}</div>
           <div class="full"><span>问卷说明：</span>{{ detailData.description || '无' }}</div>
         </div>
 
-        <div class="question-list">
+        <ElEmpty v-if="!detailData.questions.length" description="暂无题目，请点击编辑添加题目" />
+        <div v-else class="question-list">
           <ElCard
             v-for="question in detailData.questions"
             :key="question.id"
@@ -178,17 +179,36 @@
 </template>
 
 <script setup lang="ts">
-  import Editor from './modules/editor.vue'
+  import CreateDialog from './modules/create-dialog.vue'
   import ResearchScopeFilter from '@/components/business/research-scope-filter/index.vue'
   import { useRouter } from 'vue-router'
-  import { toggleSurveyStatus } from '@/api/survey'
-  import { ElMessageBox } from 'element-plus'
+  import {
+    exportSurveyAnswers,
+    fetchSurveyDetail,
+    fetchSurveyList,
+    toggleSurveyStatus,
+    type SurveyDetail,
+    type SurveyRecord
+  } from '@/api/survey'
+  import { ElMessage, ElMessageBox } from 'element-plus'
+
   const router = useRouter()
-  const editor = ref<InstanceType<typeof Editor>>()
-  function openCreate() {
-    void router.push('/survey/create')
+  const creator = ref<InstanceType<typeof CreateDialog>>()
+
+  function openEdit(row: SurveyRecord) {
+    void router.push({ path: '/survey/edit', query: { id: String(row.id) } })
   }
+
+  async function handleCreated() {
+    pagination.current = 1
+    await loadList()
+  }
+
   async function toggleStatus(row: SurveyRecord) {
+    if (row.status === 0 && row.questionCount === 0) {
+      ElMessage.warning('请先点击“编辑”添加题目，再启用问卷')
+      return
+    }
     try {
       await ElMessageBox.confirm(
         '变更问卷状态不会修改已有答卷和分组安排。',
@@ -200,15 +220,6 @@
       /* 取消或请求错误 */
     }
   }
-
-  import {
-    exportSurveyAnswers,
-    fetchSurveyDetail,
-    fetchSurveyList,
-    type SurveyDetail,
-    type SurveyRecord
-  } from '@/api/survey'
-  import { ElMessage } from 'element-plus'
 
   defineOptions({ name: 'SurveyIndex' })
 
@@ -361,7 +372,7 @@
     }
   }
 
-  onMounted(() => {
+  onActivated(() => {
     loadList()
   })
 </script>

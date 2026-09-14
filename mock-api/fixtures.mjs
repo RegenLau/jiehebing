@@ -271,6 +271,7 @@ export function createFixtures(now) {
   const reportTypes = supportedReportTypes();
   const reportStatuses = ['待核对', '需补充', '已核对'];
   const reportPatients = [...Array.from({ length: 36 }, (_, i) => patients[(i * 5) % patients.length]), patients.at(-1), patients.at(-1)];
+  const followupTasks = [];
   const reports = reportPatients.map((patient, i) => {
     const type = reportTypes[i % reportTypes.length];
     const status = reportStatuses[i % reportStatuses.length];
@@ -291,9 +292,20 @@ export function createFixtures(now) {
       created_at: `${exam_date} 14:${String((i * 3) % 60).padStart(2, '0')}:00`
     });
     const metrics = structuredClone(ocr_result.metrics);
+    const taskStatus = status === '已核对' ? '已完成' : status === '需补充' ? '需补充' : '已提交';
+    const taskId = i + 1;
+    followupTasks.push({
+      id: taskId, user_id: patient.id, patient_name: patient.name,
+      project_id: patient.project_id, group_id: patient.group_id,
+      name: `${type}复查`, type: '检查', date: exam_date, due_date: shiftDate(exam_date, 2), remind_time: '09:00',
+      description: `完成${type}检查并提交报告`, requirements: '提交检查日期及清晰、完整的报告原图',
+      status: taskStatus, source: '模拟检查安排',
+      result: status === '需补充' ? '请补充清晰、完整的报告原图。' : '',
+      history: [], created_at: `${exam_date} 09:00:00`
+    });
     return {
       id: i + 1, user_id: patient.id, patient_name: patient.name, type, exam_date,
-      task_id: null, status, ocr_status: '解析完成，待人工核对', ocr_result, metrics,
+      task_id: taskId, status, ocr_status: '解析完成，待人工核对', ocr_result, metrics,
       versions: [{
         files: sourceFiles,
         note: '模拟报告资料，仅用于功能演示，具体结果以检验机构出具的报告为准。',
@@ -347,7 +359,7 @@ export function createFixtures(now) {
       }
     }
   }
-  return { projects, projectGroups, medicationSchemes, reminderSchemes, taskTemplates, patients, medicines, plans, adverse, reports, commonMedicines, surveys, answers, articles, admins, files, loginLogs: [], operationLogs: [] };
+  return { projects, projectGroups, medicationSchemes, reminderSchemes, taskTemplates, patients, medicines, plans, followupTasks, adverse, reports, commonMedicines, surveys, answers, articles, admins, files, loginLogs: [], operationLogs: [] };
 }
 
 export function createMenu() {
@@ -369,7 +381,7 @@ export function createMenu() {
   result[1].children.push({ path: 'detail', name: 'PatientDetail', component: '/admin/patient-detail', meta: { title: 'menus.patient.detail', isHide: true, activePath: '/patient/index', keepAlive: false } });
   result[1].children.push({ path: 'management', name: 'PatientManagement', component: '/admin/patient-management', meta: { title: '患者研究管理', isHide: true, activePath: '/patient/index', keepAlive: false } });
   const survey = result.find(r => r.name === 'Survey');
-  survey.children.push({ path: 'create', name: 'SurveyCreate', component: '/admin/survey-create', meta: { title: '新增问卷', isHide: true, activePath: '/survey/index', keepAlive: false } });
+  survey.children.push({ path: 'edit', name: 'SurveyEdit', component: '/admin/survey-edit', meta: { title: '编辑问卷', isHide: true, activePath: '/survey/index', keepAlive: false } });
   result.splice(1, 0, { path: '/project', name: 'Project', component: '/index/index', meta: { title: 'menus.project.title', icon: 'ri:folder-chart-line' },
     children: [
       { path: 'index', name: 'ProjectIndex', component: '/admin/project', meta: { title: 'menus.project.list', keepAlive: true } },

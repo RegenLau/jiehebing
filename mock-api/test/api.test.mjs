@@ -2164,6 +2164,85 @@ test("common medicine guidance is centrally saved and immediately served to pati
   );
 });
 
+test("survey creation generates its code before questions are added on the edit page", async (t) => {
+  const api = await start(t);
+  await api.login();
+
+  const surveyMenu = (await api.ok(P + "system/menu")).find(
+    (item) => item.path === "/survey",
+  );
+  assert.ok(
+    surveyMenu.children.some(
+      (item) =>
+        item.path === "edit" &&
+        item.name === "SurveyEdit" &&
+        item.component === "/admin/survey-edit" &&
+        item.meta.isHide &&
+        item.meta.activePath === "/survey/index",
+    ),
+  );
+  assert.ok(!surveyMenu.children.some((item) => item.path === "create"));
+
+  const created = await api.ok(P + "survey/save", {
+    body: {
+      name: "新建随访问卷",
+      description: "创建后再配置题目。",
+      code: "MANUAL_CODE_MUST_BE_IGNORED",
+    },
+  });
+  assert.match(created.code, /^WJ\d{12}$/);
+  assert.notEqual(created.code, "MANUAL_CODE_MUST_BE_IGNORED");
+
+  const draft = await api.ok(P + "survey/detail", {
+    query: { id: created.id },
+  });
+  assert.equal(draft.name, "新建随访问卷");
+  assert.equal(draft.description, "创建后再配置题目。");
+  assert.equal(draft.status, 0);
+  assert.deepEqual(draft.questions, []);
+  assert.notEqual(
+    (
+      await api.json(P + "survey/toggle-status", {
+        body: { id: draft.id, status: 1 },
+      })
+    ).code,
+    200,
+  );
+
+  const saved = await api.ok(P + "survey/save", {
+    body: {
+      ...draft,
+      code: "EDITED_CODE_MUST_BE_IGNORED",
+      questions: [
+        {
+          id: 0,
+          questionNo: 1,
+          title: "请填写本次随访情况",
+          type: "TEXT",
+          required: 1,
+          sortOrder: 1,
+          placeholder: "请输入",
+          options: [],
+        },
+      ],
+    },
+  });
+  assert.equal(saved.code, created.code);
+  const edited = await api.ok(P + "survey/detail", {
+    query: { id: created.id },
+  });
+  assert.equal(edited.code, created.code);
+  assert.equal(edited.questions.length, 1);
+  assert.equal(
+    (
+      await api.ok(P + "survey/toggle-status", {
+        body: { id: edited.id, status: 1 },
+      })
+    ).status,
+    1,
+  );
+});
+
 test("survey nested structure, per-patient answers, deletion protection and XLSX participant counts", async (t) => {
   const api = await start(t);
   await api.login();
@@ -4099,6 +4178,17 @@ test("report supplementation preserves originals and completes only its matching
       files: [uploaded.url],
     },
   });
+  const reportList = await api.all(P + "report/index", {
+    user_id: task.user_id,
+  });
+  const reportListRow = reportList.find((row) => row.id === report.id);
+  assert.deepEqual(reportListRow.task, {
+    id: task.id,
+    name: task.name,
+    date: task.date,
+    due_date: task.due_date,
+    status: "已提交",
+  });
   assert.equal(
     (await api.ok(P + "followup/detail", { query: { id: task.id } })).status,
     "已提交",
@@ -4310,6 +4400,19 @@ test("report list starts with representative mock records for every research gro
     [...new Set(reports.map((row) => row.type))].sort(),
     ["血常规", "肝功能", "肾功能", "胸部CT", "痰涂片", "痰培养"].sort(),
   );
+  assert.ok(reports.every((row) => row.task_id && row.task));
+  for (const report of reports) {
+    assert.equal(report.task.id, report.task_id);
+    assert.equal(report.task.name, `${report.type}复查`);
+    assert.equal(
+      report.task.status,
+      report.status === "已核对"
+        ? "已完成"
+        : report.status === "需补充"
+          ? "需补充"
+          : "已提交",
+    );
+  }
   for (let groupId = 1; groupId <= 7; groupId += 1) {
     const rows = await api.all(P + "report/index", { group_id: groupId });
     assert.ok(rows.length > 0, `group ${groupId} has mock reports`);
@@ -4403,6 +4506,34 @@ test("adverse assessment separates severity from seriousness and records manual 
   });
   assert.equal(after.contacts[0].result, "无人接听");
   assert.equal(after.processing_status, "处理中");
+});
+
+test("adverse first-version follow-up updates ownership, status and contact together", async (t) => {
+  const api = await start(t);
+  await api.login();
+  const original = await api.ok(P + "adverse-reaction/assessment", {
+    query: { id: 2 },
+  });
+  const body = {
+    id: 2,
+    revision: original.assessment_revision || 0,
+    processing_status: "处理中",
+    owner_id: 1,
+    channel: "电话",
+    result: "已联系患者，症状较昨日缓解",
+    next_action: "",
+  };
+  const result = await api.ok(P + "adverse-reaction/follow-up", { body });
+  assert.equal(result.processing_status, "处理中");
+  assert.equal(result.owner_id, 1);
+  assert.equal(result.assessment_revision, body.revision + 1);
+  assert.equal(result.contacts[0].result, body.result);
+  assert.equal(result.contacts[0].next_action, "");
+  assert.equal(result.contacts[0].processing_status, "处理中");
+  assert.notEqual(
+    (await api.json(P + "adverse-reaction/follow-up", { body })).code,
+    200,
+  );
 });
 
 test("feedback preserves per-day raw records and rejects conflicting symptom selections", async (t) => {

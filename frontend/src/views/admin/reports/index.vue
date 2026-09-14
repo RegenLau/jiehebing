@@ -62,6 +62,15 @@
       <ElTable v-loading="loading" :data="rows" border>
         <ElTableColumn prop="patient_name" label="患者" min-width="120" />
         <ElTableColumn prop="type" label="报告类型" min-width="140" />
+        <ElTableColumn label="关联任务" min-width="190">
+          <template #default="{ row }">
+            <div v-if="row.task" class="related-task">
+              <span>{{ row.task.name }}</span>
+              <small>{{ row.task.date }}</small>
+            </div>
+            <span v-else class="muted-text">未关联</span>
+          </template>
+        </ElTableColumn>
         <ElTableColumn prop="exam_date" label="检查日期" min-width="120" />
         <ElTableColumn label="OCR 数据" min-width="120">
           <template #default="{ row }">
@@ -186,6 +195,13 @@
     type: string
     exam_date: string
     status: string
+    task?: {
+      id: number
+      name: string
+      date: string
+      due_date: string
+      status: string
+    } | null
     ocr_result?: { summary: { field_count: number } } | null
   }
 
@@ -417,6 +433,15 @@
   }
   .muted-text {
     color: var(--el-text-color-secondary);
+  }
+  .related-task {
+    display: grid;
+    gap: 2px;
+    line-height: 1.4;
+  }
+  .related-task small {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
   }
   .el-pagination {
     margin-top: 20px;

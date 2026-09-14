@@ -65,6 +65,16 @@ export interface SurveyExportParams {
   end_date?: string
 }
 
+export interface SurveyCreatePayload {
+  name: string
+  description: string
+}
+
+export type SurveySavePayload = Pick<
+  SurveyDetail,
+  'id' | 'name' | 'code' | 'description' | 'fillableDay' | 'status' | 'version' | 'questions'
+>
+
 export function fetchSurveyList(params: SurveyListParams) {
   return request.get<SurveyListResponse>({
     url: '/app/core/survey/index',
@@ -76,6 +86,20 @@ export function fetchSurveyDetail(id: number) {
   return request.get<SurveyDetail>({
     url: '/app/core/survey/detail',
     params: { id }
+  })
+}
+
+export function createSurvey(params: SurveyCreatePayload) {
+  return request.post<{ id: number; code: string }>({
+    url: '/app/core/survey/save',
+    params
+  })
+}
+
+export function saveSurvey(params: SurveySavePayload) {
+  return request.post<{ id: number; code: string }>({
+    url: '/app/core/survey/save',
+    params
   })
 }
 

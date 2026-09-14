@@ -152,6 +152,16 @@ export function createMockServer({ now = () => new Date() } = {}) {
     new Set(surveyAnswers(id).map((answer) => answer.user_id)).size;
   const answerRowCount = (id) =>
     surveyAnswers(id).reduce((sum, answer) => sum + answer.values.length, 0);
+  const nextSurveyCode = () => {
+    const prefix = `WJ${today().replaceAll("-", "")}`;
+    let sequence = 1;
+    let code = `${prefix}${String(sequence).padStart(4, "0")}`;
+    while (db.surveys.some((survey) => survey.code === code)) {
+      sequence += 1;
+      code = `${prefix}${String(sequence).padStart(4, "0")}`;
+    }
+    return code;
+  };
   const answerDetail = (userId, templateId) => {
     find(db.patients, userId, "患者");
     let s = find(db.surveys, templateId, "问卷");
@@ -749,7 +759,15 @@ export function createMockServer({ now = () => new Date() } = {}) {
   core("GET", "survey/detail", ({ query }) =>
     find(db.surveys, query.id, "问卷模板"),
   );
-  core("POST", "survey/toggle-status", toggle(db.surveys, "问卷模板"));
+  core("POST", "survey/toggle-status", ({ body: b }) => {
+    assert([0, 1].includes(Number(b.status)), "状态值不合法");
+    const survey = find(db.surveys, b.id, "问卷模板");
+    if (Number(b.status) === 1)
+      assert(survey.questions.length, "请先添加题目，再启用问卷");
+    survey.status = Number(b.status);
+    survey.updatedAt = timestamp();
+    return { id: survey.id, status: survey.status };
+  });
   core("POST", "survey/delete", ({ body: b }) => {
     const s = find(db.surveys, b.id, "问卷模板");
     assert(
@@ -772,27 +790,26 @@ export function createMockServer({ now = () => new Date() } = {}) {
           version: old.version || 1,
         })
       : null;
-    const code = clean(b.code);
+    const code = old?.code || nextSurveyCode();
     const name = clean(b.name);
     const description = clean(b.description);
-    assert(code && code.length <= 64, "模板编码必填且不超过64字符");
-    assert(name && name.length <= 128, "模板名称必填且不超过128字符");
+    assert(code.length <= 64, "问卷编号不能超过64字符");
+    assert(name && name.length <= 128, "问卷标题必填且不超过128字符");
     assert(description.length <= 256, "问卷说明不超过256字符");
     assert(
       !db.surveys.some((s) => s !== old && s.code === code),
       "模板编码已存在",
     );
     const fillableDay = Number(b.fillableDay ?? b.fillable_day ?? 0);
-    const status = Number(b.status ?? 1);
+    const status = Number(b.status ?? old?.status ?? 0);
     assert(
       Number.isInteger(fillableDay) && fillableDay >= 0,
       "可填写天数不合法",
     );
     assert([0, 1].includes(status), "状态值不合法");
-    assert(
-      Array.isArray(b.questions) && b.questions.length,
-      "至少需要一道题目",
-    );
+    const rawQuestions = b.questions ?? [];
+    assert(Array.isArray(rawQuestions), "题目数据格式不正确");
+    if (old) assert(rawQuestions.length, "至少需要一道题目");
     let nextQuestion =
       Math.max(0, ...db.surveys.flatMap((s) => s.questions.map((q) => q.id))) +
       1;
@@ -803,7 +820,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
           s.questions.flatMap((q) => q.options.map((o) => o.id)),
         ),
       ) + 1;
-    const questions = b.questions.map((raw) => {
+    const questions = rawQuestions.map((raw) => {
       const id = integer(raw.id);
       const previous = old?.questions.find((q) => q.id === id);
       assert(!id || previous, "题目ID非法");
@@ -919,7 +936,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
       }),
     });
     if (!old) db.surveys.push(s);
-    return { id: s.id };
+    return { id: s.id, code: s.code };
   });
   core("GET", "survey/export", ({ query, res }) => {
     const current = find(db.surveys, query.id, "问卷模板");

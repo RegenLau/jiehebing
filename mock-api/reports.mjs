@@ -43,26 +43,46 @@ export function registerReports({
       return { url, name: f.name, type: f.type };
     });
   };
+  const withTask = (report) => {
+    const task = report.task_id
+      ? db.followupTasks.find((row) => row.id === report.task_id)
+      : null;
+    return {
+      ...report,
+      task: task
+        ? {
+            id: task.id,
+            name: task.name,
+            date: task.date,
+            due_date: task.due_date,
+            status: task.status,
+          }
+        : null,
+    };
+  };
   core("GET", "report/index", ({ query: q }) =>
     page(
-      [...db.reports].reverse().filter((r) => {
-        const patient = db.patients.find((p) => p.id === r.user_id);
-        return (
-          (!q.user_id || r.user_id === Number(q.user_id)) &&
-          (!q.project_id || patient?.project_id === Number(q.project_id)) &&
-          (!q.group_id || patient?.group_id === Number(q.group_id)) &&
-          (!q.start_date || r.exam_date >= q.start_date) &&
-          (!q.end_date || r.exam_date <= q.end_date) &&
-          (!q.keyword ||
-            `${r.patient_name} ${r.type}`.includes(clean(q.keyword))) &&
-          (!q.status || r.status === q.status)
-        );
-      }),
+      [...db.reports]
+        .reverse()
+        .filter((r) => {
+          const patient = db.patients.find((p) => p.id === r.user_id);
+          return (
+            (!q.user_id || r.user_id === Number(q.user_id)) &&
+            (!q.project_id || patient?.project_id === Number(q.project_id)) &&
+            (!q.group_id || patient?.group_id === Number(q.group_id)) &&
+            (!q.start_date || r.exam_date >= q.start_date) &&
+            (!q.end_date || r.exam_date <= q.end_date) &&
+            (!q.keyword ||
+              `${r.patient_name} ${r.type}`.includes(clean(q.keyword))) &&
+            (!q.status || r.status === q.status)
+          );
+        })
+        .map(withTask),
       q,
     ),
   );
   core("GET", "report/detail", ({ query: q }) =>
-    find(db.reports, q.id, "报告"),
+    withTask(find(db.reports, q.id, "报告")),
   );
   core("POST", "report/create", ({ body: b, admin }) => {
     const p = find(db.patients, b.user_id, "患者");

@@ -1,20 +1,21 @@
 <template>
   <div class="survey-form">
     <ElForm label-position="top" :disabled="saving">
-      <ElFormItem label="问卷名称">
-        <ElInput v-model="form.name" maxlength="128" />
-      </ElFormItem>
-      <ElFormItem label="模板编码">
-        <ElInput v-model="form.code" maxlength="64" />
-      </ElFormItem>
-      <ElFormItem label="问卷说明">
-        <ElInput v-model="form.description" maxlength="256" />
-      </ElFormItem>
-      <p class="tip">填写时间由分组安排。已有作答的题型及选项删除受保护，旧答卷保留原文。</p>
+      <div class="question-section-heading">
+        <div>
+          <h3>题目设置</h3>
+          <p>填写时间由分组安排。已有作答的题型及选项删除受保护，旧答卷保留原文。</p>
+        </div>
+        <ElButton type="primary" plain @click="addQuestion">添加题目</ElButton>
+      </div>
+
+      <ElEmpty v-if="!form.questions.length" description="当前还没有题目">
+        <ElButton type="primary" @click="addQuestion">添加第一道题目</ElButton>
+      </ElEmpty>
 
       <div
         v-for="(questionItem, questionIndex) in form.questions"
-        :key="questionIndex"
+        :key="questionItem.id || `new-${questionIndex}`"
         class="question"
       >
         <div class="toolbar">
@@ -27,7 +28,7 @@
           <ElInput v-model="questionItem.title" maxlength="512" />
         </ElFormItem>
         <div class="toolbar question-setting">
-          <ElSelect v-model="questionItem.type">
+          <ElSelect v-model="questionItem.type" @change="changeQuestionType(questionItem)">
             <ElOption label="单选" value="RADIO" />
             <ElOption label="多选" value="CHECKBOX" />
             <ElOption label="文本" value="TEXT" />
@@ -65,7 +66,9 @@
           <ElInput v-model="questionItem.placeholder" maxlength="256" />
         </ElFormItem>
       </div>
-      <ElButton @click="form.questions.push(question())">添加题目</ElButton>
+      <ElButton v-if="form.questions.length" class="add-question" @click="addQuestion">
+        添加题目
+      </ElButton>
     </ElForm>
 
     <div class="footer">
@@ -78,8 +81,12 @@
 <script setup lang="ts">
   import { ref } from 'vue'
   import { ElMessage } from 'element-plus'
-  import request from '@/utils/http'
-  import { fetchSurveyDetail, type SurveyQuestion, type SurveyQuestionOption } from '@/api/survey'
+  import {
+    fetchSurveyDetail,
+    saveSurvey,
+    type SurveyQuestion,
+    type SurveyQuestionOption
+  } from '@/api/survey'
 
   const emit = defineEmits<{
     saved: []
@@ -115,14 +122,24 @@
     fillableDay: 0,
     status: 1,
     version: undefined as number | undefined,
-    questions: [question()]
+    questions: [] as SurveyQuestion[]
   })
 
   const saving = ref(false)
   const form = ref(blank())
 
-  async function open(id?: number) {
-    form.value = id ? { ...blank(), ...(await fetchSurveyDetail(id)) } : blank()
+  async function open(id: number) {
+    form.value = { ...blank(), ...(await fetchSurveyDetail(id)) }
+  }
+
+  function addQuestion() {
+    form.value.questions.push(question())
+  }
+
+  function changeQuestionType(questionItem: SurveyQuestion) {
+    if (questionItem.type !== 'TEXT' && !questionItem.options.length) {
+      questionItem.options.push(option(), option())
+    }
   }
 
   function condition(optionItem: SurveyQuestionOption) {
@@ -140,32 +157,60 @@
   }
 
   async function save() {
-    if (!form.value.name.trim() || !form.value.code.trim() || !form.value.questions.length) {
-      ElMessage.warning('请填写名称、编码和题目')
+    const id = form.value.id
+    if (!id) return
+    if (!form.value.questions.length) {
+      ElMessage.warning('请至少添加一道题目')
       return
+    }
+    for (let questionIndex = 0; questionIndex < form.value.questions.length; questionIndex++) {
+      const current = form.value.questions[questionIndex]
+      if (!current.title.trim()) {
+        ElMessage.warning(`请填写第 ${questionIndex + 1} 题的题干`)
+        return
+      }
+      if (current.type !== 'TEXT') {
+        if (!current.options.length) {
+          ElMessage.warning(`请为第 ${questionIndex + 1} 题添加选项`)
+          return
+        }
+        const emptyOption = current.options.findIndex((item) => !item.label.trim())
+        if (emptyOption >= 0) {
+          ElMessage.warning(`请填写第 ${questionIndex + 1} 题的第 ${emptyOption + 1} 个选项`)
+          return
+        }
+        if (
+          current.options.some(
+            (item) =>
+              item.triggerInput &&
+              (!item.inputFields?.length || !item.inputFields[0].field_label?.trim())
+          )
+        ) {
+          ElMessage.warning(`请填写第 ${questionIndex + 1} 题的补充输入问题`)
+          return
+        }
+      }
     }
 
     saving.value = true
     emit('saving-change', true)
     let saved = false
     try {
-      await request.post({
-        url: '/app/core/survey/save',
-        params: {
-          ...form.value,
-          questions: form.value.questions.map((questionItem, questionIndex) => ({
-            ...questionItem,
-            questionNo: questionIndex + 1,
-            sortOrder: questionIndex + 1,
-            options: questionItem.options.map((optionItem, optionIndex) => ({
-              ...optionItem,
-              sortOrder: optionIndex + 1
-            }))
+      await saveSurvey({
+        ...form.value,
+        id,
+        questions: form.value.questions.map((questionItem, questionIndex) => ({
+          ...questionItem,
+          questionNo: questionIndex + 1,
+          sortOrder: questionIndex + 1,
+          options: questionItem.options.map((optionItem, optionIndex) => ({
+            ...optionItem,
+            sortOrder: optionIndex + 1
           }))
-        },
-        showSuccessMessage: true
+        }))
       })
       saved = true
+      ElMessage.success('问卷已保存')
     } finally {
       saving.value = false
       emit('saving-change', false)
@@ -177,9 +222,27 @@
 </script>
 
 <style scoped>
-  .tip {
+  .question-section-heading p {
     color: var(--el-text-color-secondary);
     line-height: 1.6;
+  }
+
+  .question-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding-top: 8px;
+    border-top: 1px solid var(--el-border-color-lighter);
+  }
+
+  .question-section-heading h3 {
+    margin: 0 0 4px;
+    font-size: 18px;
+  }
+
+  .question-section-heading p {
+    margin: 0;
   }
 
   .question {
@@ -212,6 +275,10 @@
     flex: 1;
   }
 
+  .add-question {
+    width: 100%;
+  }
+
   .footer {
     display: flex;
     justify-content: flex-end;
@@ -220,6 +287,10 @@
   }
 
   @media (max-width: 720px) {
+    .question-section-heading {
+      align-items: flex-start;
+    }
+
     .question {
       padding: 16px;
     }
