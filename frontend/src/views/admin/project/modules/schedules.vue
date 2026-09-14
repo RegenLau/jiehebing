@@ -40,10 +40,10 @@
         <ElFormItem v-if="row.anchor === 'date'" label="执行日期"
           ><ElDatePicker v-model="row.date" value-format="YYYY-MM-DD"
         /></ElFormItem>
-        <ElFormItem v-else label="首次执行（开始计算日期后第几天）"
+        <ElFormItem v-else label="第一次执行（开始计算日期后第几天）"
           ><ElInputNumber v-model="row.offset_days" :min="0" :max="3650" :precision="0" /><span
             class="unit-suffix"
-            >天</span
+            >天后执行</span
           ></ElFormItem
         >
         <ElFormItem label="执行频率（每几天执行一次）"

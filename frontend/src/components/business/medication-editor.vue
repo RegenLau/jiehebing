@@ -185,7 +185,7 @@
               :aria-label="`药品${index + 1}规格`"
               @input="changeDrug(drug)"
           /></ElFormItem>
-          <ElFormItem label="药品量">
+          <ElFormItem label="首次发放药品量">
             <div class="quantity-input">
               <ElInputNumber
                 v-model="drug.quantity"
@@ -194,7 +194,7 @@
                 :max="100000"
                 :precision="0"
                 :disabled="readonly || disabled"
-                :aria-label="`药品${index + 1}药品量`"
+                :aria-label="`药品${index + 1}首次发放药品量`"
                 @change="changeDrug(drug)"
               />
               <ElInput
