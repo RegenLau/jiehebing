@@ -53,10 +53,12 @@
           width="100"
           ><template #default="{ row }">{{ row.remind_time || '-' }}</template></ElTableColumn
         ><ElTableColumn prop="source" label="来源" min-width="120" /><ElTableColumn
+          prop="status"
           label="状态"
-          width="150"
+          width="100"
+        /><ElTableColumn label="逾期状态" width="100"
           ><template #default="{ row }"
-            >{{ row.status }} <ElTag v-if="row.overdue" type="danger">逾期</ElTag></template
+            ><ElTag v-if="row.overdue" type="danger">逾期</ElTag><span v-else>-</span></template
           ></ElTableColumn
         ></ElTable
       ><ElPagination
