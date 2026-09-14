@@ -28,19 +28,19 @@
         </div>
         <ElForm label-position="top" :disabled="saving">
           <div class="form-grid two-columns">
-            <ElFormItem label="姓名" required
+            <ElFormItem label="姓名" required :error="fieldErrors.name"
               ><ElInput v-model.trim="form.name" maxlength="60"
             /></ElFormItem>
-            <ElFormItem label="手机号" required>
+            <ElFormItem label="手机号" required :error="fieldErrors.mobile">
               <ElInput v-model.trim="form.mobile" maxlength="11" placeholder="11 位手机号" />
             </ElFormItem>
-            <ElFormItem label="性别" required>
+            <ElFormItem label="性别" required :error="fieldErrors.gender">
               <ElSelect v-model="form.gender" placeholder="请选择">
                 <ElOption label="男" :value="1" />
                 <ElOption label="女" :value="2" />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="出生日期" required>
+            <ElFormItem label="出生日期" required :error="fieldErrors.birth_date">
               <ElDatePicker
                 v-model="form.birth_date"
                 type="date"
@@ -59,7 +59,7 @@
         </div>
         <ElForm label-position="top" :disabled="saving">
           <div class="form-grid two-columns">
-            <ElFormItem label="研究项目" required>
+            <ElFormItem label="研究项目" required :error="fieldErrors.project_id">
               <ElSelect
                 v-model="form.project_id"
                 filterable
@@ -74,7 +74,7 @@
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="研究分组" required>
+            <ElFormItem label="研究分组" required :error="fieldErrors.group_id">
               <ElSelect v-model="form.group_id" filterable @change="selectGroup">
                 <ElOption
                   v-for="group in groups"
@@ -84,7 +84,7 @@
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="负责人员" required>
+            <ElFormItem label="负责人员" required :error="fieldErrors.owner_id">
               <ElSelect v-model="form.owner_id" filterable>
                 <ElOption
                   v-for="owner in owners"
@@ -95,7 +95,7 @@
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="入组日期" required>
+            <ElFormItem label="入组日期" required :error="fieldErrors.enroll_date">
               <ElDatePicker v-model="form.enroll_date" type="date" value-format="YYYY-MM-DD" />
             </ElFormItem>
           </div>
@@ -113,6 +113,9 @@
               </ElCheckbox>
             </div>
           </div>
+          <p v-if="fieldErrors.confirmations" class="field-error" role="alert">
+            {{ fieldErrors.confirmations }}
+          </p>
         </ElForm>
       </section>
 
@@ -130,6 +133,7 @@
           v-model:adjusted="personalAdjustment"
           :group="groupRecord"
           :disabled="saving"
+          :has-existing-treatment="false"
           @reset="resetToGroup"
         />
         <ElDivider />
@@ -253,18 +257,19 @@
                 <h3>个人用药方案</h3>
                 <p>方案保存后只影响当前患者未来的用药计划，同组患者和分组模板保持不变。</p>
               </div>
-              <ElTag
-                v-if="latestTreatment"
-                :type="latestTreatment.adjusted ? 'warning' : 'success'"
-              >
-                {{ latestTreatment.adjusted ? '个体调整' : '采用分组方案' }}
-              </ElTag>
+              <div class="treatment-state-tags">
+                <ElTag v-if="currentTreatment" type="success">当前生效</ElTag>
+                <ElTag v-if="upcomingTreatment" type="info">
+                  {{ upcomingTreatment.start_date }} 待生效
+                </ElTag>
+              </div>
             </div>
             <MedicationEditor
               v-model:treatment="treatment"
               v-model:adjusted="personalAdjustment"
               :group="groupRecord"
               :disabled="saving"
+              :has-existing-treatment="Boolean(editableTreatment)"
               @reset="resetToGroup"
             />
             <ElButton type="primary" :loading="saving" @click="saveTreatment"
@@ -273,6 +278,13 @@
             <h3 class="history-title">方案历史</h3>
             <ElTable :data="[...treatments].reverse()" border empty-text="尚未确认个人用药方案">
               <ElTableColumn prop="created_at" label="记录时间" min-width="170" />
+              <ElTableColumn prop="version_state" label="版本状态" width="105">
+                <template #default="{ row }">
+                  <ElTag
+                    :type="row.version_state === '当前生效' ? 'success' : row.version_state === '待生效' ? 'info' : undefined"
+                  >{{ row.version_state }}</ElTag>
+                </template>
+              </ElTableColumn>
               <ElTableColumn label="来源" width="110">
                 <template #default="{ row }">
                   <ElTag :type="row.adjusted ? 'warning' : 'success'">{{
@@ -312,21 +324,55 @@
                 /></ElFormItem>
               </div>
               <div class="dispense-items">
+                <ElAlert
+                  v-if="correctingDispenseId"
+                  :title="`正在更正发药记录 #${correctingDispenseId}；提交后原记录会保留并标记为已冲销。`"
+                  type="warning"
+                  :closable="false"
+                  show-icon
+                />
                 <div v-for="item in dispense.items" :key="item.drug_id" class="dispense-row">
                   <span>{{ item.name }}（{{ item.unit }}）</span>
-                  <ElInputNumber v-model="item.quantity" :min="0" :precision="3" />
+                  <ElInputNumber
+                    v-model="item.quantity"
+                    :min="0"
+                    :precision="quantityPrecision(item.unit)"
+                  />
                 </div>
               </div>
             </ElForm>
-            <ElButton type="primary" :loading="saving" @click="saveDispense">登记实际发药</ElButton>
+            <div class="inline-actions">
+              <ElButton type="primary" :loading="saving" @click="saveDispense">
+                {{ correctingDispenseId ? '提交发药更正' : '登记实际发药' }}
+              </ElButton>
+              <ElButton v-if="correctingDispenseId" :disabled="saving" @click="cancelCorrection">
+                取消更正
+              </ElButton>
+            </div>
             <h3 class="history-title">发药记录</h3>
             <ElTable :data="[...dispensings].reverse()" border empty-text="暂无发药记录">
-              <ElTableColumn prop="issued_date" label="实际日期" width="120" />
+              <ElTableColumn prop="issued_date" label="实际发药日期" width="130" />
               <ElTableColumn label="药品与数量" min-width="260">
                 <template #default="{ row }">{{ formatDispense(row.items) }}</template>
               </ElTableColumn>
+              <ElTableColumn label="记录状态" width="100">
+                <template #default="{ row }">
+                  <ElTag :type="row.status === '已冲销' ? 'info' : 'success'">
+                    {{ row.status || '有效' }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
               <ElTableColumn prop="operator" label="操作人" min-width="120" />
               <ElTableColumn prop="reason" label="说明" min-width="160" />
+              <ElTableColumn label="操作" width="130" fixed="right">
+                <template #default="{ row }">
+                  <template v-if="row.status !== '已冲销'">
+                    <ElButton link type="primary" @click="startCorrection(row as Dispensing)">更正</ElButton>
+                    <ElButton link type="danger" @click="voidDispense(row as Dispensing)">冲销</ElButton>
+                  </template>
+                  <span v-else class="muted">已保留原始记录</span>
+                </template>
+              </ElTableColumn>
             </ElTable>
           </ElTabPane>
 
@@ -412,7 +458,7 @@
               <div class="form-grid three-columns">
                 <ElFormItem label="新状态" required>
                   <ElSelect v-model="state"
-                    ><ElOption v-for="item in states" :key="item" :label="item" :value="item"
+                    ><ElOption v-for="item in availableStates" :key="item" :label="item" :value="item"
                   /></ElSelect>
                 </ElFormItem>
                 <ElFormItem label="生效日期" required
@@ -422,7 +468,21 @@
                   ><ElInput v-model.trim="stateReason" maxlength="500"
                 /></ElFormItem>
               </div>
-              <ElButton type="primary" :loading="saving" @click="saveState">登记状态变更</ElButton>
+              <ElAlert
+                v-if="availableStates.length"
+                :title="stateImpactText"
+                type="warning"
+                :closable="false"
+                show-icon
+              />
+              <ElEmpty v-else description="当前状态已结束，无可执行的人工状态变更" :image-size="64" />
+              <ElButton
+                v-if="availableStates.length"
+                type="primary"
+                :loading="saving"
+                @click="saveState"
+                >登记状态变更</ElButton
+              >
             </ElForm>
           </ElTabPane>
 
@@ -443,7 +503,7 @@
 <script setup lang="ts">
   import { computed, ref, watch } from 'vue'
   import request from '@/utils/http'
-  import { ElMessage } from 'element-plus'
+  import { ElMessage, ElMessageBox } from 'element-plus'
   import { useRoute, useRouter } from 'vue-router'
   import {
     fetchProjectDetail,
@@ -489,7 +549,11 @@
     id?: number
     start_date: string
     end_date?: string
+    course_start_date?: string
+    course_end_date?: string
     treatment_days: number
+    adjust_course_end?: boolean
+    version_state?: string
     reason: string
     adjusted?: boolean
     adjustment_summary?: string[]
@@ -504,10 +568,21 @@
   }
   interface Management {
     patient: Patient
+    current_treatment_id: number | null
+    upcoming_treatment_id: number | null
     treatments: Treatment[]
-    dispensings: { issued_date: string; items: DispenseItem[]; operator: string; reason: string }[]
+    dispensings: {
+      id: number
+      treatment_id: number
+      issued_date: string
+      items: DispenseItem[]
+      operator: string
+      reason: string
+      status?: '有效' | '已冲销'
+    }[]
     history: { time: string; operator: string; action: string; reason: string }[]
   }
+  type Dispensing = Management['dispensings'][number]
 
   const route = useRoute()
   const router = useRouter()
@@ -537,6 +612,7 @@
   const loading = ref(false)
   const saving = ref(false)
   const createStep = ref(0)
+  const fieldErrors = ref<Record<string, string>>({})
   const editingBase = ref(false)
   const tab = ref('treatment')
   const form = ref<Patient>(blank())
@@ -547,14 +623,18 @@
   const treatment = ref<Treatment>(blankTreatment())
   const personalAdjustment = ref(false)
   const treatments = ref<Treatment[]>([])
+  const currentTreatmentId = ref<number | null>(null)
+  const upcomingTreatmentId = ref<number | null>(null)
   const dispensings = ref<Management['dispensings']>([])
   const history = ref<Management['history']>([])
+  const correctingDispenseId = ref<number | null>(null)
+  const dispenseRequestId = ref('')
+  const onboardingRequestId = ref('')
   const dispense = ref({
     issued_date: todayText(),
     reason: '首次发药',
     items: [] as DispenseItem[]
   })
-  const states = ['提前退出']
   const state = ref('提前退出')
   const effectiveDate = ref(todayText())
   const stateReason = ref('')
@@ -577,12 +657,33 @@
     quantity: 0,
     reason: ''
   })
-  const latestTreatment = computed(() => treatments.value.at(-1))
+  const currentTreatment = computed(
+    () => treatments.value.find((item) => item.id === currentTreatmentId.value) || null
+  )
+  const upcomingTreatment = computed(
+    () => treatments.value.find((item) => item.id === upcomingTreatmentId.value) || null
+  )
+  const editableTreatment = computed(
+    () => upcomingTreatment.value || currentTreatment.value || treatments.value.at(-1) || null
+  )
   const activeDispenseItems = computed(() =>
     dispense.value.items.filter((item) =>
       treatment.value.drugs.some((drug) => drug.drug_id === item.drug_id && drug.enabled)
     )
   )
+  const availableStates = computed(() => {
+    const transitions: Record<string, string[]> = {
+      待启用: ['提前退出', '失访'],
+      治疗中: ['暂停用药', '提前退出', '失访'],
+      暂停用药: ['治疗中', '提前退出', '失访']
+    }
+    return transitions[form.value.study_state || '待启用'] || []
+  })
+  const stateImpactText = computed(() => {
+    if (state.value === '暂停用药') return '保存后暂停今天起尚未执行的用药计划，问卷和安全随访继续。'
+    if (state.value === '治疗中') return '保存后仅恢复当前及待生效方案的用药计划，不会恢复已被替换的旧版本。'
+    return '保存后停止普通用药、问卷和随访任务；如需安全随访，应由工作人员显式建立安全随访任务。'
+  })
 
   const editableDrug = (drug: Drug, enabled = true): TreatmentDrug => ({
     ...JSON.parse(JSON.stringify(drug)),
@@ -598,9 +699,14 @@
       return
     }
     const startDate = preserveStart ? treatment.value.start_date || todayText() : todayText()
+    const existing = editableTreatment.value
     treatment.value = {
       start_date: startDate,
-      treatment_days: medication.treatment_days,
+      treatment_days: existing?.treatment_days || medication.treatment_days,
+      course_start_date: existing?.course_start_date,
+      course_end_date: existing?.course_end_date || existing?.end_date,
+      end_date: existing?.end_date,
+      adjust_course_end: false,
       reason: '首次确认采用分组方案',
       drugs: (medication.snapshot.drugs || []).map((drug) => editableDrug(drug))
     }
@@ -613,7 +719,7 @@
     }))
   }
   const applyLatestTreatment = () => {
-    const latest = latestTreatment.value
+    const latest = editableTreatment.value
     const sources = groupRecord.value?.medication?.snapshot.drugs || []
     if (!latest) {
       applyGroupTreatment(false)
@@ -622,7 +728,9 @@
     const current = latest.drugs || []
     treatment.value = {
       ...latest,
-      start_date: todayText(),
+      start_date: latest.version_state === '待生效' ? latest.start_date : todayText(),
+      course_end_date: latest.course_end_date || latest.end_date,
+      adjust_course_end: false,
       reason: '',
       drugs: sources.map((source) => {
         const personal = current.find((item) => item.drug_id === source.drug_id)
@@ -692,7 +800,14 @@
       params: { user_id: form.value.id }
     })
     form.value = { ...blank(), ...data.patient, reason: '' }
+    state.value = ({
+      待启用: '提前退出',
+      治疗中: '暂停用药',
+      暂停用药: '治疗中'
+    } as Record<string, string>)[form.value.study_state || '待启用'] || ''
     treatments.value = data.treatments
+    currentTreatmentId.value = data.current_treatment_id
+    upcomingTreatmentId.value = data.upcoming_treatment_id
     dispensings.value = data.dispensings
     history.value = data.history
     await loadGroups(false)
@@ -707,6 +822,8 @@
       createStep.value = 0
       editingBase.value = false
       treatments.value = []
+      currentTreatmentId.value = null
+      upcomingTreatmentId.value = null
       dispensings.value = []
       history.value = []
       stock.value = []
@@ -749,37 +866,27 @@
     }
   }
   function nextStep() {
+    fieldErrors.value = {}
     if (createStep.value === 0) {
-      if (
-        !form.value.name ||
-        !/^1\d{10}$/.test(form.value.mobile) ||
-        !form.value.gender ||
-        !form.value.birth_date
-      ) {
-        ElMessage.warning('请完整填写姓名、11 位手机号、性别和出生日期')
+      if (!form.value.name) fieldErrors.value.name = '请填写患者姓名'
+      if (!/^1\d{10}$/.test(form.value.mobile))
+        fieldErrors.value.mobile = '请填写有效的 11 位手机号'
+      if (!form.value.gender) fieldErrors.value.gender = '请选择性别'
+      if (!form.value.birth_date) fieldErrors.value.birth_date = '请选择出生日期'
+      if (Object.keys(fieldErrors.value).length) {
         return
       }
     }
     if (createStep.value === 1) {
-      if (
-        !form.value.project_id ||
-        !form.value.group_id ||
-        !form.value.owner_id ||
-        !form.value.enroll_date
-      ) {
-        ElMessage.warning('请完整选择研究项目、分组、负责人员和入组日期')
-        return
-      }
+      if (!form.value.project_id) fieldErrors.value.project_id = '请选择研究项目'
+      if (!form.value.group_id) fieldErrors.value.group_id = '请选择研究分组'
+      if (!form.value.owner_id) fieldErrors.value.owner_id = '请选择负责人员'
+      if (!form.value.enroll_date) fieldErrors.value.enroll_date = '请选择入组日期'
+      if (!form.value.offline_confirmed || !form.value.consent_confirmed)
+        fieldErrors.value.confirmations = '请完成线下入组条件与知情同意两项确认'
+      if (Object.keys(fieldErrors.value).length) return
       if (!projects.value.some((project) => project.id === form.value.project_id)) {
         ElMessage.warning('只能选择待开始或进行中的研究项目')
-        return
-      }
-      if (!form.value.offline_confirmed) {
-        ElMessage.warning('请勾选“已在线下确认符合研究入组条件”')
-        return
-      }
-      if (!form.value.consent_confirmed) {
-        ElMessage.warning('请勾选“已登记知情同意”')
         return
       }
       if (!groupRecord.value?.medication) {
@@ -792,6 +899,8 @@
   const treatmentPayload = () => ({
     start_date: treatment.value.start_date,
     treatment_days: treatment.value.treatment_days,
+    course_end_date: treatment.value.course_end_date || treatment.value.end_date,
+    adjust_course_end: Boolean(treatment.value.adjust_course_end),
     reason: treatment.value.reason,
     adjusted: personalAdjustment.value,
     drugs: personalAdjustment.value
@@ -814,6 +923,14 @@
       ElMessage.warning(
         personalAdjustment.value ? '请填写开始日期和个体调整原因' : '请填写开始日期和方案确认说明'
       )
+      return false
+    }
+    if (
+      editableTreatment.value &&
+      treatment.value.adjust_course_end &&
+      !treatment.value.course_end_date
+    ) {
+      ElMessage.warning('请选择新的疗程结束日期')
       return false
     }
     const active = treatment.value.drugs.filter((drug) => drug.enabled)
@@ -840,15 +957,22 @@
     }
     saving.value = true
     try {
+      onboardingRequestId.value ||= crypto.randomUUID()
       const result = await request.post<{ patient: Patient }>({
         url: '/app/core/patient/onboard',
         params: {
+          client_request_id: onboardingRequestId.value,
           patient: form.value,
           treatment: treatmentPayload(),
-          dispense: { ...dispense.value, items: activeDispenseItems.value }
+          dispense: {
+            ...dispense.value,
+            items: activeDispenseItems.value,
+            client_request_id: onboardingRequestId.value
+          }
         },
         showSuccessMessage: true
       })
+      onboardingRequestId.value = ''
       await router.replace({
         path: '/patient/management',
         query: { user_id: String(result.patient.id) }
@@ -897,7 +1021,65 @@
       ElMessage.warning('请完整填写发药日期、数量和说明')
       return
     }
-    await action('patient/dispense', { user_id: form.value.id, ...dispense.value })
+    dispenseRequestId.value ||= crypto.randomUUID()
+    saving.value = true
+    try {
+      await request.post({
+        url: `/app/core/patient/${correctingDispenseId.value ? 'dispense-correct' : 'dispense'}`,
+        params: correctingDispenseId.value
+          ? {
+              id: correctingDispenseId.value,
+              action: 'correct',
+              issued_date: dispense.value.issued_date,
+              items: dispense.value.items,
+              reason: dispense.value.reason,
+              client_request_id: dispenseRequestId.value
+            }
+          : {
+              user_id: form.value.id,
+              treatment_id: editableTreatment.value?.id,
+              ...dispense.value,
+              client_request_id: dispenseRequestId.value
+            },
+        showSuccessMessage: true
+      })
+      dispenseRequestId.value = ''
+      correctingDispenseId.value = null
+      await refreshManagement()
+    } finally {
+      saving.value = false
+    }
+  }
+  function startCorrection(row: Management['dispensings'][number]) {
+    correctingDispenseId.value = row.id
+    dispenseRequestId.value = ''
+    dispense.value = {
+      issued_date: row.issued_date,
+      reason: '',
+      items: structuredClone(row.items)
+    }
+  }
+  function cancelCorrection() {
+    correctingDispenseId.value = null
+    dispenseRequestId.value = ''
+    applyLatestTreatment()
+  }
+  async function voidDispense(row: Management['dispensings'][number]) {
+    try {
+      const { value } = await ElMessageBox.prompt(
+        '冲销后该条发药量不再计入余药，但原记录和原因会永久保留。',
+        `冲销发药记录 #${row.id}`,
+        { inputPlaceholder: '请填写冲销原因', inputValidator: (text) => Boolean(text?.trim()) || '请填写冲销原因' }
+      )
+      await action('patient/dispense-correct', {
+        id: row.id,
+        action: 'void',
+        reason: value,
+        client_request_id: crypto.randomUUID()
+      })
+    } catch {
+      // 用户取消
+    }
   }
   async function loadStock() {
     if (!form.value.id) return
@@ -910,15 +1092,21 @@
     await action('patient/stock-adjust', { user_id: form.value.id, ...stockForm.value })
     await loadStock()
   }
-  const saveState = () =>
+  const saveState = () => {
+    if (!state.value || !stateReason.value.trim()) {
+      ElMessage.warning('请选择新状态并填写变更原因')
+      return
+    }
     action('patient/state', {
       user_id: form.value.id,
       state: state.value,
       effective_date: effectiveDate.value,
       reason: stateReason.value
     })
+  }
   const formatDispense = (items: DispenseItem[]) =>
     items.map((item) => `${item.name} ${item.quantity}${item.unit}`).join('、')
+  const quantityPrecision = (unit: string) => (/片|粒|袋|支|盒|瓶/.test(unit) ? 0 : 2)
   const goBack = () => router.push('/patient/index')
   const disableFutureDate = (date: Date) => date.getTime() > Date.now()
 
@@ -930,6 +1118,11 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+  }
+  .field-error {
+    margin: 8px 0 0;
+    color: var(--el-color-danger);
+    font-size: 12px;
   }
   .page-heading,
   .tab-heading,

@@ -67,6 +67,13 @@
           />
         </ElFormItem>
       </div>
+      <div class="schedule-help">
+        <p>0 天表示开始计算日当天；完成期限包含执行当天。</p>
+        <strong>未来三次示例（{{ row.anchor === 'date' ? '按指定日期' : `假设开始计算日为 ${todayText}` }}）</strong>
+        <span v-for="item in schedulePreview(row)" :key="item.start">
+          {{ item.start }} 开放，{{ item.due }} 截止
+        </span>
+      </div>
     </div>
   </div>
 </template>
@@ -76,6 +83,22 @@
   const props = defineProps<{ sources: Source[]; label: string }>()
   const model = defineModel<Schedule[]>({ required: true })
   const selected = ref<number>()
+  const todayText = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
+  const shiftDate = (date: string, days: number) => {
+    const value = new Date(`${date}T00:00:00Z`)
+    value.setUTCDate(value.getUTCDate() + days)
+    return value.toISOString().slice(0, 10)
+  }
+  function schedulePreview(row: Schedule) {
+    const base = row.anchor === 'date' ? row.date || todayText : todayText
+    const first = shiftDate(base, row.anchor === 'date' ? 0 : Number(row.offset_days || 0))
+    const interval = Number(row.interval_days || 0)
+    const count = interval > 0 ? 3 : 1
+    return Array.from({ length: count }, (_, index) => {
+      const start = shiftDate(first, interval * index)
+      return { start, due: shiftDate(start, Math.max(1, Number(row.deadline_days || 1)) - 1) }
+    })
+  }
   function add() {
     const source = props.sources.find((s) => s.id === selected.value)
     if (!source || model.value.some((r) => r.id === source.id)) return
@@ -130,6 +153,20 @@
   .unit-suffix {
     margin-left: 8px;
     color: var(--el-text-color-regular);
+  }
+  .schedule-help {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--el-fill-color-light);
+    color: var(--el-text-color-regular);
+    font-size: 12px;
+  }
+  .schedule-help p {
+    margin: 0 0 4px;
+    color: var(--el-text-color-secondary);
   }
   @media (max-width: 700px) {
     .fields {

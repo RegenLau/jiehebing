@@ -60,7 +60,8 @@ export function registerResearchExport({
       headers = [
         "任务ID",
         "轮次标识",
-        "患者",
+        "患者编号",
+        "患者姓名",
         "研究",
         "分组",
         "任务",
@@ -79,7 +80,7 @@ export function registerResearchExport({
           return (
             (!user_id || r.user_id === user_id) &&
             inScope(p, q, r.date) &&
-            (!keyword || `${r.name} ${r.patient_name}`.includes(keyword)) &&
+            (!keyword || `${r.name} ${r.patient_name} ${p?.patient_code || ""}`.includes(keyword)) &&
             (!q.type || r.type === q.type) &&
             (!q.status || r.status === q.status) &&
             (q.overdue !== "1" ||
@@ -95,6 +96,7 @@ export function registerResearchExport({
           return [
             r.id,
             round,
+            p?.patient_code || `P${r.user_id}`,
             r.patient_name,
             p?.project_name || "",
             p?.group_name || "",
@@ -112,7 +114,8 @@ export function registerResearchExport({
     } else if (q.kind === "reports") {
       headers = [
         "报告ID",
-        "患者",
+        "患者编号",
+        "患者姓名",
         "研究",
         "分组",
         "类型",
@@ -120,7 +123,10 @@ export function registerResearchExport({
         "关联任务",
         "状态",
         "上传次数",
-        "核对指标",
+        "OCR原始识别值",
+        "人工核对值",
+        "核对人",
+        "核对时间",
       ];
       rows = db.reports
         .filter((r) => {
@@ -128,14 +134,23 @@ export function registerResearchExport({
           return (
             (!user_id || r.user_id === user_id) &&
             inScope(p, q, r.exam_date) &&
-            (!keyword || `${r.patient_name} ${r.type}`.includes(keyword)) &&
+            (!keyword || `${r.patient_name} ${p?.patient_code || ""} ${r.type}`.includes(keyword)) &&
             (!q.status || r.status === q.status)
           );
         })
         .map((r) => {
           const p = patientFor(r.user_id);
+          const latestReview = r.history?.at(-1);
+          const metricText = (metrics) =>
+            (metrics || [])
+              .map(
+                (m) =>
+                  `${m.name}：${m.value}${m.unit}（${m.reference}${m.flag ? `，${m.flag}` : ""}）`,
+              )
+              .join("；");
           return [
             r.id,
+            p?.patient_code || `P${r.user_id}`,
             r.patient_name,
             p?.project_name || "",
             p?.group_name || "",
@@ -144,17 +159,17 @@ export function registerResearchExport({
             r.task_id || "",
             r.status,
             r.versions.length,
-            r.metrics
-              .map(
-                (m) =>
-                  `${m.name}：${m.value}${m.unit}（${m.reference}${m.flag ? `，${m.flag}` : ""}）`,
-              )
-              .join("；"),
+            metricText(r.ocr_result?.metrics),
+            r.status === "已核对" ? metricText(r.metrics) : "待人工核对",
+            r.status === "已核对" ? latestReview?.operator || "" : "",
+            r.status === "已核对" ? latestReview?.time || "" : "",
           ];
         });
     } else if (q.kind === "feedback") {
       headers = [
-        "患者",
+        "反馈记录ID",
+        "患者编号",
+        "患者姓名",
         "研究",
         "分组",
         "日期",
@@ -168,13 +183,15 @@ export function registerResearchExport({
           return (
             (!user_id || r.user_id === user_id) &&
             inScope(p, q, r.date) &&
-            (!keyword || r.patient_name.includes(keyword)) &&
+            (!keyword || `${r.patient_name} ${p?.patient_code || ""}`.includes(keyword)) &&
             (!q.date || r.date === q.date)
           );
         })
         .map((r) => {
           const p = patientFor(r.user_id);
           return [
+            r.id,
+            p?.patient_code || `P${r.user_id}`,
             r.patient_name,
             p?.project_name || "",
             p?.group_name || "",
@@ -189,7 +206,8 @@ export function registerResearchExport({
     } else if (q.kind === "medications") {
       headers = [
         "计划ID",
-        "患者",
+        "患者编号",
+        "患者姓名",
         "研究",
         "分组",
         "计划日期",
@@ -204,17 +222,34 @@ export function registerResearchExport({
       rows = db.plans
         .filter((r) => {
           const p = patientFor(r.user_id);
+          const asOf = /^\d{4}-\d{2}-\d{2}$/.test(q.as_of || "")
+            ? q.as_of
+            : today();
+          const overdueStart = q.overdue_range === "7d"
+            ? shiftDate(asOf, -6)
+            : q.overdue_range === "30d"
+              ? shiftDate(asOf, -29)
+              : "";
           return (
             (!user_id || r.user_id === user_id) &&
             inScope(p, q, r.plan_date) &&
-            (!keyword || `${r.patient_name} ${r.name}`.includes(keyword)) &&
-            (!q.status || String(r.status) === String(q.status))
+            (!keyword || `${r.patient_name} ${p?.patient_code || ""} ${r.name}`.includes(keyword)) &&
+            (q.status === undefined ||
+              q.status === "" ||
+              String(r.status) === String(q.status)) &&
+            (q.scope !== "today" || r.plan_date === today()) &&
+            (!q.plan_date || r.plan_date === q.plan_date) &&
+            (q.overdue !== "1" ||
+              (r.status === 0 &&
+                r.plan_date < asOf &&
+                (!overdueStart || r.plan_date >= overdueStart)))
           );
         })
         .map((r) => {
           const p = patientFor(r.user_id);
           return [
             r.id,
+            p?.patient_code || `P${r.user_id}`,
             r.patient_name,
             p?.project_name || "",
             p?.group_name || "",

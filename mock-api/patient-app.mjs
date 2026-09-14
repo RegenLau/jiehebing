@@ -6,6 +6,7 @@ import {
   buildPatientTasks,
   latestTreatmentFor,
 } from "./patient-tasks.mjs";
+import { refreshPatientStudyState } from "./patient-study-state.mjs";
 
 export function registerPatientApp({
   patientRoute,
@@ -27,7 +28,7 @@ export function registerPatientApp({
     return text;
   };
   const latestTreatment = (patient) =>
-    latestTreatmentFor({ db, patient, shiftDate });
+    latestTreatmentFor({ db, patient, shiftDate, date: today() });
   const medicationStart = (treatment) => {
     if (!treatment?.start_date) return null;
     const time =
@@ -46,6 +47,7 @@ export function registerPatientApp({
       .filter(
         (row) =>
           row.user_id === patient.id &&
+          row.status !== "已冲销" &&
           String(row.treatment_id) === String(treatment.id),
       )
       .at(-1);
@@ -73,21 +75,29 @@ export function registerPatientApp({
       String(confirmation.treatment_id) === String(treatment.id),
     );
   const bootstrap = (patient) => {
+    refreshPatientStudyState({ db, patient, date: today() });
     const currentProject = db.projects.find(
       (row) => row.id === patient.project_id,
     );
     const projectEnded =
       !currentProject || effectiveProjectStatus(currentProject, today()) === 2;
+    const studyEnded = ["已完成", "提前退出", "失访"].includes(
+      patient.study_state,
+    );
     const treatment = latestTreatment(patient);
     const start = medicationStart(treatment);
     const medicationCurrent = matchesTreatment(
       patient.medication_confirmation,
       treatment,
     );
-    let stage = projectEnded ? "project_ended" : "identity";
-    if (!projectEnded && patient.identity_confirmation?.status === "issue")
+    let stage = projectEnded
+      ? "project_ended"
+      : studyEnded
+        ? "study_ended"
+        : "identity";
+    if (!projectEnded && !studyEnded && patient.identity_confirmation?.status === "issue")
       stage = "identity_issue";
-    else if (!projectEnded && patient.identity_confirmed) {
+    else if (!projectEnded && !studyEnded && patient.identity_confirmed) {
       if (
         patient.medication_confirmation?.status === "issue" &&
         medicationCurrent
@@ -112,6 +122,7 @@ export function registerPatientApp({
         enroll_date: patient.enroll_date,
         identity_confirmed: Boolean(patient.identity_confirmed),
         medicine_confirmed: Boolean(patient.medicine_confirmed),
+        study_state: patient.study_state || "待启用",
       },
       treatment: treatment
         ? {
@@ -136,6 +147,16 @@ export function registerPatientApp({
             ended_manually: Boolean(currentProject?.manual_ended_at),
           }
         : null,
+      study_end: studyEnded
+        ? {
+            state: patient.study_state,
+            reason:
+              db.patientHistory.find(
+                (row) =>
+                  row.user_id === patient.id && row.action === "变更研究状态",
+              )?.reason || "",
+          }
+        : null,
     };
   };
   const requireHome = (patient) => {
@@ -144,6 +165,8 @@ export function registerPatientApp({
       state.stage === "home",
       state.stage === "project_ended"
         ? "项目已结束，当前无法继续使用患者端小程序"
+        : state.stage === "study_ended"
+          ? `当前研究状态为“${patient.study_state}”，普通研究任务已停止`
         : state.stage === "pending_start"
           ? "用药计划尚未开始，请在开始服药日期当天或之后进入"
           : "请先完成身份与用药确认",
@@ -180,12 +203,13 @@ export function registerPatientApp({
   const dateTime = (date, time) => `${date} ${time}`;
   const treatmentProgress = (patient, treatment) => {
     const total = Number(treatment?.treatment_days || 0);
-    if (!treatment?.start_date || !total)
+    const courseStart = treatment?.course_start_date || treatment?.start_date;
+    if (!courseStart || !total)
       return { current_day: 0, total_days: total };
     const elapsed =
       Math.floor(
         (Date.parse(`${today()}T00:00:00Z`) -
-          Date.parse(`${treatment.start_date}T00:00:00Z`)) /
+          Date.parse(`${courseStart}T00:00:00Z`)) /
           86400000,
       ) + 1;
     return {
@@ -1039,6 +1063,7 @@ export function registerPatientApp({
       };
     });
     const submission = {
+      id: nextId(db.answers),
       user_id: patient.id,
       template_id: survey.id,
       task_id: task.id,

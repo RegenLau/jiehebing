@@ -21,6 +21,14 @@
             label="说明"
             show-overflow-tooltip
           /><ElTableColumn prop="version" label="版本" width="100" /><ElTableColumn
+            label="药品数"
+            width="90"
+            ><template #default="{ row }">{{ row.drugs.length }} 种</template></ElTableColumn
+          ><ElTableColumn prop="treatment_days" label="治疗天数" width="100" /><ElTableColumn
+            prop="updated_at"
+            label="最近更新"
+            min-width="170"
+          /><ElTableColumn
             label="状态"
             width="100"
             ><template #default="{ row }"
@@ -28,8 +36,9 @@
                 row.status === 1 ? '启用' : '停用'
               }}</ElTag></template
             ></ElTableColumn
-          ><ElTableColumn label="操作" width="150"
+          ><ElTableColumn label="操作" width="190" fixed="right"
             ><template #default="{ row }"
+              ><ElButton link @click="preview(row as Scheme)">预览</ElButton
               ><ElButton link type="primary" @click="goToFormPage(row.id)">编辑</ElButton
               ><ElButton link type="warning" @click="toggle(row as Scheme)">{{
                 row.status === 1 ? '停用' : '启用'
@@ -45,6 +54,25 @@
           @current-change="load"
         />
       </ElCard>
+      <ElDrawer v-model="previewVisible" title="用药方案预览" size="520px">
+        <template v-if="previewScheme">
+          <ElDescriptions :column="2" border>
+            <ElDescriptionsItem label="方案名称" :span="2">{{ previewScheme.name }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="版本">{{ previewScheme.version }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="治疗天数">{{ previewScheme.treatment_days }} 天</ElDescriptionsItem>
+            <ElDescriptionsItem label="提前取药提醒">{{ previewScheme.advance_days }} 天</ElDescriptionsItem>
+            <ElDescriptionsItem label="药品数量">{{ previewScheme.drugs.length }} 种</ElDescriptionsItem>
+            <ElDescriptionsItem label="说明" :span="2">{{ previewScheme.description || '无' }}</ElDescriptionsItem>
+          </ElDescriptions>
+          <ElTable :data="previewScheme.drugs" border class="preview-drugs">
+            <ElTableColumn prop="name" label="药品" min-width="130" />
+            <ElTableColumn prop="dose" label="单次用量" min-width="100">
+              <template #default="{ row }">{{ row.dose }}{{ row.unit }}</template>
+            </ElTableColumn>
+            <ElTableColumn prop="times" label="服药时间" min-width="140" />
+          </ElTable>
+        </template>
+      </ElDrawer>
     </template>
     <template v-else>
       <div class="form-page__header">
@@ -106,6 +134,7 @@
     treatment_days: number
     pickup_days: number
     advance_days: number
+    updated_at?: string
     prescription_url?: string
     pickup_mode?: 'manual' | 'quantity'
     drugs: (Drug & { quantity: number })[]
@@ -130,6 +159,8 @@
     loading = ref(false),
     formLoading = ref(false),
     saving = ref(false)
+  const previewVisible = ref(false)
+  const previewScheme = ref<Scheme>()
   const medication = ref<Medication | null>(null)
   const medicationEditor = ref<InstanceType<typeof MedicationEditor>>()
   const route = useRoute()
@@ -158,6 +189,10 @@
       path: route.path,
       query: id ? { mode: 'edit', id: String(id) } : { mode: 'create' }
     })
+  }
+  function preview(row: Scheme) {
+    previewScheme.value = row
+    previewVisible.value = true
   }
   async function backToList() {
     await router.replace({ path: route.path })
@@ -325,6 +360,9 @@
 
   .el-pagination {
     margin-top: 20px;
+  }
+  .preview-drugs {
+    margin-top: 18px;
   }
 
   @media (width <= 700px) {

@@ -14,6 +14,13 @@ import { registerReminderSchemes } from "./reminder-schemes.mjs";
 import { registerProjects } from "./projects.mjs";
 import { registerPatientApp } from "./patient-app.mjs";
 import { effectiveProjectStatus } from "./project-status.mjs";
+import { snapshotGroupExecution } from "./execution-snapshot.mjs";
+import { refreshPatientStudyState } from "./patient-study-state.mjs";
+import {
+  buildPatientTasks,
+  currentTreatmentFor,
+  upcomingTreatmentFor,
+} from "./patient-tasks.mjs";
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -124,11 +131,20 @@ export function createMockServer({ now = () => new Date() } = {}) {
       hourCycle: "h23",
     }).format(clock());
   const db = createFixtures(clock());
+  db.patientExecutionSnapshots = db.patients.map((patient) => {
+    const group = db.projectGroups.find((row) => row.id === patient.group_id);
+    return {
+      user_id: patient.id,
+      ...(group ? snapshotGroupExecution(group) : {}),
+    };
+  });
   for (const survey of db.surveys) survey.version = 1;
-  for (const answer of db.answers)
+  for (const [index, answer] of db.answers.entries()) {
+    answer.id ||= index + 1;
     answer.template_snapshot = structuredClone(
       db.surveys.find((s) => s.id === answer.template_id),
     );
+  }
   const sessions = new Map();
   const patientSessions = new Map();
   const captchas = new Map();
@@ -162,15 +178,32 @@ export function createMockServer({ now = () => new Date() } = {}) {
     }
     return code;
   };
-  const answerDetail = (userId, templateId) => {
-    find(db.patients, userId, "患者");
-    let s = find(db.surveys, templateId, "问卷");
-    const a = db.answers.find(
-      (a) => a.user_id === integer(userId) && a.template_id === s.id,
-    );
+  const answerDetail = ({ userId, templateId, answerId, taskId, answer }) => {
+    const directAnswer =
+      answer ||
+      (answerId
+        ? db.answers.find((row) => row.id === integer(answerId))
+        : null);
+    const resolvedUserId = integer(userId) || directAnswer?.user_id;
+    find(db.patients, resolvedUserId, "患者");
+    const a =
+      directAnswer ||
+      db.answers.find(
+        (row) =>
+          row.user_id === resolvedUserId &&
+          (taskId
+            ? String(row.task_id) === String(taskId)
+            : row.template_id === integer(templateId)),
+      );
+    if (userId)
+      assert(a?.user_id === integer(userId), "问卷作答记录不属于该患者");
     assert(a, "该患者暂未作答此问卷");
-    s = a.template_snapshot || s;
+    const current = db.surveys.find((row) => row.id === a.template_id);
+    const s = a.template_snapshot || current;
+    assert(s, "问卷快照不存在");
     return {
+      answer_id: a.id,
+      task_id: a.task_id || null,
       template: {
         id: s.id,
         code: s.code,
@@ -212,21 +245,30 @@ export function createMockServer({ now = () => new Date() } = {}) {
       }),
     };
   };
-  const adverseRows = (q) =>
-    db.adverse
+  const adverseRows = (q) => {
+    assert(!q.as_of || isDate(q.as_of), "统计截止日期不合法");
+    return db.adverse
+      .map((r) => withAdverseMembership(r, db))
       .filter(
         (r) =>
           (q.pending !== "1" ||
-            (r.processing_status || "待处理") !== "已处理") &&
+            ((r.processing_status || "待处理") !== "已处理" &&
+              (!q.as_of || r.occurred_at.slice(0, 10) <= q.as_of))) &&
           (!q.processing_status ||
             (r.processing_status || "待处理") === q.processing_status) &&
-          (!q.patient_name || r.patient_name.includes(q.patient_name)) &&
+          (!q.patient_name ||
+            `${r.patient_name} ${r.patient_code}`.includes(q.patient_name)) &&
           (!integer(q.user_id) || r.user_id === integer(q.user_id)) &&
+          (!integer(q.project_id) || r.project_id === integer(q.project_id)) &&
+          (!integer(q.group_id) || r.group_id === integer(q.group_id)) &&
+          (!integer(q.owner_id) ||
+            (r.owner_id || r.assessment?.owner_id) === integer(q.owner_id)) &&
           (![1, 2, 3].includes(integer(q.severity)) ||
             r.severity === integer(q.severity)),
       )
       .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id - a.id)
-      .map((r) => withAdverseMembership(r, db));
+      ;
+  };
   const routes = new Map();
   const patientRoutes = new Map();
   const route = (method, path, handler) =>
@@ -409,9 +451,10 @@ export function createMockServer({ now = () => new Date() } = {}) {
   });
   core("GET", "patient/detail", ({ query }) => {
     const patient = find(db.patients, query.user_id, "患者");
-    const treatment = db.patientTreatments
-      .filter((row) => row.user_id === patient.id)
-      .at(-1);
+    refreshPatientStudyState({ db, patient, date: today() });
+    const current = currentTreatmentFor({ db, patient, date: today() });
+    const upcoming = upcomingTreatmentFor({ db, patient, date: today() });
+    const treatment = current || upcoming;
     return {
       ...patient,
       arrangement_ready: Boolean(treatment),
@@ -420,6 +463,8 @@ export function createMockServer({ now = () => new Date() } = {}) {
           ? "个体调整"
           : "分组方案"
         : "待确认方案",
+      current_treatment_id: current?.id || null,
+      upcoming_treatment_id: upcoming?.id || null,
     };
   });
   core("GET", "patient/medicine-list", ({ query }) => {
@@ -437,31 +482,94 @@ export function createMockServer({ now = () => new Date() } = {}) {
   });
   core("GET", "patient/survey-status", ({ query }) => {
     const p = find(db.patients, query.user_id, "患者");
-    return db.surveys
-      .filter((s) => s.status === 1)
-      .map((s) => {
-        const a = db.answers.find(
-          (a) => a.user_id === p.id && a.template_id === s.id,
-        );
-        const fillableDate = p.enroll_date
-          ? shiftDate(p.enroll_date, s.fillableDay)
-          : null;
-        return {
-          template_id: s.id,
-          code: s.code,
-          name: s.name,
-          description: s.description,
-          fillable_day: s.fillableDay,
-          fillable_date: fillableDate,
-          fillable: Boolean(fillableDate && today() >= fillableDate),
-          answered: Boolean(a),
-          submitted_at: a?.submitted_at || "",
-          answer_count: a?.values.length || 0,
-        };
+    const tasks = buildPatientTasks({
+      db,
+      patient: p,
+      today,
+      shiftDate,
+      timestamp,
+      includeFuture: true,
+    }).filter((row) => row.type === "问卷");
+    const rows = [];
+    const includedAnswers = new Set();
+    for (const task of tasks) {
+      const survey =
+        task.snapshot?.snapshot ||
+        db.surveys.find((row) => row.id === task.binding_id);
+      if (!survey) continue;
+      const answer = db.answers.find(
+        (row) =>
+          row.user_id === p.id && String(row.task_id) === String(task.id),
+      );
+      if (answer) includedAnswers.add(answer.id);
+      rows.push({
+        task_id: task.id,
+        answer_id: answer?.id || null,
+        template_id: survey.id,
+        code: survey.code,
+        name: survey.name,
+        description: survey.description,
+        fillable_day: survey.fillableDay,
+        fillable_date: task.date,
+        plan_date: task.date,
+        due_date: task.due_date,
+        status: answer ? "已完成" : task.status,
+        overdue: !answer && task.due_date < today(),
+        fillable: !answer && task.date <= today(),
+        answered: Boolean(answer),
+        submitted_at: answer?.submitted_at || "",
+        answer_count: answer?.values.length || 0,
       });
+    }
+    for (const answer of db.answers.filter(
+      (row) => row.user_id === p.id && !includedAnswers.has(row.id),
+    )) {
+      const survey =
+        answer.template_snapshot ||
+        db.surveys.find((row) => row.id === answer.template_id);
+      if (!survey) continue;
+      rows.push({
+        task_id: answer.task_id || null,
+        answer_id: answer.id,
+        template_id: survey.id,
+        code: survey.code,
+        name: survey.name,
+        description: survey.description,
+        fillable_day: survey.fillableDay,
+        fillable_date: p.enroll_date
+          ? shiftDate(p.enroll_date, survey.fillableDay)
+          : answer.submitted_at.slice(0, 10),
+        plan_date: answer.submitted_at.slice(0, 10),
+        due_date: answer.submitted_at.slice(0, 10),
+        status: "已完成",
+        overdue: false,
+        fillable: false,
+        answered: true,
+        submitted_at: answer.submitted_at,
+        answer_count: answer.values.length,
+      });
+    }
+    const roundCounter = new Map();
+    return rows
+      .sort(
+        (left, right) =>
+          left.plan_date.localeCompare(right.plan_date) ||
+          String(left.task_id || "").localeCompare(String(right.task_id || "")),
+      )
+      .map((row) => {
+        const round = (roundCounter.get(row.template_id) || 0) + 1;
+        roundCounter.set(row.template_id, round);
+        return { ...row, round_no: round };
+      })
+      .reverse();
   });
   core("GET", "patient/survey-answer-detail", ({ query }) =>
-    answerDetail(query.user_id, query.template_id),
+    answerDetail({
+      userId: query.user_id,
+      templateId: query.template_id,
+      answerId: query.answer_id,
+      taskId: query.task_id,
+    }),
   );
   core("GET", "medication-plan/index", ({ query: q }) => {
     const scope = q.scope || "today";
@@ -473,7 +581,8 @@ export function createMockServer({ now = () => new Date() } = {}) {
     const start = shiftDate(asOf, -(overdueRange === "7d" ? 6 : 29));
     const rows = db.plans.filter(
       (r) =>
-        (!q.patient_name || r.patient_name.includes(q.patient_name)) &&
+        (!q.patient_name ||
+          `${r.patient_name} ${db.patients.find((patient) => patient.id === r.user_id)?.patient_code || ""}`.includes(q.patient_name)) &&
         (!integer(q.user_id) || r.user_id === integer(q.user_id)) &&
         (!integer(q.project_id) || r.project_id === integer(q.project_id)) &&
         (!integer(q.group_id) || r.group_id === integer(q.group_id)) &&
@@ -489,12 +598,19 @@ export function createMockServer({ now = () => new Date() } = {}) {
       : rows;
     return {
       ...page(
-        filtered.sort(
-          (a, b) =>
-            b.plan_date.localeCompare(a.plan_date) ||
-            a.plan_time.localeCompare(b.plan_time) ||
-            b.id - a.id,
-        ),
+        filtered
+          .sort(
+            (a, b) =>
+              b.plan_date.localeCompare(a.plan_date) ||
+              a.plan_time.localeCompare(b.plan_time) ||
+              b.id - a.id,
+          )
+          .map((row) => ({
+            ...row,
+            patient_code:
+              db.patients.find((patient) => patient.id === row.user_id)
+                ?.patient_code || `P${row.user_id}`,
+          })),
         q,
       ),
       scope,
@@ -509,6 +625,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
       "adverse_reaction.xlsx",
       [
         "ID",
+        "患者编号",
         "患者姓名",
         "手机号",
         "参与项目",
@@ -518,26 +635,41 @@ export function createMockServer({ now = () => new Date() } = {}) {
         "症状描述",
         "严重程度",
         "处理建议",
-        "状态",
+        "上报状态",
+        "处理状态",
+        "负责人",
+        "最后处理时间",
+        "最后联系结果",
         "上报时间",
       ],
-      adverseRows(query).map((r) => [
-        r.id,
-        r.patient_name,
-        r.patient_mobile,
-        r.project_name || "未参与项目",
-        r.group_name || "未入组",
-        r.occurred_at,
-        r.symptom_summary,
-        r.symptom_description,
-        r.severity_text,
-        r.advice_text,
-        r.status_text,
-        r.created_at,
-      ]),
+      adverseRows(query).map((r) => {
+        const patient = db.patients.find((row) => row.id === r.user_id);
+        const latestContact = r.contacts?.[0];
+        return [
+          r.id,
+          patient?.patient_code || `P${r.user_id}`,
+          r.patient_name,
+          r.patient_mobile,
+          r.project_name || "未参与项目",
+          r.group_name || "未入组",
+          r.occurred_at,
+          r.symptom_summary,
+          r.symptom_description,
+          r.severity_text,
+          r.advice_text,
+          r.status_text,
+          r.processing_status || "待处理",
+          r.owner_name || r.assessment?.owner_name || "未分配",
+          latestContact?.time || "",
+          latestContact?.result || "",
+          r.created_at,
+        ];
+      }),
     ),
   );
   core("GET", "dashboard/research", ({ query: q }) => {
+    for (const patient of db.patients)
+      refreshPatientStudyState({ db, patient, date: today() });
     const patients = db.patients.filter(
         (p) =>
           (!integer(q.project_id) || p.project_id === integer(q.project_id)) &&
@@ -564,6 +696,8 @@ export function createMockServer({ now = () => new Date() } = {}) {
     };
   });
   core("GET", "dashboard/overview", ({ query: q }) => {
+    for (const patient of db.patients)
+      refreshPatientStudyState({ db, patient, date: today() });
     const range = ["today", "7d", "30d"].includes(q.range) ? q.range : "today";
     const date =
       /^\d{4}-\d{2}-\d{2}$/.test(q.date || "") &&
@@ -590,6 +724,12 @@ export function createMockServer({ now = () => new Date() } = {}) {
         patientIds.has(a.user_id) &&
         a.occurred_at.slice(0, 10) >= start &&
         a.occurred_at.slice(0, 10) <= date,
+    );
+    const pendingAdverse = db.adverse.filter(
+      (a) =>
+        patientIds.has(a.user_id) &&
+        a.occurred_at.slice(0, 10) <= date &&
+        (a.processing_status || "待处理") !== "已处理",
     );
     const archived = patients.filter((p) => p.is_archived).length;
     return {
@@ -621,7 +761,7 @@ export function createMockServer({ now = () => new Date() } = {}) {
             p.plan_date < date &&
             (range === "today" || p.plan_date >= start),
         ).length,
-        pending_review_total: adverse.length,
+        pending_review_total: pendingAdverse.length,
         pending_report_total: db.reports.filter(
           (r) => patientIds.has(r.user_id) && r.status === "待核对",
         ).length,
@@ -976,13 +1116,14 @@ export function createMockServer({ now = () => new Date() } = {}) {
       })
       .map((a) => {
         const p = find(db.patients, a.user_id, "患者");
-        const detail = answerDetail(p.id, s.id);
+        const detail = answerDetail({ userId: p.id, answer: a });
         return [
-          p.id,
+          p.patient_code || `P${p.id}`,
           p.name,
           p.mobile,
           p.project_name || "未参与项目",
           p.group_name || "未入组",
+          a.task_id || "历史记录",
           a.submitted_at,
           ...detail.questions.map((q) =>
             q.type === "TEXT"
@@ -1003,16 +1144,17 @@ export function createMockServer({ now = () => new Date() } = {}) {
       res,
       "survey_answers.xlsx",
       [
-        "患者ID",
+        "患者编号",
         "患者姓名",
         "手机号",
         "参与项目",
         "参与分组",
+        "问卷轮次任务ID",
         "提交时间",
         ...s.questions.map((q) => `第${q.questionNo}题 ${q.title}`),
       ],
       rows,
-      [12, 14, 16, 24, 24, 20, ...s.questions.map(() => 52)],
+      [18, 14, 16, 24, 24, 20, 20, ...s.questions.map(() => 52)],
     );
   });
   core("POST", "file/upload-file", async ({ body, res }) => {

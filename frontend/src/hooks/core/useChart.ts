@@ -392,18 +392,15 @@ export function useChart(options: UseChartOptions = {}) {
             requestAnimationFrame(() => {
               if (!isDestroyed && pendingOptions) {
                 try {
-                  // 元素变为可见，初始化图表
-                  if (!chart) {
-                    chart = echarts.init(entry.target as HTMLElement)
-                  }
+                  const visibleOptions = pendingOptions
+                  performChartInit(visibleOptions)
 
                   // 触发自定义事件，让组件处理动画逻辑
                   const event = new CustomEvent('chartVisible', {
-                    detail: { options: pendingOptions }
+                    detail: { options: visibleOptions }
                   })
                   entry.target.dispatchEvent(event)
 
-                  pendingOptions = null
                   cleanupIntersectionObserver()
                 } catch (error) {
                   console.error('图表初始化失败:', error)

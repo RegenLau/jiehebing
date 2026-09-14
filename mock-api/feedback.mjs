@@ -56,9 +56,17 @@ export function registerFeedback({
             (!q.group_id || patient?.group_id === Number(q.group_id)) &&
             (!q.start_date || r.date >= q.start_date) &&
             (!q.end_date || r.date <= q.end_date) &&
-            (!q.keyword || r.patient_name.includes(clean(q.keyword))) &&
+            (!q.keyword ||
+              `${r.patient_name} ${patient?.patient_code || ""}`.includes(clean(q.keyword))) &&
             (!q.date || r.date === q.date)
           );
+        })
+        .map((row) => {
+          const patient = db.patients.find((item) => item.id === row.user_id);
+          return {
+            ...row,
+            patient_code: patient?.patient_code || `P${row.user_id}`,
+          };
         }),
       q,
     ),

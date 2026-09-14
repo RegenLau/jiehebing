@@ -1,7 +1,7 @@
 <template>
   <div class="page"
     ><div class="toolbar"
-      ><h2>随访任务</h2
+      ><div class="title-copy"><h2>患者当前待办</h2><p>显示患者尚未完成的问卷、检查、提醒和每日反馈。</p></div
       ><ResearchExport
         kind="tasks"
         :params="{
@@ -19,6 +19,7 @@
     ><ElCard shadow="never">
       <div class="filter-section">
         <ResearchScopeFilter
+          date-label="任务日期"
           v-model:project-id="projectId"
           v-model:group-id="groupId"
           v-model:date-range="dateRange"
@@ -41,24 +42,33 @@
         >
       </div>
       <ElTable v-loading="loading" :data="rows" border
-        ><ElTableColumn prop="patient_name" label="患者" /><ElTableColumn
+        ><ElTableColumn prop="patient_name" label="患者" min-width="110" fixed="left" /><ElTableColumn
+          prop="patient_code"
+          label="患者编号"
+          min-width="130"
+          fixed="left"
+        /><ElTableColumn
           prop="name"
           label="任务"
         /><ElTableColumn prop="type" label="类型" width="100" /><ElTableColumn
           prop="date"
-          label="开始日期"
+          label="计划开放日期"
           width="120"
         /><ElTableColumn prop="due_date" label="截止日期" width="120" /><ElTableColumn
           label="提醒时间"
           width="100"
           ><template #default="{ row }">{{ row.remind_time || '-' }}</template></ElTableColumn
-        ><ElTableColumn prop="source" label="来源" min-width="120" /><ElTableColumn
+        ><ElTableColumn prop="display_source" label="来源" min-width="110" /><ElTableColumn
           prop="status"
           label="状态"
           width="100"
         /><ElTableColumn label="逾期状态" width="100"
           ><template #default="{ row }"
             ><ElTag v-if="row.overdue" type="danger">逾期</ElTag><span v-else>-</span></template
+          ></ElTableColumn
+        ><ElTableColumn label="操作" width="100" fixed="right"
+          ><template #default="{ row }"
+            ><ElButton link type="primary" @click="openDetail(row as Task)">查看详情</ElButton></template
           ></ElTableColumn
         ></ElTable
       ><ElPagination
@@ -93,15 +103,34 @@
         ><ElFormItem label="说明与提交要求"
           ><ElInput v-model="form.description" type="textarea" /></ElFormItem
         ><div class="toolbar"
-          ><ElFormItem label="开始日期"
+          ><ElFormItem label="任务开放日期"
             ><ElDatePicker v-model="form.date" value-format="YYYY-MM-DD" /></ElFormItem
-          ><ElFormItem label="截止日期"
+          ><ElFormItem label="最晚完成日期"
             ><ElDatePicker
               v-model="form.due_date"
               value-format="YYYY-MM-DD" /></ElFormItem></div></ElForm
       ><template #footer
         ><ElButton :disabled="saving" @click="visible = false">关闭</ElButton
         ><ElButton type="primary" :loading="saving" @click="save">保存</ElButton></template
+      ></ElDialog
+    ><ElDialog v-model="detailVisible" title="任务详情" width="720px"
+      ><ElDescriptions v-if="currentTask" :column="2" border
+        ><ElDescriptionsItem label="患者">{{ currentTask.patient_name }} · {{ currentTask.patient_code }}</ElDescriptionsItem
+        ><ElDescriptionsItem label="任务状态">{{ currentTask.status }}</ElDescriptionsItem
+        ><ElDescriptionsItem label="任务名称">{{ currentTask.name }}</ElDescriptionsItem
+        ><ElDescriptionsItem label="任务类型">{{ currentTask.type }}</ElDescriptionsItem
+        ><ElDescriptionsItem label="计划开放日期">{{ currentTask.date }}</ElDescriptionsItem
+        ><ElDescriptionsItem label="最晚完成日期">{{ currentTask.due_date }}</ElDescriptionsItem
+        ><ElDescriptionsItem label="任务来源">{{ currentTask.display_source }}</ElDescriptionsItem
+        ><ElDescriptionsItem label="提醒时间">{{ currentTask.remind_time || '-' }}</ElDescriptionsItem
+        ><ElDescriptionsItem label="任务说明" :span="2">{{ currentTask.description || '-' }}</ElDescriptionsItem
+        ><ElDescriptionsItem label="提交要求" :span="2">{{ currentTask.requirements || '-' }}</ElDescriptionsItem
+      ></ElDescriptions
+      ><template #footer
+        ><ElButton @click="goPatient">患者详情</ElButton
+        ><ElButton v-if="currentTask?.report_id" type="primary" @click="goReport">关联报告</ElButton
+        ><ElButton v-if="currentTask?.answer_id" type="primary" @click="goAnswer">该轮答卷</ElButton
+        ><ElButton @click="detailVisible = false">关闭</ElButton></template
       ></ElDialog
     ></div
   >
@@ -111,7 +140,7 @@
   import ResearchScopeFilter from '@/components/business/research-scope-filter/index.vue'
 
   import { ref, onMounted, watch } from 'vue'
-  import { useRoute } from 'vue-router'
+  import { useRoute, useRouter } from 'vue-router'
   import request from '@/utils/http'
   import { fetchPatientList, type PatientRecord } from '@/api/patient'
   interface Task {
@@ -127,8 +156,14 @@
     remind_time?: string
     source?: string
     overdue?: boolean
+    patient_code?: string
+    display_source?: string
+    requirements?: string
+    report_id?: number | null
+    answer_id?: number | null
   }
   const route = useRoute(),
+    router = useRouter(),
     types = ['提醒', '检查', '问卷', '健康反馈'],
     createTypes = ['提醒', '检查'],
     states = ['待完成', '需补充'],
@@ -154,6 +189,8 @@
     loading = ref(false),
     saving = ref(false),
     visible = ref(false),
+    detailVisible = ref(false),
+    currentTask = ref<Task>(),
     patients = ref<PatientRecord[]>([])
   async function load() {
     loading.value = true
@@ -217,6 +254,29 @@
   function close(done: () => void) {
     if (!saving.value) done()
   }
+  function openDetail(row: Task) {
+    currentTask.value = row
+    detailVisible.value = true
+  }
+  function goPatient() {
+    if (!currentTask.value?.user_id) return
+    void router.push({ path: '/patient/detail', query: { user_id: currentTask.value.user_id } })
+  }
+  function goReport() {
+    if (!currentTask.value?.report_id) return
+    void router.push(`/reports/detail/${currentTask.value.report_id}`)
+  }
+  function goAnswer() {
+    if (!currentTask.value?.user_id) return
+    void router.push({
+      path: '/patient/detail',
+      query: {
+        user_id: currentTask.value.user_id,
+        tab: 'survey',
+        answer_id: currentTask.value.answer_id
+      }
+    })
+  }
   watch(
     () => route.fullPath,
     () => {
@@ -238,6 +298,18 @@
   }
   .toolbar h2 {
     flex: 1;
+  }
+  .title-copy {
+    flex: 1;
+  }
+  .title-copy h2,
+  .title-copy p {
+    margin: 0;
+  }
+  .title-copy p {
+    margin-top: 5px;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
   }
   .toolbar .el-input {
     max-width: 240px;

@@ -151,24 +151,31 @@
         <ElTabPane label="问卷答题情况" name="survey">
           <ElTable :data="surveyList" v-loading="surveyLoading" border>
             <ElTableColumn prop="name" label="问卷名称" min-width="180" />
-            <ElTableColumn prop="code" label="模板编码" min-width="180" />
-            <ElTableColumn prop="fillable_day" label="建档后第几天可填" width="150" />
-            <ElTableColumn prop="fillable_date" label="可填写日期" min-width="120" />
-            <ElTableColumn label="是否到期可填" width="120">
-              <template #default="{ row }">
-                <ElTag :type="row.fillable ? 'success' : 'info'">
-                  {{ row.fillable ? '是' : '否' }}
-                </ElTag>
-              </template>
+            <ElTableColumn prop="round_no" label="轮次" width="80">
+              <template #default="{ row }">第 {{ row.round_no }} 轮</template>
             </ElTableColumn>
-            <ElTableColumn label="答题情况" width="120">
+            <ElTableColumn prop="plan_date" label="计划开放日期" width="130" />
+            <ElTableColumn prop="due_date" label="最晚提交日期" width="130" />
+            <ElTableColumn label="任务状态" width="110">
               <template #default="{ row }">
-                <ElTag :type="row.answered ? 'success' : 'warning'">
-                  {{ row.answered ? '已作答' : '未作答' }}
+                <ElTag :type="row.answered ? 'success' : row.overdue ? 'danger' : 'warning'">
+                  {{ row.answered ? '已提交' : row.overdue ? '已逾期' : row.status }}
                 </ElTag>
               </template>
             </ElTableColumn>
             <ElTableColumn prop="submitted_at" label="提交时间" min-width="180" />
+            <ElTableColumn label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <ElButton
+                  link
+                  type="primary"
+                  :disabled="!row.answer_id"
+                  @click="openSurveyAnswer(row as PatientSurveyStatusRecord)"
+                >
+                  {{ row.answer_id ? '查看答案' : '尚未提交' }}
+                </ElButton>
+              </template>
+            </ElTableColumn>
           </ElTable>
         </ElTabPane>
 
@@ -269,6 +276,47 @@
         </div>
       </div>
     </ElDialog>
+
+    <ElDialog
+      v-model="surveyAnswerDialogVisible"
+      title="问卷提交详情"
+      width="820px"
+      destroy-on-close
+    >
+      <div v-loading="surveyAnswerLoading" class="answer-detail">
+        <template v-if="currentSurveyAnswer">
+          <div class="answer-base">
+            <div><span>问卷：</span>{{ currentSurveyAnswer.template.name }}</div>
+            <div><span>模板编码：</span>{{ currentSurveyAnswer.template.code }}</div>
+            <div>
+              <span>问卷轮次：</span>第 {{ currentSurveyRoundNo }} 轮
+              <template v-if="currentSurveyAnswer.task_id"> · 任务 {{ currentSurveyAnswer.task_id }}</template>
+              <template v-else> · 历史补录</template>
+            </div>
+            <div><span>提交时间：</span>{{ currentSurveyAnswer.submitted_at }}</div>
+          </div>
+          <div class="survey-answer-list">
+            <div
+              v-for="question in currentSurveyAnswer.questions"
+              :key="question.question_id"
+              class="survey-answer-item"
+            >
+              <div class="question-title">{{ question.question_no }}. {{ question.title }}</div>
+              <div class="question-answer">{{ question.answer_summary }}</div>
+              <template v-for="option in question.selected_options" :key="option.id">
+                <div
+                  v-for="field in option.input_fields.filter((item) => item.value)"
+                  :key="field.field_key"
+                  class="answer-extra"
+                >
+                  {{ field.field_label }}：{{ field.value }}
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </ElDialog>
   </div>
 </template>
 
@@ -280,10 +328,12 @@
     fetchPatientAdverseReactionList,
     fetchPatientMedicineList,
     fetchPatientDetail,
+    fetchPatientSurveyAnswerDetail,
     fetchPatientSurveyStatus,
     type PatientAdverseReactionRecord,
     type PatientMedicineRecord,
     type PatientRecord,
+    type PatientSurveyAnswerDetail,
     type PatientSurveyStatusRecord
   } from '@/api/patient'
   import { useRoute, useRouter } from 'vue-router'
@@ -305,6 +355,8 @@
   const surveyLoading = ref(false)
   const adverseDialogVisible = ref(false)
   const medicineDialogVisible = ref(false)
+  const surveyAnswerDialogVisible = ref(false)
+  const surveyAnswerLoading = ref(false)
   const patient = reactive<PatientRecord>({
     id: 0,
     name: '',
@@ -324,6 +376,8 @@
   const surveyList = ref<PatientSurveyStatusRecord[]>([])
   const currentAdverseReaction = ref<PatientAdverseReactionRecord>()
   const currentMedicine = ref<PatientMedicineRecord>()
+  const currentSurveyAnswer = ref<PatientSurveyAnswerDetail>()
+  const currentSurveyRoundNo = ref(0)
 
   const todayPlans = reactive({
     loading: false,
@@ -432,6 +486,19 @@
       surveyList.value = await fetchPatientSurveyStatus(userId.value)
     } finally {
       surveyLoading.value = false
+    }
+  }
+
+  const openSurveyAnswer = async (row: PatientSurveyStatusRecord) => {
+    if (!row.answer_id) return
+    surveyAnswerDialogVisible.value = true
+    surveyAnswerLoading.value = true
+    currentSurveyRoundNo.value = row.round_no
+    currentSurveyAnswer.value = undefined
+    try {
+      currentSurveyAnswer.value = await fetchPatientSurveyAnswerDetail(userId.value, row.answer_id)
+    } finally {
+      surveyAnswerLoading.value = false
     }
   }
 
@@ -553,14 +620,24 @@
 
   watch(
     userId,
-    () => {
-      activeTab.value = 'today'
+    async () => {
+      const requestedTab = typeof route.query.tab === 'string' ? route.query.tab : 'today'
+      activeTab.value = ['today', 'all', 'medicine', 'survey', 'adverse', 'feedback', 'reports'].includes(
+        requestedTab
+      )
+        ? (requestedTab as typeof activeTab.value)
+        : 'today'
       todayPlans.pagination.current = 1
       allPlans.pagination.current = 1
       allPlans.planDate = ''
       medicines.pagination.current = 1
       adverseReactions.pagination.current = 1
-      loadAll()
+      await loadAll()
+      const answerId = Number(route.query.answer_id)
+      if (activeTab.value === 'survey' && answerId) {
+        const row = surveyList.value.find((item) => item.answer_id === answerId)
+        if (row) void openSurveyAnswer(row)
+      }
     },
     { immediate: true }
   )
@@ -627,6 +704,36 @@
     flex-direction: column;
     gap: 16px;
     min-height: 160px;
+  }
+
+  .survey-answer-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .survey-answer-item {
+    padding: 14px 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fafafa;
+  }
+
+  .question-title {
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .question-answer {
+    color: #374151;
+    line-height: 1.6;
+  }
+
+  .answer-extra {
+    margin-top: 6px;
+    color: #6b7280;
+    font-size: 13px;
   }
 
   .answer-base {

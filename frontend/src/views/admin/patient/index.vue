@@ -21,6 +21,7 @@
 
     <div class="scope-toolbar">
       <ResearchScopeFilter
+        date-label="入组日期"
         v-model:project-id="projectId"
         v-model:group-id="groupId"
         v-model:date-range="dateRange"

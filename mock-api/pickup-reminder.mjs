@@ -1,3 +1,5 @@
+import { executionSnapshotFor } from "./execution-snapshot.mjs";
+
 export const DEFAULT_PICKUP_REQUIREMENTS =
   "请在预计药量不足前联系医院确认取药安排，实际发药由医务人员登记。";
 export const DEFAULT_PICKUP_REMIND_TIME = "09:00";
@@ -12,9 +14,11 @@ export function calculatePatientStock({
   if (!treatment) return [];
   const currentDate = today();
   const group = db.projectGroups.find((row) => row.id === patient.group_id);
+  const execution = executionSnapshotFor(db, patient);
   const advanceDays = Number(
-    group?.medication?.advance_days ??
-      treatment.source_scheme?.advance_days ??
+    treatment.source_scheme?.advance_days ??
+      execution?.medication?.advance_days ??
+      group?.medication?.advance_days ??
       0,
   );
 
@@ -31,6 +35,7 @@ export function calculatePatientStock({
     const dispensings = (db.dispensings || []).filter(
       (row) =>
         row.user_id === patient.id &&
+        row.status !== "已冲销" &&
         (!adjustment || row.issued_date > adjustment.date) &&
         row.items.some((item) => item.drug_id === drug.drug_id),
     );
@@ -63,7 +68,9 @@ export function calculatePatientStock({
     const hasActualBaseline = Boolean(adjustment || dispensings.length);
     const legacyQuantity = treatment.legacy
       ? Number(
-          group?.medication?.quantities?.find(
+          (treatment.source_scheme?.quantities ||
+            execution?.medication?.quantities ||
+            group?.medication?.quantities)?.find(
             (item) => item.drug_id === drug.drug_id,
           )?.quantity || 0,
         )
@@ -115,8 +122,10 @@ export function buildPickupReminderTask({
 }) {
   if (!treatment) return null;
   const group = db.projectGroups.find((row) => row.id === patient.group_id);
-  const reminder = group?.reminder?.snapshot;
-  if (!group?.medication) return null;
+  const schedule =
+    treatment.schedule_snapshot || executionSnapshotFor(db, patient);
+  const reminder = schedule?.reminder?.snapshot || group?.reminder?.snapshot;
+  if (!treatment.source_scheme && !group?.medication) return null;
 
   const stock = calculatePatientStock({
     db,
@@ -141,9 +150,12 @@ export function buildPickupReminderTask({
     due_date: trigger.expected_shortage_date,
     description: `${trigger.name}预计余药 ${trigger.estimated} ${trigger.unit}，约可用 ${trigger.days} 天`,
     requirements:
-      group.pickup_requirements || DEFAULT_PICKUP_REQUIREMENTS,
+      schedule?.pickup_requirements ||
+      group?.pickup_requirements ||
+      DEFAULT_PICKUP_REQUIREMENTS,
     remind_time:
-      group.pickup_remind_time ||
+      schedule?.pickup_remind_time ||
+      group?.pickup_remind_time ||
       reminder?.pickup_remind_time ||
       DEFAULT_PICKUP_REMIND_TIME,
     status: "待完成",
@@ -158,7 +170,8 @@ export function buildPickupReminderTask({
       available_days: trigger.days,
       advance_days: trigger.advance_days,
       remind_time:
-        group.pickup_remind_time ||
+        schedule?.pickup_remind_time ||
+        group?.pickup_remind_time ||
         reminder?.pickup_remind_time ||
         DEFAULT_PICKUP_REMIND_TIME,
       reminder_date: trigger.reminder_date,

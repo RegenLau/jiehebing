@@ -30,8 +30,8 @@
       type="daterange"
       value-format="YYYY-MM-DD"
       range-separator="至"
-      start-placeholder="开始日期"
-      end-placeholder="结束日期"
+      :start-placeholder="`${dateLabel}开始`"
+      :end-placeholder="`${dateLabel}结束`"
       clearable
       @update:model-value="changeDateRange"
     />
@@ -48,8 +48,9 @@
       groupId?: number
       dateRange?: string[]
       showDate?: boolean
+      dateLabel?: string
     }>(),
-    { dateRange: () => [], showDate: true }
+    { dateRange: () => [], showDate: true, dateLabel: '数据日期' }
   )
   const emit = defineEmits<{
     'update:projectId': [value: number | undefined]

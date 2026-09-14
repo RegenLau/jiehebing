@@ -6,12 +6,12 @@
       </div>
       <div class="actions">
         <ElRadioGroup v-model="searchForm.scope" @change="handleScopeChange">
-          <ElRadioButton label="today">今日用药计划</ElRadioButton>
-          <ElRadioButton label="all">全部用药计划</ElRadioButton>
+          <ElRadioButton value="today">今日用药计划</ElRadioButton>
+          <ElRadioButton value="all">全部用药计划</ElRadioButton>
         </ElRadioGroup>
         <ElInput
           v-model.trim="searchForm.patient_name"
-          placeholder="请输入患者姓名"
+          placeholder="患者姓名或编号"
           clearable
           style="width: 220px"
           @keyup.enter="handleSearch"
@@ -47,6 +47,7 @@
 
     <div class="scope-toolbar">
       <ResearchScopeFilter
+        date-label="用药计划日期"
         v-model:project-id="searchForm.project_id"
         v-model:group-id="searchForm.group_id"
         v-model:date-range="searchForm.date_range"
@@ -61,23 +62,24 @@
           project_id: searchForm.project_id,
           group_id: searchForm.group_id,
           start_date: searchForm.date_range[0],
-          end_date: searchForm.date_range[1]
+          end_date: searchForm.date_range[1],
+          scope: searchForm.scope,
+          plan_date: searchForm.scope === 'all' ? searchForm.plan_date : undefined,
+          overdue: searchForm.overdue ? '1' : undefined,
+          overdue_range: searchForm.overdue_range,
+          as_of: searchForm.as_of
         }"
       />
     </div>
 
     <ElCard shadow="never">
       <ElTable :data="list" v-loading="loading" border>
-        <ElTableColumn prop="id" label="ID" width="80" />
-        <ElTableColumn prop="patient_name" label="患者姓名" min-width="120" />
-        <ElTableColumn prop="patient_mobile" label="手机号" min-width="140" />
-        <ElTableColumn prop="name" label="药品名称" min-width="180" />
-        <ElTableColumn prop="specification" label="规格" min-width="140" />
-        <ElTableColumn prop="usage" label="服用方式" min-width="120" />
+        <ElTableColumn prop="patient_name" label="患者姓名" min-width="120" fixed="left" />
+        <ElTableColumn prop="patient_code" label="患者编号" min-width="130" fixed="left" />
+        <ElTableColumn prop="name" label="药品名称" min-width="160" />
         <ElTableColumn prop="dosage" label="剂量" min-width="120" />
-        <ElTableColumn prop="plan_date" label="计划日期" min-width="120" />
-        <ElTableColumn prop="day_number" label="第几天" width="90" />
-        <ElTableColumn prop="plan_time" label="提醒时间" width="100" />
+        <ElTableColumn prop="plan_date" label="应服日期" min-width="120" />
+        <ElTableColumn prop="plan_time" label="应服时间" width="100" />
         <ElTableColumn label="状态" width="100">
           <template #default="{ row }">
             <ElTag :type="row.status === 1 ? 'success' : 'warning'">
@@ -85,13 +87,16 @@
             </ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn label="跟进" width="190"
+        <ElTableColumn label="跟进" width="190" fixed="right"
           ><template #default="{ row }"
             ><ElButton link type="primary" @click="recordResult(row.id, 1)">已服</ElButton
             ><ElButton link type="warning" @click="recordResult(row.id, 2)">未服</ElButton
             ><ElButton link @click="recordResult(row.id, 0)">联系</ElButton></template
           ></ElTableColumn
-        ><ElTableColumn prop="record_reason" label="患者反馈说明" /><ElTableColumn
+        ><ElTableColumn prop="specification" label="规格" min-width="140" />
+        <ElTableColumn prop="usage" label="服用方式" min-width="120" />
+        <ElTableColumn prop="day_number" label="疗程第几天" width="105" />
+        <ElTableColumn prop="record_reason" label="患者反馈说明" /><ElTableColumn
           prop="checked_at"
           label="打卡时间"
           min-width="180"

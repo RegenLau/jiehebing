@@ -16,6 +16,7 @@
       /><ElButton type="primary" @click="create">代录反馈</ElButton></div
     ><ElCard shadow="never">
       <ResearchScopeFilter
+        date-label="反馈日期"
         v-if="!embedded"
         v-model:project-id="projectId"
         v-model:group-id="groupId"
@@ -25,15 +26,24 @@
         ><ElInput
           v-if="!embedded"
           v-model="keyword"
-          placeholder="患者姓名"
+          placeholder="患者姓名或编号"
           clearable
           @keyup.enter="search"
-        /><ElDatePicker v-model="date" value-format="YYYY-MM-DD" @change="search" /><ElButton
+        /><ElDatePicker
+          v-model="date"
+          value-format="YYYY-MM-DD"
+          placeholder="指定反馈日期"
+          @change="search"
+        /><ElButton
           @click="search"
           >查询</ElButton
         ></div
       ><ElTable :data="rows" v-loading="loading" border
-        ><ElTableColumn prop="patient_name" label="患者" /><ElTableColumn
+        ><ElTableColumn label="患者" min-width="180"
+          ><template #default="{ row }"
+            ><strong>{{ row.patient_name }}</strong><small class="patient-code">{{ row.patient_code }}</small></template
+          ></ElTableColumn
+        ><ElTableColumn
           prop="date"
           label="反馈日期" /><ElTableColumn label="症状变化" min-width="230"
           ><template #default="{ row }">{{
@@ -43,7 +53,10 @@
           }}</template></ElTableColumn
         ><ElTableColumn prop="note" label="补充说明" /><ElTableColumn
           prop="source"
-          label="来源" /></ElTable
+          label="来源" /><ElTableColumn prop="operator" label="代录人员" min-width="110" /><ElTableColumn
+          prop="created_at"
+          label="登记时间"
+          min-width="170" /></ElTable
       ><ElPagination
         v-model:current-page="current"
         :page-size="10"
@@ -104,11 +117,14 @@
   interface Feedback {
     user_id?: number
     patient_name?: string
+    patient_code?: string
     date: string
     no_discomfort: boolean
     symptoms: Symptom[]
     note: string
     source?: string
+    operator?: string
+    created_at?: string
   }
   const props = withDefaults(defineProps<{ embedded?: boolean; userId?: number }>(), {
       embedded: false,
@@ -207,6 +223,11 @@
 <style scoped>
   .page {
     padding: 20px;
+  }
+  .patient-code {
+    display: block;
+    margin-top: 3px;
+    color: var(--el-text-color-secondary);
   }
 
   .page.embedded {

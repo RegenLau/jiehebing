@@ -27,6 +27,7 @@
         <div v-if="!embedded" class="filter-block filter-block--scope">
           <span class="filter-label">研究范围</span>
           <ResearchScopeFilter
+            date-label="检查日期"
             v-model:project-id="projectId"
             v-model:group-id="groupId"
             v-model:date-range="dateRange"
@@ -38,7 +39,7 @@
             <span>关键字</span>
             <ElInput
               v-model="keyword"
-              placeholder="输入患者姓名或报告类型"
+              placeholder="患者姓名、编号或报告类型"
               clearable
               @clear="search"
               @keyup.enter="search"
@@ -60,7 +61,12 @@
       </div>
 
       <ElTable v-loading="loading" :data="rows" border>
-        <ElTableColumn prop="patient_name" label="患者" min-width="120" />
+        <ElTableColumn label="患者" min-width="180">
+          <template #default="{ row }">
+            <strong>{{ row.patient_name }}</strong>
+            <small class="patient-code">{{ row.patient_code }}</small>
+          </template>
+        </ElTableColumn>
         <ElTableColumn prop="type" label="报告类型" min-width="140" />
         <ElTableColumn label="关联任务" min-width="190">
           <template #default="{ row }">
@@ -192,6 +198,7 @@
     user_id?: number
     task_id?: number
     patient_name?: string
+    patient_code?: string
     type: string
     exam_date: string
     status: string
@@ -433,6 +440,12 @@
   }
   .muted-text {
     color: var(--el-text-color-secondary);
+  }
+  .patient-code {
+    display: block;
+    margin-top: 3px;
+    color: var(--el-text-color-secondary);
+    font-weight: 400;
   }
   .related-task {
     display: grid;

@@ -3,21 +3,39 @@
     <section class="treatment-meta-panel">
       <ElForm label-position="top" :disabled="disabled" class="treatment-meta">
         <div class="form-grid">
-          <ElFormItem label="开始用药日期" required>
+          <ElFormItem label="本次方案生效日期" required>
             <ElDatePicker
               :model-value="treatment.start_date"
               value-format="YYYY-MM-DD"
               @update:model-value="updateTreatment({ start_date: $event })"
             />
           </ElFormItem>
-          <ElFormItem label="治疗天数" required>
+          <ElFormItem :label="hasExistingTreatment ? '当前疗程总天数' : '治疗天数'" required>
             <ElInputNumber
               :model-value="treatment.treatment_days"
               :min="1"
               :max="3650"
-              :disabled="!adjusted"
+              :disabled="hasExistingTreatment || !adjusted"
               @update:model-value="updateTreatment({ treatment_days: $event || 1 })"
             />
+          </ElFormItem>
+          <ElFormItem v-if="hasExistingTreatment" label="疗程结束日期" required>
+            <ElDatePicker
+              :model-value="treatment.course_end_date || treatment.end_date"
+              value-format="YYYY-MM-DD"
+              :disabled="!treatment.adjust_course_end"
+              @update:model-value="updateTreatment({ course_end_date: $event })"
+            />
+          </ElFormItem>
+          <ElFormItem v-if="hasExistingTreatment" label="调整疗程结束日">
+            <div class="course-end-control">
+              <ElSwitch
+                :model-value="Boolean(treatment.adjust_course_end)"
+                :disabled="disabled"
+                @update:model-value="updateTreatment({ adjust_course_end: Boolean($event) })"
+              />
+              <span>{{ treatment.adjust_course_end ? '将按新的结束日期保存' : '保持原疗程结束日期' }}</span>
+            </div>
           </ElFormItem>
         </div>
       </ElForm>
@@ -173,7 +191,10 @@
     id?: number
     start_date: string
     end_date?: string
+    course_start_date?: string
+    course_end_date?: string
     treatment_days: number
+    adjust_course_end?: boolean
     reason: string
     adjusted?: boolean
     adjustment_summary?: string[]
@@ -186,6 +207,7 @@
     adjusted: boolean
     group: GroupRecord | null
     disabled: boolean
+    hasExistingTreatment: boolean
   }>()
   const emit = defineEmits<{
     'update:treatment': [value: Treatment]
@@ -284,6 +306,14 @@
 
   .treatment-meta {
     width: 100%;
+  }
+
+  .course-end-control {
+    display: flex;
+    align-items: center;
+    min-height: 32px;
+    gap: 10px;
+    color: var(--el-text-color-regular);
   }
 
   .treatment-meta-panel {

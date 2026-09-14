@@ -46,16 +46,49 @@ export interface PatientListResponse {
 }
 
 export interface PatientSurveyStatusRecord {
+  task_id: number | string | null
+  answer_id: number | null
   template_id: number
   code: string
   name: string
   description: string
-  fillable_day: number
-  fillable_date: string | null
+  round_no: number
+  plan_date: string
+  due_date: string
+  status: string
+  overdue: boolean
   fillable: boolean
   answered: boolean
   submitted_at: string
   answer_count: number
+}
+
+export interface PatientSurveyAnswerDetail {
+  answer_id: number
+  task_id: number | string | null
+  template: {
+    id: number
+    code: string
+    name: string
+    description: string
+    fillable_day: number
+  }
+  submitted_at: string
+  questions: Array<{
+    question_id: number
+    question_no: number
+    title: string
+    type: string
+    required: boolean
+    answered: boolean
+    text_value: string
+    answer_summary: string
+    selected_options: Array<{
+      id: number
+      label: string
+      input_fields: Array<{ field_key: string; field_label: string; value: string }>
+    }>
+  }>
 }
 
 export interface PatientMedicineRecord {
@@ -138,6 +171,13 @@ export function fetchPatientSurveyStatus(user_id: number) {
   return request.get<PatientSurveyStatusRecord[]>({
     url: '/app/core/patient/survey-status',
     params: { user_id }
+  })
+}
+
+export function fetchPatientSurveyAnswerDetail(user_id: number, answer_id: number) {
+  return request.get<PatientSurveyAnswerDetail>({
+    url: '/app/core/patient/survey-answer-detail',
+    params: { user_id, answer_id }
   })
 }
 

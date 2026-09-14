@@ -51,7 +51,10 @@ test('group drug cards preserve dose, daily reminders and calculate earliest pic
   const plans=await api.ok(`medication-plan/index?user_id=${patient.id}&scope=today&current=1&size=100`);
   const activePlans=plans.list.filter(plan=>plan.status===0);
   assert.equal(activePlans.length,adjusted.drugs.reduce((sum,drug)=>sum+drug.times.length,0));
-  assert.ok(activePlans.every(p=>p.medication_timing===adjusted.drugs.find(d=>d.drug_id===p.common_medicine_id).reminders.find(r=>r.time===p.plan_time).timing));
+  assert.ok(activePlans.every(p=>{
+    const version=String(p.treatment_id)===String(adjusted.id)?adjusted:treatment;
+    return p.medication_timing===version.drugs.find(d=>d.drug_id===p.common_medicine_id).reminders.find(r=>r.time===p.plan_time).timing;
+  }));
 });
 
 test('prescription mock requires a local image and custom group cards can be saved without a reusable scheme',async t=>{

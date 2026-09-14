@@ -167,6 +167,11 @@
           </ElTabs>
         </ElForm>
         <div v-if="!readonly" class="footer"
+          ><span :class="{ dirty: hasUnsavedChanges }">{{
+            hasUnsavedChanges
+              ? '有未保存修改；保存后仅作为新患者默认安排'
+              : '当前配置已保存'
+          }}</span
           ><ElButton :disabled="saving" @click="back">返回分组列表</ElButton
           ><ElButton type="primary" :loading="saving" @click="save">保存方案与任务</ElButton></div
         >
@@ -226,6 +231,10 @@
     () => projectEnded.value || (Boolean(groupId.value) && route.query.mode !== 'edit')
   )
   const activeTab = ref('participants')
+  const savedSnapshot = ref('')
+  const hasUnsavedChanges = computed(
+    () => Boolean(savedSnapshot.value) && JSON.stringify(form.value) !== savedSnapshot.value
+  )
   const allowedTabs = [
     'participants',
     'medication',
@@ -285,6 +294,7 @@
           .filter((task) => task.snapshot.system_kind !== 'pickup')
           .map((item) => normalizeSchedule(item, fallbackTime))
       }
+      savedSnapshot.value = JSON.stringify(form.value)
       projectName.value = project.name
       projectStatus.value = project.status
       const requestedTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
@@ -497,10 +507,26 @@
     margin: 24px 0 14px;
   }
   .footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
     display: flex;
     justify-content: flex-end;
     gap: 12px;
     margin-top: 24px;
+    padding: 12px 16px;
+    border: 1px solid var(--el-border-color-light);
+    border-radius: 8px;
+    background: var(--el-bg-color);
+    box-shadow: 0 -6px 18px rgb(0 0 0 / 6%);
+  }
+  .footer > span {
+    margin-right: auto;
+    color: var(--el-text-color-secondary);
+    font-size: 13px;
+  }
+  .footer > span.dirty {
+    color: var(--el-color-warning);
   }
   @media (max-width: 680px) {
     .configuration-summary {

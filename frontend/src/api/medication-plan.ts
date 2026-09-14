@@ -5,6 +5,7 @@ export interface MedicationPlanRecord {
   user_id: number
   medicine_id: number
   patient_name: string
+  patient_code?: string
   patient_mobile: string
   batch_no: string
   plan_date: string

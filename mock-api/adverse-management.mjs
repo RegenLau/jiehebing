@@ -1,6 +1,6 @@
 export function withAdverseMembership(record, db) {
  const patient = db.patients.find(p => p.id === record.user_id);
- return { ...record, project_id: patient?.project_id ?? null, project_name: patient?.project_name || '', group_id: patient?.group_id ?? null, group_name: patient?.group_name || '' };
+ return { ...record, patient_code: patient?.patient_code || `P${record.user_id}`, project_id: patient?.project_id ?? null, project_name: patient?.project_name || '', group_id: patient?.group_id ?? null, group_name: patient?.group_name || '' };
 }
 
 export function registerAdverseManagement({core,db,assert,find,clean,timestamp}) {

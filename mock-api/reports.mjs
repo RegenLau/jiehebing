@@ -49,6 +49,9 @@ export function registerReports({
       : null;
     return {
       ...report,
+      patient_code:
+        db.patients.find((patient) => patient.id === report.user_id)?.patient_code ||
+        `P${report.user_id}`,
       task: task
         ? {
             id: task.id,
@@ -73,7 +76,7 @@ export function registerReports({
             (!q.start_date || r.exam_date >= q.start_date) &&
             (!q.end_date || r.exam_date <= q.end_date) &&
             (!q.keyword ||
-              `${r.patient_name} ${r.type}`.includes(clean(q.keyword))) &&
+              `${r.patient_name} ${patient?.patient_code || ""} ${r.type}`.includes(clean(q.keyword))) &&
             (!q.status || r.status === q.status)
           );
         })
@@ -170,27 +173,67 @@ export function registerReports({
     assert(r.status === "待核对", "报告状态已变化，请刷新");
     assert(["已核对", "需补充"].includes(b.status), "核对结果不合法");
     const reason = text(b.reason, "核对说明");
-    assert(
-      Array.isArray(b.metrics) && b.metrics.length <= 100,
-      "指标列表不合法",
-    );
-    const metrics = b.metrics.map((m) => ({
-      name: text(m.name, "指标名称"),
-      value: text(m.value, "检测值"),
-      unit: text(m.unit, "单位", false),
-      reference: text(m.reference, "参考范围", false),
-      flag: metricFlag(m.flag),
-    }));
-    const before = { status: r.status, metrics: structuredClone(r.metrics) };
+    const before = {
+      status: r.status,
+      type: r.type,
+      exam_date: r.exam_date,
+      metrics: structuredClone(r.metrics),
+      reviewed_data: structuredClone(r.reviewed_data || null),
+    };
+    let metrics = structuredClone(r.metrics);
+    let reviewedData = structuredClone(r.reviewed_data || null);
+    if (b.status === "已核对") {
+      assert(
+        Array.isArray(b.metrics) && b.metrics.length <= 100,
+        "指标列表不合法",
+      );
+      metrics = b.metrics.map((m) => ({
+        name: text(m.name, "指标名称"),
+        value: text(m.value, "检测值"),
+        unit: text(m.unit, "单位", false),
+        reference: text(m.reference, "参考范围", false),
+        flag: metricFlag(m.flag),
+      }));
+      const reviewedType = text(b.type ?? r.type, "报告类型");
+      const reviewedExamDate = clean(b.exam_date ?? r.exam_date);
+      assert(isDate(reviewedExamDate), "请填写有效的检查日期");
+      const findings = Array.isArray(b.findings)
+        ? b.findings.map((finding) => ({
+            label: text(finding.label, "结论字段名称"),
+            value: text(finding.value, "结论内容"),
+          }))
+        : structuredClone(r.ocr_result?.findings || []);
+      reviewedData = {
+        type: reviewedType,
+        exam_date: reviewedExamDate,
+        findings,
+        metrics: structuredClone(metrics),
+        reviewed_by: admin.realname || admin.username,
+        reviewed_at: timestamp(),
+      };
+      r.type = reviewedType;
+      r.exam_date = reviewedExamDate;
+      r.metrics = metrics;
+      r.reviewed_data = reviewedData;
+    } else {
+      text(b.supplement_requirements, "需补充项目");
+    }
     r.status = b.status;
-    r.metrics = metrics;
     r.ocr_status = b.status === "已核对" ? "人工已核对" : "待补充后重新解析";
     r.history.push({
       time: timestamp(),
       operator: admin.realname || admin.username,
       reason,
+      supplement_requirements:
+        b.status === "需补充" ? clean(b.supplement_requirements) : "",
       before,
-      after: { status: r.status, metrics: structuredClone(metrics) },
+      after: {
+        status: r.status,
+        type: r.type,
+        exam_date: r.exam_date,
+        metrics: structuredClone(r.metrics),
+        reviewed_data: structuredClone(reviewedData),
+      },
     });
     if (r.task_id) {
       const t = find(db.followupTasks, r.task_id, "任务");

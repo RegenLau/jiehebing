@@ -92,12 +92,32 @@ export function registerFollowup({
           (!q.start_date || r.date >= q.start_date) &&
           (!q.end_date || r.date <= q.end_date) &&
           (!q.keyword ||
-            `${r.name} ${r.patient_name}`.includes(clean(q.keyword))) &&
+            `${r.name} ${r.patient_name} ${db.patients.find((patient) => patient.id === r.user_id)?.patient_code || ""}`.includes(clean(q.keyword))) &&
           (!q.type || r.type === q.type) &&
           (!q.status || r.status === q.status) &&
           (!q.date || r.date === q.date) &&
           (q.overdue !== "1" || r.overdue),
-      ),
+      ).map((row) => {
+        const patient = db.patients.find((item) => item.id === row.user_id);
+        const report = db.reports.find((item) => item.task_id === row.id);
+        const answer = db.answers.find(
+          (item) => item.user_id === row.user_id && String(item.task_id) === String(row.id),
+        );
+        const displaySources = {
+          "分组安排": "分组安排",
+          "人工新增": "临时添加",
+          "每日任务": "系统生成",
+          "系统余药计算": "系统生成",
+          "患者端任务类型演示": "系统生成",
+        };
+        return {
+          ...row,
+          patient_code: patient?.patient_code || `P${row.user_id}`,
+          display_source: displaySources[row.source] || "系统生成",
+          report_id: report?.id || null,
+          answer_id: answer?.id || null,
+        };
+      }),
       q,
     ),
   );
@@ -179,11 +199,14 @@ export function generateExecution({
   shiftDate,
   timestamp,
 }) {
+  const effectiveAt =
+    treatment.effective_at || `${treatment.start_date} 00:00:00`;
+  const planAt = (plan) => `${plan.plan_date} ${plan.plan_time}:00`;
   for (const plan of db.plans)
     if (
       plan.user_id === patient.id &&
       plan.status === 0 &&
-      plan.plan_date >= treatment.start_date
+      planAt(plan) >= effectiveAt
     ) {
       plan.status = 3;
       plan.status_text = "已取消";
@@ -210,8 +233,14 @@ export function generateExecution({
       created_at: timestamp(),
     };
     db.medicines.push(medicine);
-    for (let day = 0; day < treatment.treatment_days; day++)
-      for (const time of d.times)
+    for (
+      let day = 0, planDate = treatment.start_date;
+      planDate <= treatment.end_date;
+      day += 1, planDate = shiftDate(treatment.start_date, day)
+    )
+      for (const time of d.times) {
+        if (`${planDate} ${time}:00` < effectiveAt) continue;
+        const paused = patient.study_state === "暂停用药";
         db.plans.push({
           ...medicine,
           id: planId++,
@@ -220,16 +249,23 @@ export function generateExecution({
           patient_mobile: patient.mobile,
           project_id: group.project_id,
           group_id: group.id,
-          plan_date: shiftDate(treatment.start_date, day),
+          plan_date: planDate,
           plan_time: time,
           medication_timing:
             d.reminders?.find((r) => r.time === time)?.timing || "",
           plan_index: d.times.indexOf(time) + 1,
           day_number: day + 1,
-          status: 0,
-          status_text: "待打卡",
+          status: paused ? 3 : 0,
+          status_text: paused ? "已暂停" : "待打卡",
+          ...(paused
+            ? {
+                paused_by_state: true,
+                cancel_reason: "患者当前处于暂停用药状态",
+              }
+            : {}),
           checked_at: "",
         });
+      }
   }
   for (const [key, type] of [
     ["surveys", "问卷"],

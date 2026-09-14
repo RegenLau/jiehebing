@@ -16,6 +16,7 @@
       </div>
       <div v-if="form" class="detail-actions">
         <template v-if="form.status === '待核对'">
+          <ElButton :disabled="saving" @click="discardChanges">舍弃未保存修改</ElButton>
           <ElButton :loading="saving" @click="review('需补充')">要求补充</ElButton>
           <ElButton type="primary" :loading="saving" @click="review('已核对')">核对通过</ElButton>
         </template>
@@ -157,9 +158,63 @@
           </section>
 
           <section v-if="form.ocr_result?.findings.length" class="data-section">
-            <h4>影像所见与结论</h4>
+            <h4>OCR 原始文字结论</h4>
             <dl class="finding-list">
               <div v-for="finding in form.ocr_result.findings" :key="finding.label">
+                <dt>{{ finding.label }}</dt>
+                <dd>{{ finding.value }}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section v-if="form.status === '待核对'" class="data-section review-fields-section">
+            <div class="section-title-row">
+              <div>
+                <h4>人工核对基础字段与文字结论</h4>
+                <p>原始 OCR 内容保留在上方；这里保存核对后的正式值。</p>
+              </div>
+            </div>
+            <div class="review-base-grid">
+              <label>
+                <span>报告类型</span>
+                <ElInput v-model="reviewType" />
+              </label>
+              <label>
+                <span>检查日期</span>
+                <ElDatePicker v-model="reviewExamDate" value-format="YYYY-MM-DD" />
+              </label>
+            </div>
+            <div v-if="reviewFindings.length" class="review-findings">
+              <label v-for="(finding, index) in reviewFindings" :key="index">
+                <span>{{ finding.label }}</span>
+                <ElInput v-model="finding.value" type="textarea" :rows="3" />
+              </label>
+            </div>
+          </section>
+
+          <section v-else-if="form.reviewed_data" class="data-section reviewed-result-section">
+            <div class="section-title-row">
+              <div>
+                <h4>人工核对后的正式结果</h4>
+                <p>
+                  {{ form.reviewed_data.reviewed_by || '-' }} ·
+                  {{ form.reviewed_data.reviewed_at || '时间未记录' }}
+                </p>
+              </div>
+              <ElTag type="success" effect="light">已生效</ElTag>
+            </div>
+            <dl class="field-grid reviewed-base-grid">
+              <div>
+                <dt>报告类型</dt>
+                <dd>{{ form.reviewed_data.type }}</dd>
+              </div>
+              <div>
+                <dt>检查日期</dt>
+                <dd>{{ form.reviewed_data.exam_date }}</dd>
+              </div>
+            </dl>
+            <dl v-if="form.reviewed_data.findings.length" class="finding-list reviewed-findings-list">
+              <div v-for="finding in form.reviewed_data.findings" :key="finding.label">
                 <dt>{{ finding.label }}</dt>
                 <dd>{{ finding.value }}</dd>
               </div>
@@ -169,8 +224,8 @@
           <section class="data-section metric-section">
             <div class="section-title-row">
               <div>
-                <h4>检验项目</h4>
-                <p>OCR 结果已写入待核对数据，仅“待核对”状态可修改</p>
+                <h4>{{ form.status === '待核对' ? '人工核对检验项目' : '人工核对值' }}</h4>
+                <p v-if="form.status === '待核对'">可纠正、补录或删除误识别项目；OCR 原始值仍单独保留。</p>
               </div>
               <span>{{ form.metrics.length }} 项</span>
             </div>
@@ -215,8 +270,21 @@
                   </ElSelect>
                 </template>
               </ElTableColumn>
+              <ElTableColumn v-if="form.status === '待核对'" label="操作" width="76">
+                <template #default="{ $index }">
+                  <ElButton link type="danger" @click="removeMetric($index)">删除</ElButton>
+                </template>
+              </ElTableColumn>
             </ElTable>
-            <ElEmpty v-else description="未解析出检验数值，请根据原文件补充" :image-size="72" />
+            <ElEmpty
+              v-else
+              :description="
+                reviewFindings.length
+                  ? '该类型以文字所见和结论核对为主，无数值检验项目'
+                  : '未识别出数值项目，可人工添加；也可直接要求补充资料'
+              "
+              :image-size="72"
+            />
             <ElButton
               v-if="form.status === '待核对'"
               class="add-metric-button"
@@ -234,6 +302,13 @@
               :rows="3"
               placeholder="请填写核对结论，要求补充时说明具体原因"
             />
+            <ElInput
+              v-model="supplementRequirements"
+              type="textarea"
+              :rows="2"
+              class="supplement-requirements"
+              placeholder="要求补充时必填：明确需要补哪份资料或哪个项目"
+            />
           </section>
 
           <section class="data-section">
@@ -247,6 +322,9 @@
               >
                 <strong>{{ history.operator }}</strong>
                 <p>{{ history.reason }}</p>
+                <p v-if="history.supplement_requirements">
+                  需补充：{{ history.supplement_requirements }}
+                </p>
               </ElTimelineItem>
             </ElTimeline>
             <ElEmpty v-else description="暂无核对记录" :image-size="64" />
@@ -283,6 +361,7 @@
 <script setup lang="ts">
   import { computed, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
+  import { ElMessage } from 'element-plus'
   import request from '@/utils/http'
 
   interface ReportFile {
@@ -322,7 +401,19 @@
     ocr_result?: OcrResult | null
     metrics: ReportMetric[]
     versions: { time: string; note: string; operator?: string; files: ReportFile[] }[]
-    history: { time: string; operator: string; reason: string }[]
+    reviewed_data?: {
+      type: string
+      exam_date: string
+      findings: { label: string; value: string }[]
+      reviewed_by?: string
+      reviewed_at?: string
+    } | null
+    history: {
+      time: string
+      operator: string
+      reason: string
+      supplement_requirements?: string
+    }[]
   }
 
   const route = useRoute()
@@ -333,6 +424,10 @@
   const uploads = ref<string[]>([])
   const note = ref('')
   const reason = ref('')
+  const supplementRequirements = ref('')
+  const reviewType = ref('')
+  const reviewExamDate = ref('')
+  const reviewFindings = ref<{ label: string; value: string }[]>([])
   const activeVersion = ref('0')
   const activeFile = ref(0)
   const supplementSection = ref<HTMLElement>()
@@ -377,6 +472,14 @@
       uploads.value = []
       note.value = ''
       reason.value = ''
+      supplementRequirements.value = ''
+      reviewType.value = form.value.reviewed_data?.type || form.value.type
+      reviewExamDate.value = form.value.reviewed_data?.exam_date || form.value.exam_date
+      reviewFindings.value = (
+        form.value.reviewed_data?.findings ||
+        form.value.ocr_result?.findings ||
+        []
+      ).map((finding) => ({ label: finding.label, value: finding.value }))
     } finally {
       loading.value = false
     }
@@ -412,8 +515,17 @@
       saving.value = false
     }
   }
+  function removeMetric(index: number) {
+    form.value?.metrics.splice(index, 1)
+  }
+  function discardChanges() {
+    void load()
+  }
   async function review(nextStatus: string) {
     if (!form.value) return
+    if (!reason.value.trim()) return ElMessage.warning('请填写人工核对说明')
+    if (nextStatus === '需补充' && !supplementRequirements.value.trim())
+      return ElMessage.warning('请明确填写需要补充的资料或项目')
     saving.value = true
     try {
       await request.post({
@@ -422,6 +534,10 @@
           id: form.value.id,
           status: nextStatus,
           reason: reason.value,
+          supplement_requirements: supplementRequirements.value,
+          type: reviewType.value,
+          exam_date: reviewExamDate.value,
+          findings: reviewFindings.value,
           metrics: form.value.metrics
         },
         showSuccessMessage: true
@@ -441,11 +557,16 @@
     padding: 20px;
   }
   .detail-header {
+    position: sticky;
+    top: 0;
+    z-index: 8;
     display: flex;
     gap: 20px;
     align-items: flex-end;
     justify-content: space-between;
     margin-bottom: 18px;
+    padding: 10px 0;
+    background: var(--el-bg-color-page);
   }
   .detail-title > .el-button {
     margin: 0 0 8px -15px;
@@ -727,6 +848,27 @@
   }
   .add-metric-button {
     margin-top: 12px;
+  }
+  .review-base-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .review-base-grid label,
+  .review-findings label {
+    display: grid;
+    gap: 7px;
+    color: var(--el-text-color-regular);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .review-findings {
+    display: grid;
+    gap: 14px;
+    margin-top: 14px;
+  }
+  .supplement-requirements {
+    margin-top: 10px;
   }
   .data-section :deep(.el-timeline) {
     margin: 4px 0 0;

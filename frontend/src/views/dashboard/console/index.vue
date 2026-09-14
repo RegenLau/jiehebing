@@ -89,7 +89,7 @@
         </article>
         <article class="panel adverse-panel">
           <div class="panel-title">
-            <h2><Icon icon="ri:bar-chart-box-line" />不良反应严重程度</h2><span>（例）</span>
+            <h2><Icon icon="ri:bar-chart-box-line" />不良反应严重程度</h2>
           </div>
           <div ref="adverseChartRef" class="chart adverse-chart" aria-label="不良反应严重程度图" />
         </article>
@@ -246,7 +246,7 @@
       value: dashboardData.value.todos.pending_review_total,
       icon: Memo,
       tone: 'orange',
-      path: '/adverse-reaction/index'
+      path: `/adverse-reaction/index?pending=1&as_of=${dashboardData.value.date}${projectId.value ? `&project_id=${projectId.value}` : ''}${groupId.value ? `&group_id=${groupId.value}` : ''}`
     },
     {
       label: '待核对报告',
@@ -254,7 +254,7 @@
       value: dashboardData.value.todos.pending_report_total,
       icon: Document,
       tone: 'purple',
-      path: '/reports/index'
+      path: `/reports/index?status=${encodeURIComponent('待核对')}${projectId.value ? `&project_id=${projectId.value}` : ''}${groupId.value ? `&group_id=${groupId.value}` : ''}`
     }
   ])
   const archiveText = computed(() => {

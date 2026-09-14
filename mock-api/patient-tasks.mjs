@@ -1,21 +1,59 @@
 import { buildPickupReminderTask } from "./pickup-reminder.mjs";
 import { effectiveProjectStatus } from "./project-status.mjs";
+import { executionSnapshotFor } from "./execution-snapshot.mjs";
 
-export function latestTreatmentFor({ db, patient, shiftDate }) {
-  const actual = db.patientTreatments
-    .filter((row) => row.user_id === patient.id)
+const TERMINAL_STATES = new Set(["已完成", "提前退出", "失访"]);
+
+export function treatmentStateFor(treatment, date) {
+  if (!treatment) return "none";
+  if (treatment.start_date > date) return "pending";
+  const effectiveEnd = treatment.version_end_date || treatment.end_date;
+  if (effectiveEnd && effectiveEnd < date) return "completed";
+  return "current";
+}
+
+export function actualTreatmentsFor({ db, patient }) {
+  return db.patientTreatments
+    .filter((row) => row.user_id === patient.id && !row.superseded_before_start)
+    .sort(
+      (left, right) =>
+        left.start_date.localeCompare(right.start_date) || left.id - right.id,
+    );
+}
+
+export function currentTreatmentFor({ db, patient, date }) {
+  return actualTreatmentsFor({ db, patient })
+    .filter((row) => treatmentStateFor(row, date) === "current")
     .at(-1);
+}
+
+export function upcomingTreatmentFor({ db, patient, date }) {
+  return actualTreatmentsFor({ db, patient }).find(
+    (row) => treatmentStateFor(row, date) === "pending",
+  );
+}
+
+export function latestTreatmentFor({ db, patient, shiftDate, date }) {
+  const actuals = actualTreatmentsFor({ db, patient });
+  const actual =
+    actuals.filter((row) => treatmentStateFor(row, date) === "current").at(-1) ||
+    actuals.find((row) => treatmentStateFor(row, date) === "pending") ||
+    actuals.at(-1);
   if (actual) return actual;
 
   const medicines = db.medicines.filter((row) => row.user_id === patient.id);
   if (!medicines.length) return null;
   const group = db.projectGroups.find((row) => row.id === patient.group_id);
-  const treatmentDays = group?.medication?.treatment_days || 0;
+  const execution = executionSnapshotFor(db, patient);
+  const medication = execution?.medication || group?.medication;
+  const treatmentDays = medication?.treatment_days || 0;
   return {
     id: `legacy-${patient.id}`,
     user_id: patient.id,
     source_group_id: patient.group_id,
-    source_revision: group?.revision || 1,
+    source_revision: execution?.group_revision || group?.revision || 1,
+    source_scheme: structuredClone(medication || null),
+    schedule_snapshot: execution ? structuredClone(execution) : null,
     adjusted: false,
     adjustment_summary: [],
     start_date: patient.enroll_date,
@@ -42,10 +80,12 @@ export function latestTreatmentFor({ db, patient, shiftDate }) {
 function scheduledTasks({ db, patient, treatment, currentDate, shiftDate }) {
   const group = db.projectGroups.find((row) => row.id === patient.group_id);
   if (!group || !treatment) return [];
+  const schedule =
+    treatment.schedule_snapshot || executionSnapshotFor(db, patient) || group;
   const result = [];
   for (const [kind, type, bindings] of [
-    ["surveys", "问卷", group.surveys || []],
-    ["tasks", null, group.tasks || []],
+    ["surveys", "问卷", schedule.surveys || []],
+    ["tasks", null, schedule.tasks || []],
   ])
     for (const binding of bindings) {
       const anchor =
@@ -206,8 +246,27 @@ export function buildPatientTasks({
   includeFuture = false,
 }) {
   const currentDate = today();
+  if (TERMINAL_STATES.has(patient.study_state))
+    return db.followupTasks
+      .filter(
+        (row) =>
+          row.user_id === patient.id &&
+          row.safety_followup === true &&
+          ["待完成", "需补充"].includes(row.status),
+      )
+      .map((row) => enrichTask({ ...row, virtual: false }, patient, currentDate))
+      .sort(
+        (left, right) =>
+          left.due_date.localeCompare(right.due_date) ||
+          left.date.localeCompare(right.date),
+      );
   const currentDateTime = includeFuture ? "" : timestamp().slice(0, 16);
-  const treatment = latestTreatmentFor({ db, patient, shiftDate });
+  const treatment = latestTreatmentFor({
+    db,
+    patient,
+    shiftDate,
+    date: today(),
+  });
   const summary = buildPatientTaskSummary({
     db,
     patient,

@@ -4,6 +4,7 @@ export interface AdverseReactionRecord {
   id: number
   user_id: number
   patient_name: string
+  patient_code?: string
   patient_mobile: string
   project_id?: number | null
   project_name?: string
@@ -20,6 +21,9 @@ export interface AdverseReactionRecord {
   status_text: string
   created_at: string
   processing_status?: string
+  owner_id?: number
+  owner_name?: string
+  assessment?: { owner_id?: number; owner_name?: string }
 }
 
 export interface AdverseReactionListParams {
@@ -29,6 +33,11 @@ export interface AdverseReactionListParams {
   user_id?: number
   severity?: number
   pending?: string
+  as_of?: string
+  processing_status?: string
+  owner_id?: number
+  project_id?: number
+  group_id?: number
 }
 
 export interface AdverseReactionListResponse {

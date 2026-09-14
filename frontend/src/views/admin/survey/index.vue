@@ -141,6 +141,7 @@
       <ElForm label-position="top">
         <ElFormItem label="项目和分组（可选）">
           <ResearchScopeFilter
+            date-label="答卷提交日期"
             v-model:project-id="exportForm.project_id"
             v-model:group-id="exportForm.group_id"
             :show-date="false"
@@ -161,8 +162,8 @@
               type="daterange"
               value-format="YYYY-MM-DD"
               range-separator="至"
-              start-placeholder="开始日期"
-              end-placeholder="结束日期"
+              start-placeholder="提交日期开始"
+              end-placeholder="提交日期结束"
               clearable
             />
           </div>

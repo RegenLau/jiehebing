@@ -1,7 +1,10 @@
 <template>
   <main
     class="patient-app"
-    :class="{ 'is-login': stage === 'login', 'is-ended': stage === 'project_ended' }"
+    :class="{
+      'is-login': stage === 'login',
+      'is-ended': stage === 'project_ended' || stage === 'study_ended'
+    }"
   >
     <section v-if="stage === 'loading'" class="center-state" aria-live="polite">
       <ArtSvgIcon class="loading-icon" icon="ri:loader-4-line" />
@@ -47,7 +50,12 @@
 
     <template v-else-if="data">
       <header
-        v-if="stage !== 'home' && stage !== 'pending_start' && stage !== 'project_ended'"
+        v-if="
+          stage !== 'home' &&
+          stage !== 'pending_start' &&
+          stage !== 'project_ended' &&
+          stage !== 'study_ended'
+        "
         class="page-header"
       >
         <button class="icon-button" type="button" aria-label="退出登录" @click="logout">
@@ -84,6 +92,28 @@
           <p>如有疑问，请联系随访医生</p>
         </div>
 
+        <button class="project-ended-logout" type="button" @click="logout">退出登录</button>
+      </section>
+
+      <section v-else-if="stage === 'study_ended'" class="project-ended-page">
+        <header class="project-ended-header">
+          <h1>本次研究参与已结束</h1>
+        </header>
+        <div class="project-ended-status" aria-live="polite">
+          <span class="project-ended-illustration" aria-hidden="true">
+            <ArtSvgIcon icon="ri:shield-check-line" />
+          </span>
+          <h2>{{ data.study_end?.state || data.patient.study_state }}</h2>
+          <p>普通服药、问卷和随访任务已经停止。</p>
+        </div>
+        <article v-if="data.study_end?.reason" class="project-ended-card">
+          <span>状态说明</span>
+          <strong>{{ data.study_end.reason }}</strong>
+        </article>
+        <div class="project-ended-help">
+          <ArtSvgIcon icon="ri:customer-service-2-line" />
+          <p>如仍需安全随访或有身体不适，请联系随访医生</p>
+        </div>
         <button class="project-ended-logout" type="button" @click="logout">退出登录</button>
       </section>
 
@@ -1368,6 +1398,7 @@
       | 'medication_issue'
       | 'pending_start'
       | 'project_ended'
+      | 'study_ended'
       | 'home'
     patient: {
       id: number
@@ -1379,6 +1410,7 @@
       project_name: string
       group_name: string
       enroll_date: string
+      study_state: string
     }
     treatment: null | { id: number | string; drugs: PatientDrug[] }
     medication_start: null | { date: string; time: string; start_at: string }
@@ -1390,6 +1422,7 @@
       end_date: string
       ended_manually: boolean
     }
+    study_end: null | { state: string; reason: string }
   }
   interface MedicationSlot {
     id: string
