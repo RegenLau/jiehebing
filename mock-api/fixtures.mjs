@@ -156,9 +156,9 @@ export function createFixtures(now) {
     drugs: commonMedicines.filter(m => m.status === 1).slice(id - 1, id + 1).map(m => ({ drug_id: m.id, name: m.common_name, specification: m.specification, dose: m.dosage_value, unit: m.dosage_unit, frequency: '每日1次', times: '08:00', precautions: '' }))
   }));
   const taskTemplates = [
-    { id:2, name:'血常规复查', type:'检查', requirements:'完成血常规检查后提交检查日期及报告原图' },
-    { id:3, name:'生化指标复查', type:'检查', requirements:'完成肝功能、肾功能等生化指标检查后提交检查日期及报告原图' },
-    { id:4, name:'胸部 CT 复查', type:'检查', requirements:'完成胸部 CT 检查后提交检查日期及报告原图' }
+    { id:2, name:'血常规复查', type:'检查', report_type:'血常规', requirements:'完成血常规检查后提交检查日期及报告原图' },
+    { id:3, name:'生化指标复查', type:'检查', report_type:'肝功能和肾功能', requirements:'完成肝功能、肾功能等生化指标检查后提交检查日期及报告原图' },
+    { id:4, name:'胸部 CT 复查', type:'检查', report_type:'胸部CT', requirements:'完成胸部 CT 检查后提交检查日期及报告原图' }
   ].map(template => ({ ...template, status:1, revision:1, version:'V1', description:'' }));
   const reminderSchemes = [
     {
@@ -293,6 +293,7 @@ export function createFixtures(now) {
       id: taskId, user_id: patient.id, patient_name: patient.name,
       project_id: patient.project_id, group_id: patient.group_id,
       name: `${type}复查`, type: '检查', date: exam_date, due_date: shiftDate(exam_date, 2), remind_time: '09:00',
+      report_type: type,
       description: `完成${type}检查并提交报告`, requirements: '提交检查日期及清晰、完整的报告原图',
       status: taskStatus, source: '模拟检查安排',
       result: status === '需补充' ? '请补充清晰、完整的报告原图。' : '',

@@ -38,6 +38,7 @@ export interface Source {
   drugs?: Drug[]
   questions?: { id: number; title: string; options: { label: string }[] }[]
   requirements?: string
+  report_type?: string
 }
 export interface ReminderSource extends Source {
   name: string

@@ -22,6 +22,7 @@
       <ElCollapse
         ><ElCollapseItem title="查看内容"
           ><p>{{ row.snapshot.description }}</p
+          ><p v-if="row.snapshot.report_type">报告类型：{{ row.snapshot.report_type }}</p
           ><p>{{ row.snapshot.requirements }}</p
           ><ol v-if="row.snapshot.questions"
             ><li v-for="q in row.snapshot.questions" :key="q.id"
@@ -69,7 +70,11 @@
       </div>
       <div class="schedule-help">
         <p>0 天表示开始计算日当天；完成期限包含执行当天。</p>
-        <strong>未来三次示例（{{ row.anchor === 'date' ? '按指定日期' : `假设开始计算日为 ${todayText}` }}）</strong>
+        <strong
+          >未来三次示例（{{
+            row.anchor === 'date' ? '按指定日期' : `假设开始计算日为 ${todayText}`
+          }}）</strong
+        >
         <span v-for="item in schedulePreview(row)" :key="item.start">
           {{ item.start }} 开放，{{ item.due }} 截止
         </span>

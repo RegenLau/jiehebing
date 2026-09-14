@@ -106,6 +106,7 @@ function scheduledTasks({ db, patient, treatment, currentDate, shiftDate }) {
             snapshot: structuredClone(binding),
             name: binding.snapshot.name,
             type: type || binding.snapshot.type,
+            report_type: binding.snapshot.report_type || "",
             date,
             due_date: dueDate,
             remind_time: binding.remind_time || "",

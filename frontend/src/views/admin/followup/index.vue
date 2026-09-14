@@ -1,7 +1,8 @@
 <template>
   <div class="page"
     ><div class="toolbar"
-      ><div class="title-copy"><h2>患者当前待办</h2><p>显示患者尚未完成的问卷、检查、提醒和每日反馈。</p></div
+      ><div class="title-copy"
+        ><h2>患者当前待办</h2><p>显示患者尚未完成的问卷、检查、提醒和每日反馈。</p></div
       ><ResearchExport
         kind="tasks"
         :params="{
@@ -42,21 +43,25 @@
         >
       </div>
       <ElTable v-loading="loading" :data="rows" border
-        ><ElTableColumn prop="patient_name" label="患者" min-width="110" fixed="left" /><ElTableColumn
+        ><ElTableColumn
+          prop="patient_name"
+          label="患者"
+          min-width="110"
+          fixed="left"
+        /><ElTableColumn
           prop="patient_code"
           label="患者编号"
           min-width="130"
           fixed="left"
-        /><ElTableColumn
-          prop="name"
-          label="任务"
-        /><ElTableColumn prop="type" label="类型" width="100" /><ElTableColumn
-          prop="date"
-          label="计划开放日期"
-          width="120"
-        /><ElTableColumn prop="due_date" label="截止日期" width="120" /><ElTableColumn
-          label="提醒时间"
+        /><ElTableColumn prop="name" label="任务" /><ElTableColumn
+          prop="type"
+          label="类型"
           width="100"
+        /><ElTableColumn prop="date" label="计划开放日期" width="120" /><ElTableColumn
+          prop="due_date"
+          label="截止日期"
+          width="120"
+        /><ElTableColumn label="提醒时间" width="100"
           ><template #default="{ row }">{{ row.remind_time || '-' }}</template></ElTableColumn
         ><ElTableColumn prop="display_source" label="来源" min-width="110" /><ElTableColumn
           prop="status"
@@ -68,7 +73,9 @@
           ></ElTableColumn
         ><ElTableColumn label="操作" width="100" fixed="right"
           ><template #default="{ row }"
-            ><ElButton link type="primary" @click="openDetail(row as Task)">查看详情</ElButton></template
+            ><ElButton link type="primary" @click="openDetail(row as Task)"
+              >查看详情</ElButton
+            ></template
           ></ElTableColumn
         ></ElTable
       ><ElPagination
@@ -115,17 +122,26 @@
       ></ElDialog
     ><ElDialog v-model="detailVisible" title="任务详情" width="720px"
       ><ElDescriptions v-if="currentTask" :column="2" border
-        ><ElDescriptionsItem label="患者">{{ currentTask.patient_name }} · {{ currentTask.patient_code }}</ElDescriptionsItem
+        ><ElDescriptionsItem label="患者"
+          >{{ currentTask.patient_name }} · {{ currentTask.patient_code }}</ElDescriptionsItem
         ><ElDescriptionsItem label="任务状态">{{ currentTask.status }}</ElDescriptionsItem
         ><ElDescriptionsItem label="任务名称">{{ currentTask.name }}</ElDescriptionsItem
         ><ElDescriptionsItem label="任务类型">{{ currentTask.type }}</ElDescriptionsItem
+        ><ElDescriptionsItem v-if="currentTask.type === '检查'" label="报告类型">{{
+          currentTask.report_type || '-'
+        }}</ElDescriptionsItem
         ><ElDescriptionsItem label="计划开放日期">{{ currentTask.date }}</ElDescriptionsItem
         ><ElDescriptionsItem label="最晚完成日期">{{ currentTask.due_date }}</ElDescriptionsItem
         ><ElDescriptionsItem label="任务来源">{{ currentTask.display_source }}</ElDescriptionsItem
-        ><ElDescriptionsItem label="提醒时间">{{ currentTask.remind_time || '-' }}</ElDescriptionsItem
-        ><ElDescriptionsItem label="任务说明" :span="2">{{ currentTask.description || '-' }}</ElDescriptionsItem
-        ><ElDescriptionsItem label="提交要求" :span="2">{{ currentTask.requirements || '-' }}</ElDescriptionsItem
-      ></ElDescriptions
+        ><ElDescriptionsItem label="提醒时间">{{
+          currentTask.remind_time || '-'
+        }}</ElDescriptionsItem
+        ><ElDescriptionsItem label="任务说明" :span="2">{{
+          currentTask.description || '-'
+        }}</ElDescriptionsItem
+        ><ElDescriptionsItem label="提交要求" :span="2">{{
+          currentTask.requirements || '-'
+        }}</ElDescriptionsItem></ElDescriptions
       ><template #footer
         ><ElButton @click="goPatient">患者详情</ElButton
         ><ElButton v-if="currentTask?.report_id" type="primary" @click="goReport">关联报告</ElButton
@@ -149,6 +165,7 @@
     patient_name?: string
     name: string
     type: string
+    report_type?: string
     status: string
     description: string
     date: string

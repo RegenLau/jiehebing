@@ -136,11 +136,13 @@
             </ElSelect>
           </ElFormItem>
           <ElFormItem label="关联任务（可选）">
-            <ElSelect v-model="form.task_id" clearable>
+            <ElSelect v-model="form.task_id" clearable @change="taskChanged">
               <ElOption
                 v-for="task in tasks"
                 :key="task.id"
-                :label="task.name + ' · ' + task.date"
+                :label="
+                  task.name + ' · ' + task.date + (task.report_type ? ' · ' + task.report_type : '')
+                "
                 :value="task.id"
               />
             </ElSelect>
@@ -153,7 +155,7 @@
               default-first-option
               placeholder="选择或输入报告类型"
             >
-              <ElOption v-for="item in reportTypes" :key="item" :label="item" :value="item" />
+              <ElOption v-for="item in REPORT_TYPES" :key="item" :label="item" :value="item" />
             </ElSelect>
           </ElFormItem>
           <ElFormItem label="检查日期">
@@ -190,6 +192,7 @@
 
   import { computed, onMounted, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
+  import { REPORT_TYPES } from '@/config/report-types'
   import request from '@/utils/http'
   import { fetchPatientList, type PatientRecord } from '@/api/patient'
 
@@ -212,7 +215,6 @@
     ocr_result?: { summary: { field_count: number } } | null
   }
 
-  const reportTypes = ['血常规', '肝功能', '肾功能', '胸部CT', '痰涂片', '痰培养']
   const props = withDefaults(defineProps<{ embedded?: boolean; userId?: number }>(), {
       embedded: false,
       userId: 0
@@ -225,7 +227,16 @@
     form = ref(blank()),
     rows = ref<Report[]>([]),
     patients = ref<PatientRecord[]>([]),
-    tasks = ref<{ id: number; name: string; type: string; date: string; status: string }[]>([]),
+    tasks = ref<
+      {
+        id: number
+        name: string
+        type: string
+        report_type?: string
+        date: string
+        status: string
+      }[]
+    >([]),
     keyword = ref(''),
     status = ref(''),
     projectId = ref<number | undefined>(Number(route.query.project_id) || undefined),
@@ -306,6 +317,10 @@
     tasks.value = all.filter(
       (task) => task.type === '检查' && !['已完成', '已取消'].includes(task.status)
     )
+  }
+  function taskChanged(taskId?: number) {
+    const task = tasks.value.find((item) => item.id === taskId)
+    if (task?.report_type) form.value.type = task.report_type
   }
   async function upload(event: Event) {
     saving.value = true

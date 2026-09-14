@@ -2261,6 +2261,11 @@ test("task templates support maintenance, filters, revision checks and isolated 
   await api.login();
   const initialTemplates = await api.all(P + "task-template/index");
   assert.ok(
+    initialTemplates
+      .filter((template) => template.type === "检查")
+      .every((template) => template.report_type),
+  );
+  assert.ok(
     initialTemplates.every(
       (template) =>
         template.name !== "取药提醒" && template.system_kind !== "pickup",
@@ -2282,11 +2287,31 @@ test("task templates support maintenance, filters, revision checks and isolated 
   const body = {
     name: "复查模板测试",
     type: "检查",
+    report_type: "血常规",
     description: "模拟检查",
     requirements: "上传原图",
   };
+  assert.notEqual(
+    (
+      await api.json(P + "task-template/save", {
+        body: { ...body, name: "缺少报告类型", report_type: "" },
+      })
+    ).code,
+    200,
+  );
   const row = await api.ok(P + "task-template/save", { body });
+  assert.equal(row.report_type, "血常规");
   assert.equal(row.history.length, 1);
+  const reminder = await api.ok(P + "task-template/save", {
+    body: {
+      name: "普通提醒模板测试",
+      type: "提醒",
+      report_type: "血常规",
+      description: "模拟提醒",
+      requirements: "直接确认完成",
+    },
+  });
+  assert.equal(reminder.report_type, "");
   assert.notEqual(
     (await api.json(P + "task-template/save", { body })).code,
     200,
@@ -2331,6 +2356,7 @@ test("task templates support maintenance, filters, revision checks and isolated 
       ],
     },
   });
+  assert.equal(configured.tasks[0].snapshot.report_type, "血常规");
   const changed = await api.ok(P + "task-template/save", {
     body: { ...row, requirements: "补充检查日期", reason: "完善提交要求" },
   });
@@ -3020,6 +3046,7 @@ test("generated execution follows group dates and retains safety tasks when medi
   );
   const inspectionTask = generatedTasks.find((task) => task.type === "检查");
   assert.ok(inspectionTask);
+  assert.equal(inspectionTask.report_type, "血常规");
   await api.ok(P + "followup/update", {
     body: { id: inspectionTask.id, action: "contact", reason: "已联系患者" },
   });
@@ -3533,6 +3560,7 @@ test("new research exports are real XLSX and cover the filtered complete dataset
   const rows = workbookRows(Buffer.from(await response.arrayBuffer()));
   assert.equal(rows.length, 13);
   assert.ok(rows[0].includes("轮次标识"));
+  assert.ok(rows[0].includes("报告类型"));
   assert.ok(rows.flat().some((v) => v.includes("导出验证任务")));
   const emptyRows = workbookRows(
     Buffer.from(

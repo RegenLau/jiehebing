@@ -20,10 +20,12 @@
           label="类型"
           width="100"
         /><ElTableColumn prop="requirements" label="提交要求" show-overflow-tooltip /><ElTableColumn
-          prop="version"
-          label="版本"
-          width="100"
-        /><ElTableColumn label="状态" width="90"
+          prop="report_type"
+          label="报告类型"
+          width="130"
+        /><ElTableColumn prop="version" label="版本" width="100" /><ElTableColumn
+          label="状态"
+          width="90"
           ><template #default="{ row }">{{
             row.status === 1 ? '启用' : '停用'
           }}</template></ElTableColumn
@@ -31,9 +33,9 @@
           ><template #default="{ row }"
             ><ElButton link type="primary" @click="open(row.id, true)">详情</ElButton
             ><ElButton link type="primary" @click="open(row.id)">编辑</ElButton
-            ><ElButton link type="warning" @click="toggle(row as Template)"
-              >{{ row.status === 1 ? '停用' : '启用' }}</ElButton
-            ></template
+            ><ElButton link type="warning" @click="toggle(row as Template)">{{
+              row.status === 1 ? '停用' : '启用'
+            }}</ElButton></template
           ></ElTableColumn
         ></ElTable
       ><ElPagination
@@ -53,10 +55,22 @@
         ><ElFormItem label="模板名称（必填）"
           ><ElInput v-model="form.name" maxlength="100" /></ElFormItem
         ><ElFormItem label="任务类型"
-          ><ElSelect v-model="form.type"
+          ><ElSelect v-model="form.type" @change="typeChanged"
             ><ElOption v-for="t in types" :key="t" :value="t" :label="t" /></ElSelect></ElFormItem
+        ><ElFormItem v-if="form.type === '检查'" label="报告类型（必填）"
+          ><ElSelect
+            v-model="form.report_type"
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择或输入报告类型"
+            ><ElOption
+              v-for="item in REPORT_TYPES"
+              :key="item"
+              :label="item"
+              :value="item" /></ElSelect></ElFormItem
         ><p v-if="form.type === '检查'" class="type-note"
-          >检查任务已包含报告上传、患者确认和医护核对流程，无需另建报告提交任务。</p
+          >报告类型将随模板带入检查任务及报告上传流程；检查任务已包含报告上传、患者确认和医护核对流程。</p
         ><p v-else class="type-note">提醒任务无需上传报告，患者可直接确认完成。</p
         ><ElFormItem label="提交要求（必填）"
           ><ElInput v-model="form.requirements" type="textarea" maxlength="1000" /></ElFormItem
@@ -87,11 +101,13 @@
 <script setup lang="ts">
   import { ref, onMounted } from 'vue'
   import { ElMessage, ElMessageBox } from 'element-plus'
+  import { REPORT_TYPES } from '@/config/report-types'
   import request from '@/utils/http'
   interface Template {
     id?: number
     name: string
     type: string
+    report_type: string
     description: string
     requirements: string
     status: number
@@ -105,6 +121,7 @@
     return [
       r.name,
       '类型：' + r.type,
+      ...(r.type === '检查' ? ['报告类型：' + (r.report_type || '-')] : []),
       '提交要求：' + r.requirements,
       '版本：' + r.version,
       '状态：' + (r.status === 1 ? '启用' : '停用')
@@ -115,6 +132,7 @@
     blank = (): Template => ({
       name: '',
       type: '检查',
+      report_type: '',
       description: '',
       requirements: '',
       status: 1,
@@ -160,26 +178,37 @@
     current.value = 1
     void load()
   }
+  function typeChanged(value: string) {
+    if (value !== '检查') form.value.report_type = ''
+  }
   async function open(id?: number, view = false) {
     readonly.value = view
-    form.value = id
-      ? {
-          ...(await request.get<Template>({
-            url: '/app/core/task-template/detail',
-            params: { id }
-          })),
-          reason: ''
-        }
-      : blank()
+    if (id) {
+      const detail = await request.get<Template>({
+        url: '/app/core/task-template/detail',
+        params: { id }
+      })
+      form.value = { ...detail, report_type: detail.report_type || '', reason: '' }
+    } else {
+      form.value = blank()
+    }
     visible.value = true
   }
   async function save() {
-    if (
-      !form.value.name.trim() ||
-      !form.value.requirements.trim() ||
-      (form.value.id && !form.value.reason.trim())
-    ) {
-      ElMessage.warning('请填写名称、提交要求及修改原因')
+    if (!form.value.name.trim()) {
+      ElMessage.warning('请填写模板名称')
+      return
+    }
+    if (form.value.type === '检查' && !form.value.report_type.trim()) {
+      ElMessage.warning('请选择报告类型')
+      return
+    }
+    if (!form.value.requirements.trim()) {
+      ElMessage.warning('请填写提交要求')
+      return
+    }
+    if (form.value.id && !form.value.reason.trim()) {
+      ElMessage.warning('请填写修改原因')
       return
     }
     saving.value = true

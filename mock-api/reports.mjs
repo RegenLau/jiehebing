@@ -89,7 +89,6 @@ export function registerReports({
   );
   core("POST", "report/create", ({ body: b, admin }) => {
     const p = find(db.patients, b.user_id, "患者");
-    const type = text(b.type, "报告类型");
     assert(isDate(b.exam_date), "请填写检查日期");
     const documents = files(b.files);
     let task = null;
@@ -105,6 +104,7 @@ export function registerReports({
         "该任务已有报告，请进入原报告补充",
       );
     }
+    const type = text(b.type || task?.report_type, "报告类型");
     const row = {
       id: nextId(db.reports),
       user_id: p.id,
