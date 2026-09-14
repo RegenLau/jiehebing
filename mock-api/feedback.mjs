@@ -23,24 +23,27 @@ export function registerFeedback({
     "其他",
   ];
   const changes = ["首次记录", "减轻", "无变化", "加重", "新出现", "消失"];
-  db.feedback = db.patients
-    .slice(0, 6)
-    .flatMap((p, i) =>
-      [0, 1, 2].map((n) => ({
+  const feedbackPatients = [...db.patients.slice(0, 6), db.patients.at(-1)];
+  db.feedback = feedbackPatients.flatMap((p, i) =>
+    [0, 1, 2].map((n) => {
+      const project = db.projects.find((item) => item.id === p.project_id);
+      const dayOffset = n + (project?.status === 2 ? 1 : 0);
+      const noDiscomfort = n === 0 && i % 2 === 0;
+      return {
         id: i * 3 + n + 1,
         user_id: p.id,
         patient_name: p.name,
-        date: shiftDate(today(), -n),
-        no_discomfort: n === 0 && i % 2 === 0,
-        symptoms:
-          n === 0 && i % 2 === 0
-            ? []
-            : [{ name: "咳嗽", change: changes[(i + n) % changes.length] }],
+        date: shiftDate(today(), -dayOffset),
+        no_discomfort: noDiscomfort,
+        symptoms: noDiscomfort
+          ? []
+          : [{ name: "咳嗽", change: changes[(i + n) % changes.length] }],
         note: "",
         source: "患者反馈",
         created_at: timestamp(),
-      })),
-    );
+      };
+    }),
+  );
   core("GET", "feedback/index", ({ query: q }) =>
     page(
       [...db.feedback]

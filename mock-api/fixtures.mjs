@@ -86,8 +86,8 @@ export function createFixtures(now) {
     thumb: '/api/mock-files/medicine-cover', sort_order: i, status: i % 5 ? 1 : 0,
     status_text: i % 5 ? '启用' : '停用', created_at: `${shiftDate(today, -60)} 06:00:00`, updated_at: time
   }));
-  const adverse = Array.from({ length: 36 }, (_, i) => {
-    const p = patients[i % 24];
+  const adversePatients = [...Array.from({ length: 36 }, (_, i) => patients[i % 24]), patients.at(-1), patients.at(-1)];
+  const adverse = adversePatients.map((p, i) => {
     const severity = i % 3 + 1;
     const symptoms = [['头晕'], ['恶心', '食欲下降'], ['皮疹']][i % 3];
     const proposedDate = shiftDate(today, -(i % 30));
@@ -270,8 +270,8 @@ export function createFixtures(now) {
   }
   const reportTypes = supportedReportTypes();
   const reportStatuses = ['待核对', '需补充', '已核对'];
-  const reports = Array.from({ length: 36 }, (_, i) => {
-    const patient = patients[(i * 5) % patients.length];
+  const reportPatients = [...Array.from({ length: 36 }, (_, i) => patients[(i * 5) % patients.length]), patients.at(-1), patients.at(-1)];
+  const reports = reportPatients.map((patient, i) => {
     const type = reportTypes[i % reportTypes.length];
     const status = reportStatuses[i % reportStatuses.length];
     const proposedDate = shiftDate(today, -(i % 35));

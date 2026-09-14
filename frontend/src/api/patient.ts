@@ -89,39 +89,6 @@ export interface PatientMedicineListResponse {
   size: number
 }
 
-export interface PatientSurveyAnswerDetail {
-  template: {
-    id: number
-    code: string
-    name: string
-    description: string
-    fillable_day: number
-  }
-  submitted_at: string
-  questions: Array<{
-    question_id: number
-    question_no: number
-    title: string
-    type: string
-    required: boolean
-    placeholder: string
-    answered: boolean
-    text_value: string
-    answer_summary: string
-    selected_options: Array<{
-      id: number
-      label: string
-      is_exclusive: boolean
-      trigger_input: boolean
-      input_fields: Array<{
-        field_key: string
-        field_label: string
-        value: string
-      }>
-    }>
-  }>
-}
-
 export interface PatientAdverseReactionRecord {
   id: number
   user_id: number
@@ -171,13 +138,6 @@ export function fetchPatientSurveyStatus(user_id: number) {
   return request.get<PatientSurveyStatusRecord[]>({
     url: '/app/core/patient/survey-status',
     params: { user_id }
-  })
-}
-
-export function fetchPatientSurveyAnswerDetail(user_id: number, template_id: number) {
-  return request.get<PatientSurveyAnswerDetail>({
-    url: '/app/core/patient/survey-answer-detail',
-    params: { user_id, template_id }
   })
 }
 

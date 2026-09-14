@@ -169,18 +169,6 @@
               </template>
             </ElTableColumn>
             <ElTableColumn prop="submitted_at" label="提交时间" min-width="180" />
-            <ElTableColumn label="操作" width="120" fixed="right">
-              <template #default="{ row }">
-                <ElButton
-                  link
-                  type="primary"
-                  :disabled="!row.answered"
-                  @click="openSurveyAnswerDetail(row)"
-                >
-                  查看答题
-                </ElButton>
-              </template>
-            </ElTableColumn>
           </ElTable>
         </ElTabPane>
 
@@ -231,54 +219,6 @@
       </ElTabs>
     </ElCard>
 
-    <ElDialog v-model="answerDialogVisible" title="问卷答题详情" width="900px">
-      <div v-loading="answerDetailLoading" class="answer-detail" v-if="answerDetail">
-        <div class="answer-base">
-          <div><span>问卷名称：</span>{{ answerDetail.template.name }}</div>
-          <div><span>模板编码：</span>{{ answerDetail.template.code }}</div>
-          <div><span>提交时间：</span>{{ answerDetail.submitted_at || '-' }}</div>
-          <div class="full"
-            ><span>问卷说明：</span>{{ answerDetail.template.description || '无' }}</div
-          >
-        </div>
-
-        <ElCard
-          v-for="question in answerDetail.questions"
-          :key="question.question_id"
-          shadow="never"
-          class="answer-question-card"
-        >
-          <template #header>
-            <div class="answer-question-header">
-              <span>第 {{ question.question_no }} 题</span>
-              <div class="answer-question-tags">
-                <ElTag size="small">{{ question.type }}</ElTag>
-                <ElTag v-if="question.required" size="small" type="danger">必填</ElTag>
-              </div>
-            </div>
-          </template>
-
-          <div class="answer-question-title">{{ question.title }}</div>
-          <div class="answer-summary"> <span>作答结果：</span>{{ question.answer_summary }} </div>
-
-          <div v-if="question.selected_options.length" class="selected-option-list">
-            <div
-              v-for="option in question.selected_options"
-              :key="option.id"
-              class="selected-option-item"
-            >
-              <div class="selected-option-label">{{ option.label }}</div>
-              <div v-if="option.input_fields.length" class="selected-option-fields">
-                <div v-for="field in option.input_fields" :key="field.field_key">
-                  <span>{{ field.field_label }}：</span>{{ field.value || '-' }}
-                </div>
-              </div>
-            </div>
-          </div>
-        </ElCard>
-      </div>
-    </ElDialog>
-
     <ElDialog v-model="adverseDialogVisible" title="不良反应详情" width="720px">
       <div v-if="currentAdverseReaction" class="answer-detail">
         <div class="answer-base">
@@ -314,7 +254,6 @@
           <div><span>数量：</span>{{ currentMedicine.medicine_count || '-' }}</div>
           <div><span>厂家：</span>{{ currentMedicine.company || '-' }}</div>
           <div><span>医保码：</span>{{ currentMedicine.ybm || '-' }}</div>
-          <div><span>批次号：</span>{{ currentMedicine.batch_no || '-' }}</div>
           <div><span>来源：</span>{{ currentMedicine.source_text || '-' }}</div>
           <div><span>添加时间：</span>{{ currentMedicine.created_at || '-' }}</div>
           <div class="full"><span>备注：</span>{{ currentMedicine.remark || '无' }}</div>
@@ -340,12 +279,10 @@
   import {
     fetchPatientAdverseReactionList,
     fetchPatientMedicineList,
-    fetchPatientSurveyAnswerDetail,
     fetchPatientDetail,
     fetchPatientSurveyStatus,
     type PatientAdverseReactionRecord,
     type PatientMedicineRecord,
-    type PatientSurveyAnswerDetail,
     type PatientRecord,
     type PatientSurveyStatusRecord
   } from '@/api/patient'
@@ -366,8 +303,6 @@
   const pageLoading = ref(false)
   const patientLoading = ref(false)
   const surveyLoading = ref(false)
-  const answerDetailLoading = ref(false)
-  const answerDialogVisible = ref(false)
   const adverseDialogVisible = ref(false)
   const medicineDialogVisible = ref(false)
   const patient = reactive<PatientRecord>({
@@ -387,7 +322,6 @@
     updated_at: ''
   })
   const surveyList = ref<PatientSurveyStatusRecord[]>([])
-  const answerDetail = ref<PatientSurveyAnswerDetail>()
   const currentAdverseReaction = ref<PatientAdverseReactionRecord>()
   const currentMedicine = ref<PatientMedicineRecord>()
 
@@ -522,19 +456,6 @@
   const openMedicineDetail = (row: PatientMedicineRecord) => {
     currentMedicine.value = row
     medicineDialogVisible.value = true
-  }
-
-  const openSurveyAnswerDetail = async (row: any) => {
-    const record = row as PatientSurveyStatusRecord
-    if (!userId.value || !record.answered) return
-
-    answerDialogVisible.value = true
-    answerDetailLoading.value = true
-    try {
-      answerDetail.value = await fetchPatientSurveyAnswerDetail(userId.value, record.template_id)
-    } finally {
-      answerDetailLoading.value = false
-    }
   }
 
   const loadAdverseReactions = async () => {
@@ -737,61 +658,6 @@
 
     :deep(p:last-child) {
       margin-bottom: 0;
-    }
-  }
-
-  .answer-question-card {
-    :deep(.el-card__header) {
-      padding: 12px 16px;
-    }
-  }
-
-  .answer-question-header,
-  .answer-question-tags {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    justify-content: space-between;
-  }
-
-  .answer-question-title {
-    font-weight: 600;
-    margin-bottom: 10px;
-  }
-
-  .answer-summary {
-    margin-bottom: 12px;
-
-    span {
-      color: #6b7280;
-    }
-  }
-
-  .selected-option-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .selected-option-item {
-    padding: 10px 12px;
-    border-radius: 8px;
-    background: #f8fafc;
-  }
-
-  .selected-option-label {
-    font-weight: 500;
-    margin-bottom: 6px;
-  }
-
-  .selected-option-fields {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    color: #4b5563;
-
-    span {
-      color: #6b7280;
     }
   }
 

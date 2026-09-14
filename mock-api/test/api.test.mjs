@@ -4301,7 +4301,7 @@ test("report list starts with representative mock records for every research gro
   const api = await start(t);
   await api.login();
   const reports = await api.all(P + "report/index");
-  assert.equal(reports.length, 36);
+  assert.equal(reports.length, 38);
   assert.deepEqual(
     [...new Set(reports.map((row) => row.status))].sort(),
     ["已核对", "待核对", "需补充"].sort(),
@@ -4310,7 +4310,7 @@ test("report list starts with representative mock records for every research gro
     [...new Set(reports.map((row) => row.type))].sort(),
     ["血常规", "肝功能", "肾功能", "胸部CT", "痰涂片", "痰培养"].sort(),
   );
-  for (let groupId = 1; groupId <= 6; groupId += 1) {
+  for (let groupId = 1; groupId <= 7; groupId += 1) {
     const rows = await api.all(P + "report/index", { group_id: groupId });
     assert.ok(rows.length > 0, `group ${groupId} has mock reports`);
   }
@@ -4326,6 +4326,30 @@ test("report list starts with representative mock records for every research gro
     detail.ocr_result.summary.abnormal_count,
     detail.metrics.filter((metric) => metric.flag).length,
   );
+});
+
+test("ended-project patient detail sections include representative mock records", async (t) => {
+  const api = await start(t);
+  await api.login();
+  const patients = await api.all(P + "patient/index");
+  const patient = patients.find((row) => row.mobile === "13910001030");
+  assert.ok(patient);
+  const project = await api.ok(P + "project/detail", {
+    query: { id: patient.project_id },
+  });
+  const [reactions, feedback, reports] = await Promise.all([
+    api.all(P + "adverse-reaction/index", { user_id: patient.id }),
+    api.all(P + "feedback/index", { user_id: patient.id }),
+    api.all(P + "report/index", { user_id: patient.id }),
+  ]);
+  assert.equal(reactions.length, 2);
+  assert.equal(feedback.length, 3);
+  assert.equal(reports.length, 2);
+  assert.ok(
+    reactions.every((row) => row.occurred_at.slice(0, 10) <= project.end_date),
+  );
+  assert.ok(feedback.every((row) => row.date <= project.end_date));
+  assert.ok(reports.every((row) => row.exam_date <= project.end_date));
 });
 
 test("adverse assessment separates severity from seriousness and records manual contacts", async (t) => {
